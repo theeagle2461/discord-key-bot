@@ -576,6 +576,35 @@ class KeyManager:
                 return {"success": False, "error": "Key has been revoked"}
         return {"success": False, "error": "Key not found"}
 
+    def rebind_key(self, key: str, user_id: int, new_machine_id: str) -> Dict:
+        """Rebind a key to a new machine if requested by the same user who activated it.
+        Conditions:
+        - key exists, not deleted, is_active True
+        - key has an activated_by or user_id that matches the requester
+        - key not expired
+        """
+        if self.is_key_deleted(key):
+            return {"success": False, "error": "No access, deleted key"}
+        if key not in self.keys:
+            return {"success": False, "error": "Invalid key"}
+        data = self.keys[key]
+        if not data.get("is_active", False):
+            return {"success": False, "error": "Access revoked"}
+        now_ts = int(time.time())
+        expires = data.get("expiration_time") or 0
+        if expires and expires <= now_ts:
+            return {"success": False, "error": "Key has expired"}
+        owner = data.get("activated_by") or data.get("user_id")
+        if not owner or int(owner) != int(user_id):
+            return {"success": False, "error": "Key is owned by a different user"}
+        # Update machine binding
+        data["machine_id"] = str(new_machine_id)
+        # Touch usage
+        if key in self.key_usage:
+            self.key_usage[key]["last_used"] = now_ts
+        self.save_data()
+        return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id)}
+
 # Initialize key manager
 key_manager = KeyManager()
 
@@ -1992,6 +2021,38 @@ def start_health_check():
                             resp = {'success': False, 'error': str(e)}
                             status_code = 500
                             print(f"/api/activate exception: {e}")
+                    self.send_response(status_code)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    import json
+                    self.wfile.write(json.dumps(resp, indent=2).encode())
+                    return
+
+                if self.path == '/api/rebind':
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    data = urllib.parse.parse_qs(body)
+                    key = (data.get('key', [None])[0])
+                    user_id_str = (data.get('user_id', [None])[0])
+                    new_machine = (data.get('machine_id', [''])[0])
+                    try:
+                        user_id_val = int(user_id_str) if user_id_str is not None else None
+                    except Exception:
+                        user_id_val = None
+                    resp = {}
+                    status_code = 200
+                    if not key or not user_id_val or not new_machine:
+                        resp = {'success': False, 'error': 'missing key, user_id, or machine_id'}
+                        status_code = 400
+                    else:
+                        try:
+                            result = key_manager.rebind_key(key, int(user_id_val), str(new_machine))
+                            resp = result
+                            if not result.get('success'):
+                                status_code = 400
+                        except Exception as e:
+                            resp = {'success': False, 'error': str(e)}
+                            status_code = 500
                     self.send_response(status_code)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
