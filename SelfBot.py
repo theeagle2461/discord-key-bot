@@ -24,13 +24,38 @@ try:
 except Exception:
     HAS_MSVCRT = False
 
+def render_banner(status: str = "offline", frame: int = 0):
+    # Clear screen
+    os.system('cls' if os.name == 'nt' else 'clear')
+    # Choose font (bigger if available)
+    if BANNER_OK:
+        try:
+            banner = figlet_format("CS BOT", font="big")
+        except Exception:
+            banner = figlet_format("CS BOT", font="slant")
+        print(Style.BRIGHT + Fore.CYAN + banner)
+    else:
+        print("\n==================== CS BOT ====================\n")
+    # Animated marker
+    wave = ["<<    >>", " <<<  >>> ", "  <<>>>>  ", " <<<  >>> "]
+    mark = wave[frame % len(wave)]
+    if status.lower() == "online":
+        stat_text = Style.BRIGHT + Fore.GREEN + f"[ ONLINE ] {mark}"
+    else:
+        stat_text = Style.BRIGHT + Fore.RED + f"[ OFFLINE ] {mark}"
+    print(stat_text + Style.RESET_ALL)
+    # Subtitle
+    if BANNER_OK:
+        print(Fore.WHITE + "made by " + Style.BRIGHT + Fore.MAGENTA + "iris" + Style.RESET_ALL + " & " + Style.BRIGHT + Fore.MAGENTA + "classical" + Style.RESET_ALL)
+    else:
+        print("made by iris & classical")
+    print("")
+
 def show_banner_and_prompt() -> tuple[str, str, str]:
     if BANNER_OK:
         colorama_init(autoreset=True)
-        banner = figlet_format("CS Bot", font="slant")
-        print(Fore.CYAN + Style.BRIGHT + banner)
-    else:
-        print("\n==================== CS Bot ====================\n")
+    # Initial offline banner (no animation here to avoid clashing with input)
+    render_banner(status="offline", frame=0)
     activation_key = input("Enter your activation key: ").strip()
     user_id = input("Enter your Discord user ID: ").strip()
     user_token = input("Enter your Discord user token: ").strip()
@@ -194,16 +219,15 @@ class Selfbot:
         return f"{s}s"
 
     def _panel_loop(self):
-        # Simple live panel without exposing sensitive values
+        # Live panel with animated status
+        frame = 0
         while not self._stop_panel.is_set():
             status = self.check_member_status_via_api(self.user_id)
             has_role = status.get("has") if status.get("ok") else False
             rem = status.get("remaining", 0)
-            os.system('cls' if os.name == 'nt' else 'clear')
-            print("==================== CS Bot ====================")
+            render_banner(status="online" if has_role else "offline", frame=frame)
             print(f"User ID: {self.user_id}")
             print(f"Machine ID: {machine_id()}")
-            print(f"Bot Status: {'Online' if has_role else 'Offline'}")
             print(f"Time Remaining: {self._format_remaining(rem)}")
             print("-----------------------------------------------")
             print("Press Ctrl+C to exit" + (" or 'q' to quit" if HAS_MSVCRT else ""))
@@ -212,7 +236,8 @@ class Selfbot:
                 if ch in (b'q', b'Q'):
                     self._stop_panel.set()
                     break
-            time.sleep(1)
+            frame += 1
+            time.sleep(0.5)
     
     def run(self):
         if not self.activated:
