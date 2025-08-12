@@ -1915,6 +1915,40 @@ def start_health_check():
                     self.end_headers()
                     return
 
+                if self.path == '/api/activate':
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    data = urllib.parse.parse_qs(body)
+                    key = (data.get('key', [None])[0])
+                    user_id_str = (data.get('user_id', [None])[0])
+                    machine = (data.get('machine_id', [''])[0])
+                    try:
+                        user_id_val = int(user_id_str) if user_id_str is not None else None
+                    except Exception:
+                        user_id_val = None
+                    resp = {}
+                    status_code = 200
+                    if not key or not user_id_val:
+                        resp = {'success': False, 'error': 'missing key or user_id'}
+                        status_code = 400
+                    else:
+                        try:
+                            if not machine:
+                                machine = str(user_id_val)
+                            result = key_manager.activate_key(key, str(machine), int(user_id_val))
+                            resp = result
+                            if not result.get('success'):
+                                status_code = 400
+                        except Exception as e:
+                            resp = {'success': False, 'error': str(e)}
+                            status_code = 500
+                    self.send_response(status_code)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    import json
+                    self.wfile.write(json.dumps(resp, indent=2).encode())
+                    return
+
                 self.send_response(404)
                 self.end_headers()
             except Exception as e:
