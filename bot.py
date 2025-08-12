@@ -1298,7 +1298,7 @@ if __name__ == "__main__":
         
         # Start the Discord bot
         print("🔗 Connecting to Discord...")
-        bot.run(BOT_TOKEN)
+    bot.run(BOT_TOKEN)
         
     except KeyboardInterrupt:
         print("\n👋 Bot stopped by user")
