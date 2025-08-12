@@ -8,6 +8,7 @@ except Exception:  # pragma: no cover
 
 import discord
 from discord.ext import commands
+from discord.ext import tasks
 import json
 import uuid
 import time
@@ -229,6 +230,7 @@ class KeyManager:
         # Activate the key
         key_data["machine_id"] = machine_id
         key_data["activated_by"] = user_id
+        key_data["user_id"] = user_id
         key_data["activated"] = int(time.time())
         
         # Update usage
@@ -593,6 +595,8 @@ async def on_ready():
         print(f"⚠️ Guild sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
+    if not reconcile_roles_task.is_running():
+        reconcile_roles_task.start()
 
 @bot.tree.command(name="help", description="Show help information")
 async def help_command(interaction: discord.Interaction):
