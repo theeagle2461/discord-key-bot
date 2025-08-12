@@ -1140,58 +1140,25 @@ def start_health_check():
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-            elif self.path == '/api/keys':
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                
-                # Return JSON API of all keys
-                keys_data = {
-                    "total_keys": len(key_manager.keys),
-                    "active_keys": sum(1 for k in key_manager.keys.values() if k["is_active"]),
-                    "revoked_keys": sum(1 for k in key_manager.keys.values() if not k["is_active"]),
-                    "deleted_keys": len(key_manager.deleted_keys),
-                    "keys_by_type": {
-                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"]),
-                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"]),
-                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"]),
-                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"]),
-                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
-                    },
-                    "available_keys": {
-                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0),
-                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0),
-                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0),
-                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0),
-                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
-                    },
-                    "last_updated": int(time.time())
-                }
-                
-                import json
-                self.wfile.write(json.dumps(keys_data, indent=2).encode())
-                return
-                
-                # Get comprehensive key statistics
+
+                # Get comprehensive key statistics for HTML dashboard
                 total_keys = len(key_manager.keys)
                 active_keys = sum(1 for k in key_manager.keys.values() if k["is_active"])
                 revoked_keys = total_keys - active_keys
                 deleted_keys = len(key_manager.deleted_keys)
-                
-                # Get keys by type
+
                 daily_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"])
                 weekly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"])
                 monthly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"])
                 lifetime_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"])
                 general_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
-                
-                # Get available (unassigned) keys by type
+
                 available_daily = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0)
                 available_weekly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0)
                 available_monthly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0)
                 available_lifetime = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0)
                 available_general = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
-                
+
                 response = f"""
                 <html>
                 <head>
@@ -1271,10 +1238,38 @@ def start_health_check():
                 </html>
                 """
                 self.wfile.write(response.encode())
+            elif self.path == '/api/keys':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+
+                keys_data = {
+                    "total_keys": len(key_manager.keys),
+                    "active_keys": sum(1 for k in key_manager.keys.values() if k["is_active"]),
+                    "revoked_keys": sum(1 for k in key_manager.keys.values() if not k["is_active"]),
+                    "deleted_keys": len(key_manager.deleted_keys),
+                    "keys_by_type": {
+                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"]),
+                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"]),
+                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"]),
+                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"]),
+                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
+                    },
+                    "available_keys": {
+                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0),
+                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0),
+                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0),
+                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0),
+                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
+                    },
+                    "last_updated": int(time.time())
+                }
+                import json
+                self.wfile.write(json.dumps(keys_data, indent=2).encode())
             else:
                 self.send_response(404)
                 self.end_headers()
-        
+
         def log_message(self, format, *args):
             # Suppress logging for health checks
             pass
