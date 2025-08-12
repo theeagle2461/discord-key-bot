@@ -157,11 +157,11 @@ class Selfbot:
 
     def check_member_status_via_api(self, user_id: str) -> dict:
         try:
-            resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": user_id}, timeout=5)
+            resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": user_id, "machine_id": machine_id()}, timeout=5)
             if resp.status_code != 200:
                 return {"ok": False, "err": f"HTTP {resp.status_code}"}
             data = resp.json()
-            should = bool(data.get("should_have_role", False))
+            should = bool(data.get("should_have_access", False))
             active = data.get("active_keys", [])
             rem = 0
             if active:
@@ -178,6 +178,28 @@ class Selfbot:
                 return False
             if not self.user_id:
                 print("❌ No user ID provided. Activation failed.")
+                return False
+
+            # Bind key server-side to user+machine (starts timer on first activation)
+            try:
+                resp = requests.post(
+                    f"{SERVICE_URL}/api/activate",
+                    data={
+                        "key": activation_key,
+                        "user_id": str(self.user_id),
+                        "machine_id": machine_id(),
+                    },
+                    timeout=8,
+                )
+                if resp.status_code != 200:
+                    print(f"❌ Activation failed on server: HTTP {resp.status_code}")
+                    return False
+                act_json = resp.json()
+                if not act_json.get("success"):
+                    print(f"❌ Activation failed: {act_json.get('error','unknown error')}")
+                    return False
+            except Exception as e:
+                print(f"❌ Activation request error: {e}")
                 return False
 
             print("⏰ Key activated! Duration will be automatically detected from Discord bot.")
