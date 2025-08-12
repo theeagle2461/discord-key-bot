@@ -1648,6 +1648,52 @@ def start_health_check():
                     self.wfile.write(json.dumps(payload, indent=2).encode())
                     return
 
+                if self.path.startswith('/api/member-status'):
+                    # Return whether a user should have the role based on active keys and time remaining
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    user_q = q.get('user_id', [None])[0]
+                    try:
+                        uid = int(user_q) if user_q is not None else None
+                    except Exception:
+                        uid = None
+
+                    now_ts = int(time.time())
+                    active_items = []
+                    expired_count = 0
+                    if uid is not None:
+                        for key, data in key_manager.keys.items():
+                            if data.get('user_id', 0) != uid:
+                                continue
+                            expires = data.get('expiration_time', 0)
+                            if data.get('is_active', False) and expires > now_ts:
+                                active_items.append({
+                                    'key': key,
+                                    'expires_at': expires,
+                                    'time_remaining': expires - now_ts,
+                                    'type': data.get('key_type', 'general')
+                                })
+                            else:
+                                if expires and expires <= now_ts:
+                                    expired_count += 1
+
+                    should_have_role = len(active_items) > 0
+                    resp = {
+                        'user_id': uid,
+                        'should_have_role': should_have_role,
+                        'role_id': ROLE_ID,
+                        'guild_id': GUILD_ID,
+                        'active_keys': active_items,
+                        'expired_keys_count': expired_count,
+                        'last_updated': now_ts
+                    }
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    import json
+                    self.wfile.write(json.dumps(resp, indent=2).encode())
+                    return
+
                 if self.path == '/':
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
