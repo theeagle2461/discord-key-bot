@@ -1,3 +1,11 @@
+try:
+    import audioop  # Will fail on Python 3.13
+except Exception:  # pragma: no cover
+    try:
+        import audioop_lts as audioop  # Fallback for Python 3.13
+    except Exception:
+        audioop = None
+
 import discord
 from discord.ext import commands
 import json
