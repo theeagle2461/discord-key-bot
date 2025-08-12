@@ -1350,7 +1350,36 @@ def start_health_check():
                         self.end_headers()
                         return
 
-                if self.path == '/login':
+                if self.path.startswith('/login'):
+                    # Support GET auto-login with query params
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    key_q = (q.get('key', [None])[0])
+                    user_q = (q.get('user_id', [None])[0])
+                    ok = False
+                    uid = None
+                    machine_id = None
+                    if key_q and user_q:
+                        try:
+                            uid = int(user_q)
+                        except Exception:
+                            uid = None
+                        if uid is not None and key_q in key_manager.keys:
+                            d = key_manager.keys[key_q]
+                            now_ts = int(time.time())
+                            if int(d.get('user_id', 0) or 0) == int(uid) and d.get('is_active', False):
+                                exp = d.get('expiration_time') or 0
+                                if exp == 0 or exp > now_ts:
+                                    ok = True
+                                    machine_id = d.get('machine_id') or ''
+                    if ok and uid is not None:
+                        tok = _encode_session(uid, machine_id or str(uid))
+                        self.send_response(303)
+                        self.send_header('Set-Cookie', f'panel_session={tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200')
+                        self.send_header('Location', '/')
+                        self.end_headers()
+                        return
+                    # Render login form
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
