@@ -1626,80 +1626,112 @@ def start_health_check():
 
                     response = f"""
                     <html>
-                    <head>
-                        <title>Discord Bot Status</title>
+                      <head>
+                        <title>Discord Key Bot</title>
+                        <meta name='viewport' content='width=device-width, initial-scale=1'/>
                         <style>
-                            body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f0f0f0; }}
-                            .container {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-                            .status {{ color: #00aa00; font-weight: bold; }}
-                            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }}
-                            .stat-box {{ background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
-                            .stat-number {{ font-size: 2em; font-weight: bold; color: #007bff; }}
-                            .stat-label {{ color: #666; margin-top: 5px; font-weight: bold; }}
-                            .stat-sub {{ color: #28a745; font-size: 0.9em; margin-top: 3px; }}
+                          :root {{ --bg:#0b1020; --panel:#0e1630; --muted:#9ab0ff; --border:#1f2a4a; --text:#e6e9f0; --accent:#2a5bff; }}
+                          * {{ box-sizing: border-box; }}
+                          body {{ margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }}
+                          header {{ background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; align-items:center; gap:12px; flex-wrap: wrap; }}
+                          .brand {{ font-weight:700; letter-spacing:0.3px; margin-right:8px; }}
+                          a.nav {{ color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#121a36; border:1px solid #1a2650; }}
+                          a.nav:hover {{ background:#19214a; }}
+                          main {{ padding: 24px; max-width: 1100px; margin: 0 auto; }}
+                          .grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:16px; }}
+                          .card {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px; }}
+                          .stat {{ display:flex; flex-direction:column; gap:4px; }}
+                          .stat .label {{ color:#b9c7ff; font-size:12px; text-transform:uppercase; letter-spacing:0.4px; }}
+                          .stat .value {{ font-size:28px; font-weight:700; color:#dfe6ff; }}
+                          .muted {{ color:#a4b1d6; font-size:14px; }}
+                          .row {{ display:flex; gap:16px; align-items:stretch; flex-wrap:wrap; }}
+                          .actions a {{ display:inline-block; margin-right:8px; margin-top:8px; color:white; background: var(--accent); padding:10px 12px; border-radius:10px; text-decoration:none; border:1px solid #2049cc; }}
+                          .actions a:hover {{ filter: brightness(0.95); }}
+                          .kgrid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }}
+                          .kbox {{ background:#0b132b; border:1px solid #1c2b5b; padding:14px; border-radius:12px; }}
+                          .kbox .ttl {{ color:#b9c7ff; font-size:12px; letter-spacing:0.3px; text-transform:uppercase; }}
+                          .kbox .num {{ font-size:22px; font-weight:700; color:#e6edff; }}
+                          .kbox .sub {{ font-size:12px; color:#9ab0ff; margin-top:4px; }}
                         </style>
-                    </head>
-                    <body>
-                        <div class="container">
-                            <h1>🤖 Discord Bot Status</h1>
-                            <p><span class="status">Status: Online</span></p>
-                            <p>Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-                            <p>Bot: {bot.user.name if bot.user else 'Starting...'}</p>
-                            
-                            <h2>🔑 Key Statistics</h2>
-                            <div class="stats">
-                                <div class="stat-box">
-                                    <div class="stat-number">{total_keys}</div>
-                                    <div class="stat-label">Total Keys</div>
+                      </head>
+                      <body>
+                        <header>
+                          <div class='brand'>🔑 Discord Key Bot</div>
+                          <a class='nav' href='/'>Dashboard</a>
+                          <a class='nav' href='/keys'>Keys</a>
+                          <a class='nav' href='/my'>My Keys</a>
+                          <a class='nav' href='/deleted'>Deleted</a>
+                          <a class='nav' href='/generate-form'>Generate</a>
+                          <a class='nav' href='/backup'>Backup</a>
+                        </header>
+                        <main>
+                          <div class='row'>
+                            <div class='card' style='flex:2'>
+                              <div class='grid'>
+                                <div class='stat card'>
+                                  <div class='label'>Total Keys</div>
+                                  <div class='value'>{total_keys}</div>
+                                  <div class='muted'>All keys in database</div>
                                 </div>
-                                <div class="stat-box">
-                                    <div class="stat-number">{active_keys}</div>
-                                    <div class="stat-label">Active Keys</div>
+                                <div class='stat card'>
+                                  <div class='label'>Active</div>
+                                  <div class='value'>{active_keys}</div>
+                                  <div class='muted'>Currently valid</div>
                                 </div>
-                                <div class="stat-box">
-                                    <div class="stat-number">{revoked_keys}</div>
-                                    <div class="stat-label">Revoked Keys</div>
+                                <div class='stat card'>
+                                  <div class='label'>Revoked</div>
+                                  <div class='value'>{revoked_keys}</div>
+                                  <div class='muted'>Access removed</div>
                                 </div>
-                                <div class="stat-box">
-                                    <div class="stat-number">{deleted_keys}</div>
-                                    <div class="stat-label">Deleted Keys</div>
+                                <div class='stat card'>
+                                  <div class='label'>Deleted</div>
+                                  <div class='value'>{deleted_keys}</div>
+                                  <div class='muted'>Moved to recycle</div>
                                 </div>
+                              </div>
+                              <div class='actions'>
+                                <a href='/keys'>Manage Keys</a>
+                                <a href='/generate-form'>Generate Keys</a>
+                                <a href='/my'>My Keys</a>
+                                <a href='/backup'>Backup</a>
+                              </div>
                             </div>
-                            
-                            <h3>📅 Keys by Type</h3>
-                            <div class="stats">
-                                <div class="stat-box">
-                                    <div class="stat-number">{daily_keys}</div>
-                                    <div class="stat-label">Daily Keys</div>
-                                    <div class="stat-sub">Available: {available_daily}</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-number">{weekly_keys}</div>
-                                    <div class="stat-label">Weekly Keys</div>
-                                    <div class="stat-sub">Available: {available_weekly}</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-number">{monthly_keys}</div>
-                                    <div class="stat-label">Monthly Keys</div>
-                                    <div class="stat-sub">Available: {available_monthly}</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-number">{lifetime_keys}</div>
-                                    <div class="stat-label">Lifetime Keys</div>
-                                    <div class="stat-sub">Available: {available_lifetime}</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="stat-number">{general_keys}</div>
-                                    <div class="stat-label">General Keys</div>
-                                    <div class="stat-sub">Available: {available_general}</div>
-                                </div>
+                          </div>
+                          <div style='height:16px'></div>
+                          <div class='card'>
+                            <div class='kgrid'>
+                              <div class='kbox'>
+                                <div class='ttl'>Daily Keys</div>
+                                <div class='num'>{daily_keys}</div>
+                                <div class='sub'>Available: {available_daily}</div>
+                              </div>
+                              <div class='kbox'>
+                                <div class='ttl'>Weekly Keys</div>
+                                <div class='num'>{weekly_keys}</div>
+                                <div class='sub'>Available: {available_weekly}</div>
+                              </div>
+                              <div class='kbox'>
+                                <div class='ttl'>Monthly Keys</div>
+                                <div class='num'>{monthly_keys}</div>
+                                <div class='sub'>Available: {available_monthly}</div>
+                              </div>
+                              <div class='kbox'>
+                                <div class='ttl'>Lifetime Keys</div>
+                                <div class='num'>{lifetime_keys}</div>
+                                <div class='sub'>Available: {available_lifetime}</div>
+                              </div>
+                              <div class='kbox'>
+                                <div class='ttl'>General Keys</div>
+                                <div class='num'>{general_keys}</div>
+                                <div class='sub'>Available: {available_general}</div>
+                              </div>
                             </div>
-                            
-                            <p><em>🔄 Keys are automatically synced between Discord and the website in real-time</em></p>
-                            <p><em>📱 Use /generatekeys in Discord to create bulk keys</em></p>
-                            <p><em>🌐 Website updates automatically when keys are generated, revoked, or deleted</em></p>
-                        </div>
-                    </body>
+                            <div class='muted' style='margin-top:10px'>
+                              Status: Online • {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} • Bot: {bot.user.name if bot.user else 'Starting...'}
+                            </div>
+                          </div>
+                        </main>
+                      </body>
                     </html>
                     """
                     self.wfile.write(response.encode())
