@@ -39,7 +39,7 @@ ROLE_ID = 1404221578782183556
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
 
 # Special admin user IDs for key generation and management
-SPECIAL_ADMIN_IDS = [485182079923912734, 485182079923912734]  # Add both user IDs here
+SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734]  # Admin user IDs
 
 # Webhook configuration for key notifications and selfbot launches
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
@@ -624,7 +624,8 @@ async def help_command(interaction: discord.Interaction):
         "/status": "Show bot status and statistics",
         "/generatekeys [daily] [weekly] [monthly] [lifetime]": "🔒 Generate bulk keys (Special Admin Only)",
         "/viewkeys": "🔒 View available keys by type (Special Admin Only)",
-        "/activekeys": "🔑 List all active keys with remaining time and assigned user"
+        "/activekeys": "🔑 List all active keys with remaining time and assigned user",
+        "/expiredkeys": "🗓️ List expired keys"
     }
     
     for cmd, desc in commands_info.items():
@@ -1000,45 +1001,22 @@ async def view_available_keys(interaction: discord.Interaction):
         color=0x2d6cdf
     )
     
-    # Daily Keys
+    def list_block(items):
+        if not items:
+            return "None"
+        return "\n".join([f"`{i['key']}` - Expires <t:{i['expires']}:R>" for i in items])
+
     daily_keys = available_keys["daily"]
-    if daily_keys:
-        daily_text = "\n".join([f"`{key['key']}` - Expires <t:{key['expires']}:R>" for key in daily_keys[:5]])
-        if len(daily_keys) > 5:
-            daily_text += f"\n... and {len(daily_keys) - 5} more"
-        embed.add_field(name=f"📅 Daily Keys ({len(daily_keys)})", value=daily_text, inline=False)
-    else:
-        embed.add_field(name="📅 Daily Keys (0)", value="No daily keys available", inline=False)
-    
-    # Weekly Keys
+    embed.add_field(name=f"📅 Daily Keys ({len(daily_keys)})", value=list_block(daily_keys), inline=False)
+
     weekly_keys = available_keys["weekly"]
-    if weekly_keys:
-        weekly_text = "\n".join([f"`{key['key']}` - Expires <t:{key['expires']}:R>" for key in weekly_keys[:5]])
-        if len(weekly_keys) > 5:
-            weekly_text += f"\n... and {len(weekly_keys) - 5} more"
-        embed.add_field(name=f"📅 Weekly Keys ({len(weekly_keys)})", value=weekly_text, inline=False)
-    else:
-        embed.add_field(name="📅 Weekly Keys (0)", value="No weekly keys available", inline=False)
-    
-    # Monthly Keys
+    embed.add_field(name=f"📅 Weekly Keys ({len(weekly_keys)})", value=list_block(weekly_keys), inline=False)
+
     monthly_keys = available_keys["monthly"]
-    if monthly_keys:
-        monthly_text = "\n".join([f"`{key['key']}` - Expires <t:{key['expires']}:R>" for key in monthly_keys[:5]])
-        if len(monthly_keys) > 5:
-            monthly_text += f"\n... and {len(monthly_keys) - 5} more"
-        embed.add_field(name=f"📅 Monthly Keys ({len(monthly_keys)})", value=monthly_text, inline=False)
-    else:
-        embed.add_field(name="📅 Monthly Keys (0)", value="No monthly keys available", inline=False)
-    
-    # Lifetime Keys
+    embed.add_field(name=f"📅 Monthly Keys ({len(monthly_keys)})", value=list_block(monthly_keys), inline=False)
+
     lifetime_keys = available_keys["lifetime"]
-    if lifetime_keys:
-        lifetime_text = "\n".join([f"`{key['key']}` - Expires <t:{key['expires']}:R>" for key in lifetime_keys[:5]])
-        if len(lifetime_keys) > 5:
-            lifetime_text += f"\n... and {len(lifetime_keys) - 5} more"
-        embed.add_field(name=f"📅 Lifetime Keys ({len(lifetime_keys)})", value=lifetime_text, inline=False)
-    else:
-        embed.add_field(name="📅 Lifetime Keys (0)", value="No lifetime keys available", inline=False)
+    embed.add_field(name=f"📅 Lifetime Keys ({len(lifetime_keys)})", value=list_block(lifetime_keys), inline=False)
     
     embed.set_footer(text="Use /generatekeys to create more keys")
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1139,6 +1117,36 @@ async def active_keys(interaction: discord.Interaction):
     )
     if len(active_items) > 20:
         embed.set_footer(text=f"Showing 20 of {len(active_items)} active keys")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="expiredkeys", description="List expired keys")
+async def expired_keys(interaction: discord.Interaction):
+    if not await check_permissions(interaction):
+        return
+    now = int(time.time())
+    items = []
+    for key, data in key_manager.keys.items():
+        expires = data.get("expiration_time", 0)
+        if expires and expires <= now:
+            user_id = data.get("user_id", 0)
+            user_display = "Unassigned" if user_id == 0 else f"<@{user_id}>"
+            items.append((key, expires, user_display))
+
+    if not items:
+        await interaction.response.send_message("✅ No expired keys.", ephemeral=True)
+        return
+
+    items.sort(key=lambda x: x[1], reverse=True)
+    lines = [f"`{k}` — expired <t:{ts}:R> — {user}" for k, ts, user in items[:20]]
+
+    embed = discord.Embed(
+        title="🗓️ Expired Keys",
+        description="\n".join(lines),
+        color=0xFF5555
+    )
+    if len(items) > 20:
+        embed.set_footer(text=f"Showing 20 of {len(items)} expired keys")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
