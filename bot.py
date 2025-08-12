@@ -1469,6 +1469,138 @@ def start_health_check():
                     self.wfile.write(html_doc.encode())
                     return
 
+                if self.path.startswith('/my'):
+                    # My Keys page: enter Discord user ID to view assigned keys
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    user_q = q.get('user_id', [""])[0]
+                    try:
+                        target_uid = int(user_q) if user_q else None
+                    except Exception:
+                        target_uid = None
+
+                    now_ts = int(time.time())
+                    rows = []
+                    if target_uid is not None:
+                        for key, data in key_manager.keys.items():
+                            if data.get('user_id', 0) == target_uid:
+                                expires = data.get('expiration_time', 0)
+                                remaining = max(0, expires - now_ts)
+                                is_active = data.get('is_active', False)
+                                status = 'revoked' if not is_active else ('expired' if expires <= now_ts else 'active')
+                                rows.append({
+                                    'key': key,
+                                    'status': status,
+                                    'expires': expires,
+                                    'remaining': remaining,
+                                    'type': data.get('key_type','')
+                                })
+                    def fmt_rem(sec:int):
+                        d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
+                        return f"{d}d {h}h {m}m" if sec>0 else '—'
+                    table_rows = []
+                    for r in rows:
+                        safe_key = html.escape(r['key'])
+                        table_rows.append(f"""
+                        <tr>
+                          <td><code>{safe_key}</code></td>
+                          <td>{html.escape(r['type'])}</td>
+                          <td>{html.escape(r['status'].capitalize())}</td>
+                          <td>{fmt_rem(r['remaining'])}</td>
+                          <td><t:{r['expires']}:R></td>
+                        </tr>
+                        """)
+                    page = f"""
+                    <html><head><title>My Keys</title>
+                      <style>
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
+                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
+                        a.nav:hover{{background:#1a2448}}
+                        main{{padding:24px}}
+                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
+                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
+                        th{{color:#9ab0ff}}
+                        input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
+                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
+                        button:hover{{background:#2248cc}}
+                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
+                      </style>
+                    </head>
+                    <body>
+                      <header>
+                        <a class='nav' href='/'>Dashboard</a>
+                        <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/my'>My Keys</a>
+                        <a class='nav' href='/deleted'>Deleted</a>
+                        <a class='nav' href='/generate-form'>Generate</a>
+                        <a class='nav' href='/backup'>Backup</a>
+                      </header>
+                      <main>
+                        <div class='card'>
+                          <h2>My Keys</h2>
+                          <form method='GET' action='/my'>
+                            <label>Discord User ID</label>
+                            <input type='text' name='user_id' value='{html.escape(user_q)}' placeholder='Enter your Discord user ID'/>
+                            <button type='submit'>View</button>
+                          </form>
+                          <table>
+                            <thead><tr><th>Key</th><th>Type</th><th>Status</th><th>Remaining</th><th>Expires</th></tr></thead>
+                            <tbody>
+                              {''.join(table_rows) if table_rows else ('<tr><td colspan="5">Enter your Discord user ID above to view assigned keys</td></tr>' if not user_q else '<tr><td colspan="5">No keys found for this user</td></tr>')}
+                            </tbody>
+                          </table>
+                          { (f"<p style='margin-top:12px'><a class='nav' href='/backup?user_id={html.escape(user_q)}'>Download backup for this user</a></p>" if user_q else '') }
+                        </div>
+                      </main>
+                    </body></html>
+                    """
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    self.wfile.write(page.encode())
+                    return
+
+                if self.path.startswith('/backup'):
+                    # JSON backup; optional user_id filter
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    user_q = q.get('user_id', [None])[0]
+                    payload = {}
+                    if user_q:
+                        try:
+                            uid = int(user_q)
+                        except Exception:
+                            uid = None
+                        if uid is not None:
+                            subset = {}
+                            subset_usage = {}
+                            for k, data in key_manager.keys.items():
+                                if data.get('user_id', 0) == uid:
+                                    subset[k] = data
+                                    if k in key_manager.key_usage:
+                                        subset_usage[k] = key_manager.key_usage[k]
+                            payload = {
+                                'keys': subset,
+                                'usage': subset_usage
+                            }
+                        else:
+                            payload = {'error': 'invalid user_id'}
+                    else:
+                        payload = {
+                            'keys': key_manager.keys,
+                            'usage': key_manager.key_usage,
+                            'deleted_keys': key_manager.deleted_keys
+                        }
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Disposition', 'attachment; filename="backup.json"')
+                    self.end_headers()
+                    import json
+                    self.wfile.write(json.dumps(payload, indent=2).encode())
+                    return
+
                 if self.path == '/':
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
