@@ -67,7 +67,7 @@ CHANNEL_ID = 1404537520754135231  # Channel ID from webhook
 ACTIVATION_FILE = "activation.json"
 GUILD_ID = 1402622761246916628  # Your Discord server ID
 ROLE_ID = 1404221578782183556  # Role ID that grants access
-SERVICE_URL = "https://discord-key-bot-wd75.onrender.com"  # Bot website for API
+SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-wd75.onrender.com")  # Bot website for API (overridable)
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
@@ -180,19 +180,61 @@ class Selfbot:
                 print("❌ No user ID provided. Activation failed.")
                 return False
 
+            # Optional preflight: check key existence/info
+            try:
+                info_resp = requests.get(
+                    f"{SERVICE_URL}/api/key-info",
+                    params={"key": activation_key},
+                    timeout=8,
+                )
+                if info_resp.status_code == 200:
+                    info_json = {}
+                    try:
+                        info_json = info_resp.json()
+                    except Exception:
+                        info_json = {}
+                    if isinstance(info_json, dict) and info_json.get("exists") is False:
+                        print("❌ Activation failed: key not found or deleted.")
+                        return False
+                # If non-200, continue; server may not expose key-info in all environments
+            except Exception:
+                pass
+
             # Bind key server-side to user+machine (starts timer on first activation)
             try:
+                try:
+                    uid_str = str(int(str(self.user_id).strip()))
+                except Exception:
+                    print("❌ Invalid user ID. Must be a numeric Discord ID.")
+                    return False
                 resp = requests.post(
                     f"{SERVICE_URL}/api/activate",
                     data={
                         "key": activation_key,
-                        "user_id": str(self.user_id),
+                        "user_id": uid_str,
                         "machine_id": machine_id(),
                     },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                     timeout=8,
                 )
                 if resp.status_code != 200:
-                    print(f"❌ Activation failed on server: HTTP {resp.status_code}")
+                    # Try to display useful error details from server
+                    server_msg = None
+                    try:
+                        j = resp.json()
+                        if isinstance(j, dict):
+                            server_msg = j.get("error") or j.get("message")
+                    except Exception:
+                        server_msg = None
+                    if not server_msg:
+                        try:
+                            server_msg = resp.text.strip()
+                        except Exception:
+                            server_msg = None
+                    if server_msg:
+                        print(f"❌ Activation failed on server: HTTP {resp.status_code} • {server_msg}")
+                    else:
+                        print(f"❌ Activation failed on server: HTTP {resp.status_code}")
                     return False
                 act_json = resp.json()
                 if not act_json.get("success"):
