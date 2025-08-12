@@ -149,15 +149,15 @@ class KeyManager:
         key_length = random.randint(10, 12)
         key = ''.join(random.choices(string.ascii_letters + string.digits, k=key_length))
         
-        activation_time = int(time.time())
-        expiration_time = activation_time + (duration_days * 24 * 60 * 60)
+        created_time = int(time.time())
         
         self.keys[key] = {
             "user_id": 0,  # 0 means unassigned - anyone can use it
             "channel_id": channel_id,
-            "activation_time": activation_time,
-            "expiration_time": expiration_time,
-            "duration_days": duration_days,  # Store duration for SelfBot
+            "created_time": created_time,
+            "activation_time": None,           # not activated yet
+            "expiration_time": None,           # will be set on activation
+            "duration_days": duration_days,    # store desired duration
             "is_active": True,
             "machine_id": None,
             "activated_by": None,
@@ -166,7 +166,7 @@ class KeyManager:
         }
         
         self.key_usage[key] = {
-            "created": activation_time,
+            "created": created_time,
             "activated": None,
             "last_used": None,
             "usage_count": 0
@@ -226,19 +226,25 @@ class KeyManager:
         if key_data["machine_id"] and key_data["machine_id"] != machine_id:
             return {"success": False, "error": "Key is already activated on another machine"}
         
-        if key_data["expiration_time"] < int(time.time()):
+        # If already has expiration_time and it's expired, block
+        if key_data.get("expiration_time") and key_data["expiration_time"] < int(time.time()):
             return {"success": False, "error": "Key has expired"}
         
-        # Activate the key
+        # Activate the key (first-time activation sets activation/expiration)
+        now_ts = int(time.time())
         key_data["machine_id"] = machine_id
         key_data["activated_by"] = user_id
         key_data["user_id"] = user_id
-        key_data["activated"] = int(time.time())
+        if not key_data.get("activation_time"):
+            key_data["activation_time"] = now_ts
+        if not key_data.get("expiration_time"):
+            duration_days = int(key_data.get("duration_days", 30))
+            key_data["expiration_time"] = now_ts + (duration_days * 24 * 60 * 60)
         
         # Update usage
         if key in self.key_usage:
-            self.key_usage[key]["activated"] = int(time.time())
-            self.key_usage[key]["last_used"] = int(time.time())
+            self.key_usage[key]["activated"] = now_ts
+            self.key_usage[key]["last_used"] = now_ts
             self.key_usage[key]["usage_count"] += 1
         
         self.save_data()
@@ -308,14 +314,14 @@ class KeyManager:
         # Generate daily keys (1 day)
         for _ in range(daily_count):
             key = str(uuid.uuid4())
-            activation_time = int(time.time())
-            expiration_time = activation_time + (1 * 24 * 60 * 60)  # 1 day
+            created_time = int(time.time())
             
             self.keys[key] = {
-                "user_id": 0,  # 0 means unassigned
+                "user_id": 0,
                 "channel_id": None,
-                "activation_time": activation_time,
-                "expiration_time": expiration_time,
+                "created_time": created_time,
+                "activation_time": None,
+                "expiration_time": None,
                 "duration_days": 1,
                 "key_type": "daily",
                 "is_active": True,
@@ -325,7 +331,7 @@ class KeyManager:
             }
             
             self.key_usage[key] = {
-                "created": activation_time,
+                "created": created_time,
                 "activated": None,
                 "last_used": None,
                 "usage_count": 0
@@ -336,14 +342,14 @@ class KeyManager:
         # Generate weekly keys (7 days)
         for _ in range(weekly_count):
             key = str(uuid.uuid4())
-            activation_time = int(time.time())
-            expiration_time = activation_time + (7 * 24 * 60 * 60)  # 7 days
+            created_time = int(time.time())
             
             self.keys[key] = {
-                "user_id": 0,  # 0 means unassigned
+                "user_id": 0,
                 "channel_id": None,
-                "activation_time": activation_time,
-                "expiration_time": expiration_time,
+                "created_time": created_time,
+                "activation_time": None,
+                "expiration_time": None,
                 "duration_days": 7,
                 "key_type": "weekly",
                 "is_active": True,
@@ -353,7 +359,7 @@ class KeyManager:
             }
             
             self.key_usage[key] = {
-                "created": activation_time,
+                "created": created_time,
                 "activated": None,
                 "last_used": None,
                 "usage_count": 0
@@ -364,16 +370,15 @@ class KeyManager:
         # Generate monthly keys (30 days)
         for _ in range(monthly_count):
             key = str(uuid.uuid4())
-            amount = 30
-            activation_time = int(time.time())
-            expiration_time = activation_time + (amount * 24 * 60 * 60)  # 30 days
+            created_time = int(time.time())
             
             self.keys[key] = {
-                "user_id": 0,  # 0 means unassigned
+                "user_id": 0,
                 "channel_id": None,
-                "activation_time": activation_time,
-                "expiration_time": expiration_time,
-                "duration_days": amount,
+                "created_time": created_time,
+                "activation_time": None,
+                "expiration_time": None,
+                "duration_days": 30,
                 "key_type": "monthly",
                 "is_active": True,
                 "machine_id": None,
@@ -382,7 +387,7 @@ class KeyManager:
             }
             
             self.key_usage[key] = {
-                "created": activation_time,
+                "created": created_time,
                 "activated": None,
                 "last_used": None,
                 "usage_count": 0
@@ -390,17 +395,17 @@ class KeyManager:
             
             generated_keys["monthly"].append(key)
         
-        # Generate lifetime keys (365 days = 1 year)
+        # Generate lifetime keys (365 days)
         for _ in range(lifetime_count):
             key = str(uuid.uuid4())
-            activation_time = int(time.time())
-            expiration_time = activation_time + (365 * 24 * 60 * 60)  # 365 days
+            created_time = int(time.time())
             
             self.keys[key] = {
-                "user_id": 0,  # 0 means unassigned
+                "user_id": 0,
                 "channel_id": None,
-                "activation_time": activation_time,
-                "expiration_time": expiration_time,
+                "created_time": created_time,
+                "activation_time": None,
+                "expiration_time": None,
                 "duration_days": 365,
                 "key_type": "lifetime",
                 "is_active": True,
@@ -410,7 +415,7 @@ class KeyManager:
             }
             
             self.key_usage[key] = {
-                "created": activation_time,
+                "created": created_time,
                 "activated": None,
                 "last_used": None,
                 "usage_count": 0
@@ -433,12 +438,13 @@ class KeyManager:
         for key, data in self.keys.items():
             if data["is_active"] and data["user_id"] == 0:  # Unassigned and active
                 key_type = data.get("key_type", "unknown")
+                available_entry = {
+                    "key": key,
+                    "created": data.get("created_time") or data.get("activation_time") or 0,
+                    "expires": data.get("expiration_time") or 0
+                }
                 if key_type in available_keys:
-                    available_keys[key_type].append({
-                        "key": key,
-                        "created": data["activation_time"],
-                        "expires": data["expiration_time"]
-                    })
+                    available_keys[key_type].append(available_entry)
         
         return available_keys
     
