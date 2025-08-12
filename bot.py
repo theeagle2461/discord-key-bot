@@ -1208,11 +1208,14 @@ async def sync_commands(interaction: discord.Interaction):
         return
     try:
         guild_obj = discord.Object(id=GUILD_ID)
-        bot.tree.copy_global_to_guild(guild=guild_obj)
+        bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
         await interaction.response.send_message(f"✅ Synced {len(synced)} commands to this guild.", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"❌ Sync failed: {e}", ephemeral=True)
+        if interaction.response.is_done():
+            await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Sync failed: {e}", ephemeral=True)
 
 @bot.event
 async def on_member_join(member):
@@ -1253,6 +1256,15 @@ import threading
 def start_health_check():
     """Start a simple HTTP server for health checks"""
     class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            if self.path == '/':
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                return
+            self.send_response(404)
+            self.end_headers()
+
         def do_GET(self):
             try:
                 # Simple HTML form for generating keys
