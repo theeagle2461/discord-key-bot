@@ -49,6 +49,11 @@ CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
+# Secret for signing panel session cookies
+PANEL_SECRET = os.getenv('PANEL_SECRET', None)
+if not PANEL_SECRET:
+    PANEL_SECRET = uuid.uuid4().hex  # ephemeral fallback; set PANEL_SECRET in env for persistent sessions
+
 # Fallback methods (for local development only)
 if not BOT_TOKEN:
     # Try to load from .env file
@@ -1258,6 +1263,65 @@ import threading
 
 def start_health_check():
     """Start a simple HTTP server for health checks"""
+    import base64, json as _json, hmac, hashlib
+
+    def _sign_payload(payload: str) -> str:
+        return hmac.new(PANEL_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+    def _encode_session(user_id: int, machine_id: str, ttl_seconds: int = 12*3600) -> str:
+        data = {
+            'user_id': int(user_id),
+            'machine_id': str(machine_id or ''),
+            'exp': int(time.time()) + int(ttl_seconds),
+        }
+        raw = _json.dumps(data, separators=(',', ':'))
+        sig = _sign_payload(raw)
+        tok = base64.urlsafe_b64encode((raw + '.' + sig).encode()).decode()
+        return tok
+
+    def _decode_session(token: str):
+        try:
+            raw = base64.urlsafe_b64decode(token.encode()).decode()
+            if '.' not in raw:
+                return None
+            payload, sig = raw.rsplit('.', 1)
+            if _sign_payload(payload) != sig:
+                return None
+            data = _json.loads(payload)
+            if int(data.get('exp', 0)) < int(time.time()):
+                return None
+            return data
+        except Exception:
+            return None
+
+    def _parse_cookies(header: str) -> dict:
+        cookies = {}
+        if not header:
+            return cookies
+        parts = [p.strip() for p in header.split(';') if p.strip()]
+        for p in parts:
+            if '=' in p:
+                k, v = p.split('=', 1)
+                cookies[k.strip()] = v.strip()
+        return cookies
+
+    def _has_active_access(uid: int, machine_id: str | None) -> bool:
+        now_ts = int(time.time())
+        bound_ok = False
+        has_active = False
+        for key, data in key_manager.keys.items():
+            if int(data.get('user_id', 0) or 0) != int(uid):
+                continue
+            exp = data.get('expiration_time') or 0
+            if not data.get('is_active', False):
+                continue
+            if exp and exp <= now_ts:
+                continue
+            has_active = True
+            if machine_id and data.get('machine_id') and str(data.get('machine_id')) == str(machine_id):
+                bound_ok = True
+        return bound_ok if machine_id else has_active
+
     class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
         def do_HEAD(self):
             if self.path == '/':
@@ -1267,9 +1331,118 @@ def start_health_check():
                 return
             self.send_response(404)
             self.end_headers()
-
+ 
         def do_GET(self):
             try:
+                # Session check for gated routes
+                cookies = _parse_cookies(self.headers.get('Cookie'))
+                session = _decode_session(cookies.get('panel_session')) if cookies.get('panel_session') else None
+                authed_uid = int(session.get('user_id')) if session else None
+                authed_mid = str(session.get('machine_id')) if session else None
+                authed_ok = (_has_active_access(authed_uid, authed_mid) if authed_uid is not None else False)
+
+                gated_paths = ['/', '/keys', '/generate-form', '/deleted', '/my', '/backup', '/sender']
+                if any(self.path == p or self.path.startswith(p + '?') for p in gated_paths):
+                    if not authed_ok:
+                        # Redirect to login
+                        self.send_response(303)
+                        self.send_header('Location', '/login')
+                        self.end_headers()
+                        return
+
+                if self.path == '/login':
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    page = f"""
+                    <html><head><title>Login</title>
+                      <style>
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
+                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        main{{padding:24px;max-width:520px;margin:0 auto}}
+                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        label{{display:block;margin:10px 0 6px}}
+                        input,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0;width:100%}}
+                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff;width:auto}}
+                        button:hover{{background:#2248cc}}
+                        .muted{{color:#9ab0ff}}
+                      </style>
+                    </head>
+                    <body>
+                      <header>🔑 Discord Key Bot • Login</header>
+                      <main>
+                        <div class='card'>
+                          <form method='POST' action='/login'>
+                            <label>Discord User ID</label>
+                            <input type='text' name='user_id' placeholder='e.g. 123456789012345678' required />
+                            <label>Activation Key</label>
+                            <input type='text' name='key' placeholder='Your activated key' required />
+                            <div style='margin-top:12px;display:flex;gap:8px'>
+                              <button type='submit'>Login</button>
+                              <a class='muted' href='/'>Back</a>
+                            </div>
+                          </form>
+                          <p class='muted' style='margin-top:10px'>Access requires an active key assigned to your user.</p>
+                        </div>
+                      </main>
+                    </body></html>
+                    """
+                    self.wfile.write(page.encode())
+                    return
+
+                if self.path == '/logout':
+                    self.send_response(303)
+                    self.send_header('Set-Cookie', 'panel_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0')
+                    self.send_header('Location', '/login')
+                    self.end_headers()
+                    return
+
+                if self.path == '/sender':
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    page = f"""
+                    <html><head><title>Message Sender</title>
+                      <style>
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
+                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        main{{padding:24px;max-width:720px;margin:0 auto}}
+                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        label{{display:block;margin:10px 0 6px}}
+                        input,textarea,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0;width:100%}}
+                        textarea{{min-height:140px;resize:vertical}}
+                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff;width:auto}}
+                        button:hover{{background:#2248cc}}
+                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
+                        a.nav:hover{{background:#1a2448}}
+                      </style>
+                    </head>
+                    <body>
+                      <header>
+                        <a class='nav' href='/'>Dashboard</a>
+                        <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/my'>My Keys</a>
+                        <a class='nav' href='/sender'>Sender</a>
+                        <a class='nav' href='/logout'>Logout</a>
+                      </header>
+                      <main>
+                        <div class='card'>
+                          <h2>Send a Message</h2>
+                          <form method='POST' action='/sender'>
+                            <label>Channel ID</label>
+                            <input type='text' name='channel_id' placeholder='Target channel ID' required />
+                            <label>Message</label>
+                            <textarea name='content' placeholder='Type your message...' required></textarea>
+                            <div style='margin-top:12px'><button type='submit'>Send</button></div>
+                          </form>
+                          <p class='muted' style='margin-top:10px'>Messages are sent by the bot and require the bot to have permission in the channel.</p>
+                        </div>
+                      </main>
+                    </body></html>
+                    """
+                    self.wfile.write(page.encode())
+                    return
+
                 # Simple HTML form for generating keys
                 if self.path == '/generate-form':
                     self.send_response(200)
@@ -1282,69 +1455,54 @@ def start_health_check():
                         lis = ''.join([f"<li><code>{html.escape(k)}</code></li>" for k in arr[:50]])
                         more = f"<p class='muted'>...and {len(arr)-50} more</p>" if len(arr)>50 else ''
                         return f"<h4>{name}</h4><ul>{lis}</ul>{more}"
-
-                    form_html = f"""
-                    <html><head><title>Generate Keys</title>
-                      <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
-                        main{{padding:24px}}
-                        .layout{{display:grid;grid-template-columns:1fr 360px;gap:16px;align-items:start}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
-                        label{{display:block;margin:10px 0 6px}}
-                        input,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
-                        button:hover{{background:#2248cc}}
-                        h3,h4{{margin:6px 0 8px}}
-                        ul{{margin:8px 0 0 18px; padding:0}}
-                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
-                        .muted{{color:#9ab0ff}}
-                        .closebtn{{float:right;background:#19214a;border-color:#19214a}}
-                      </style>
-                    </head>
-                    <body>
-                      <header>
-                        <a class='nav' href='/'>Dashboard</a>
-                        <a class='nav' href='/keys'>Keys</a>
-                        <a class='nav' href='/my'>My Keys</a>
-                        <a class='nav' href='/deleted'>Deleted</a>
-                        <a class='nav' href='/backup'>Backup</a>
-                        <a class='nav' href='/generate-form'>Generate</a>
-                      </header>
-                      <main>
-                        <div class='layout'>
-                          <div class='card'>
-                            <h2>Generate Keys</h2>
-                            <form method='POST' action='/generate'>
-                              <label>Daily</label><input type='number' name='daily' min='0' value='0'/>
-                              <label>Weekly</label><input type='number' name='weekly' min='0' value='0'/>
-                              <label>Monthly</label><input type='number' name='monthly' min='0' value='0'/>
-                              <label>Lifetime</label><input type='number' name='lifetime' min='0' value='0'/>
-                              <div style='margin-top:12px'>
-                                <button type='submit'>Generate</button>
-                              </div>
-                            </form>
+                 
+                form_html = f"""
+                <html><head><title>Generate Keys</title>
+                  <style>
+                    ... existing code ...
+                  </style>
+                </head>
+                <body>
+                  <header>
+                    <a class='nav' href='/'>Dashboard</a>
+                    <a class='nav' href='/keys'>Keys</a>
+                    <a class='nav' href='/my'>My Keys</a>
+                    <a class='nav' href='/deleted'>Deleted</a>
+                    <a class='nav' href='/backup'>Backup</a>
+                    <a class='nav' href='/generate-form'>Generate</a>
+                  </header>
+                  <main>
+                    <div class='layout'>
+                      <div class='card'>
+                        <h2>Generate Keys</h2>
+                        <form method='POST' action='/generate'>
+                          <label>Daily</label><input type='number' name='daily' min='0' value='0'/>
+                          <label>Weekly</label><input type='number' name='weekly' min='0' value='0'/>
+                          <label>Monthly</label><input type='number' name='monthly' min='0' value='0'/>
+                          <label>Lifetime</label><input type='number' name='lifetime' min='0' value='0'/>
+                          <div style='margin-top:12px'>
+                            <button type='submit'>Generate</button>
                           </div>
-                          <div class='card'>
-                            <div>
-                              <h3 style='display:inline'>Last Generated</h3>
-                              <form method='GET' action='/generate-form' style='display:inline'>
-                                <button class='closebtn' title='Close panel'>&times;</button>
-                              </form>
-                            </div>
-                            {block('Daily', lg.get('daily', []))}
-                            {block('Weekly', lg.get('weekly', []))}
-                            {block('Monthly', lg.get('monthly', []))}
-                            {block('Lifetime', lg.get('lifetime', []))}
-                          </div>
+                        </form>
+                      </div>
+                      <div class='card'>
+                        <div>
+                          <h3 style='display:inline'>Last Generated</h3>
+                          <form method='GET' action='/generate-form' style='display:inline'>
+                            <button class='closebtn' title='Close panel'>&times;</button>
+                          </form>
                         </div>
-                      </main>
-                    </body></html>
-                    """
-                    self.wfile.write(form_html.encode())
-                    return
+                        {block('Daily', lg.get('daily', []))}
+                        {block('Weekly', lg.get('weekly', []))}
+                        {block('Monthly', lg.get('monthly', []))}
+                        {block('Lifetime', lg.get('lifetime', []))}
+                      </div>
+                    </div>
+                  </main>
+                </body></html>
+                """
+                self.wfile.write(form_html.encode())
+                return
 
                 if self.path.startswith('/keys'):
                     # Filters
@@ -2058,6 +2216,48 @@ def start_health_check():
                     self.end_headers()
                     import json
                     self.wfile.write(json.dumps(resp, indent=2).encode())
+                    return
+
+                if self.path == '/sender':
+                    # Auth check via cookie
+                    cookies = _parse_cookies(self.headers.get('Cookie'))
+                    session = _decode_session(cookies.get('panel_session')) if cookies.get('panel_session') else None
+                    authed_uid = int(session.get('user_id')) if session else None
+                    authed_mid = str(session.get('machine_id')) if session else None
+                    if not authed_uid or not _has_active_access(authed_uid, authed_mid):
+                        self.send_response(303)
+                        self.send_header('Location', '/login')
+                        self.end_headers()
+                        return
+                    # Parse form
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    data = urllib.parse.parse_qs(body)
+                    chan_str = (data.get('channel_id', [''])[0]).strip()
+                    content = (data.get('content', [''])[0]).strip()
+                    ok = False
+                    err = None
+                    try:
+                        cid = int(chan_str)
+                        ch = bot.get_channel(cid)
+                        if ch is None:
+                            err = 'Bot cannot see this channel'
+                        elif not content:
+                            err = 'Empty message'
+                        else:
+                            fut = asyncio.run_coroutine_threadsafe(ch.send(content), bot.loop)
+                            fut.result(timeout=5)
+                            ok = True
+                    except Exception as e:
+                        err = str(e)
+                    # Redirect back with a flash-like message in query
+                    self.send_response(303)
+                    if ok:
+                        self.send_header('Location', '/sender')
+                    else:
+                        msg = urllib.parse.quote(err or 'Failed')
+                        self.send_header('Location', f'/sender?err={msg}')
+                    self.end_headers()
                     return
 
                 self.send_response(404)
