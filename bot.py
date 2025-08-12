@@ -581,24 +581,22 @@ async def on_ready():
     # Set bot status
     await bot.change_presence(activity=discord.Game(name="Managing Keys | /help"))
     
-    # Sync slash commands
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} command(s) globally")
-    except Exception as e:
-        print(f"❌ Failed to sync global commands: {e}")
-    
-    # Optional: fast sync to a specific guild for instant availability
+    # Guild-only sync for instant availability, avoid duplicate global+guild commands
     try:
         env_guild_id = os.getenv('GUILD_ID')
         if env_guild_id:
             guild_id = int(env_guild_id)
             guild_obj = discord.Object(id=guild_id)
-            bot.tree.copy_global_to_guild(guild=guild_obj)
+            bot.tree.clear_commands(guild=guild_obj)
+            bot.tree.copy_global_to(guild=guild_obj)
             guild_synced = await bot.tree.sync(guild=guild_obj)
             print(f"✅ Synced {len(guild_synced)} command(s) to guild {guild_id}")
+        else:
+            # Fallback to global sync if no guild specified
+            synced = await bot.tree.sync()
+            print(f"✅ Synced {len(synced)} command(s) globally")
     except Exception as e:
-        print(f"⚠️ Guild sync failed: {e}")
+        print(f"⚠️ Command sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
     if not reconcile_roles_task.is_running():
@@ -1209,6 +1207,7 @@ async def sync_commands(interaction: discord.Interaction):
         return
     try:
         guild_obj = discord.Object(id=GUILD_ID)
+        bot.tree.clear_commands(guild=guild_obj)
         bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
         await interaction.response.send_message(f"✅ Synced {len(synced)} commands to this guild.", ephemeral=True)
