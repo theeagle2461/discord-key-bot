@@ -1673,12 +1673,12 @@ def start_health_check():
                         for key, data in key_manager.keys.items():
                             if data.get('user_id', 0) != uid:
                                 continue
-                            expires = data.get('expiration_time', 0)
-                            if data.get('is_active', False) and expires > now_ts:
+                            expires = data.get('expiration_time', 0) or 0
+                            if data.get('is_active', False) and (expires == 0 or expires > now_ts):
                                 item = {
                                     'key': key,
                                     'expires_at': expires,
-                                    'time_remaining': expires - now_ts,
+                                    'time_remaining': (expires - now_ts) if expires else 0,
                                     'type': data.get('key_type', 'general'),
                                     'machine_id': data.get('machine_id')
                                 }
@@ -1707,6 +1707,39 @@ def start_health_check():
                     self.end_headers()
                     import json
                     self.wfile.write(json.dumps(resp, indent=2).encode())
+                    return
+
+                if self.path.startswith('/api/key-info'):
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    key = (q.get('key', [None])[0])
+                    import json
+                    if not key:
+                        self.send_response(400)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'error':'missing key'}).encode())
+                        return
+                    info = None
+                    if key in key_manager.keys:
+                        d = key_manager.keys[key]
+                        info = {
+                            'exists': True,
+                            'is_active': d.get('is_active', False),
+                            'user_id': d.get('user_id', 0),
+                            'machine_id': d.get('machine_id'),
+                            'duration_days': d.get('duration_days'),
+                            'created_time': d.get('created_time'),
+                            'activation_time': d.get('activation_time'),
+                            'expiration_time': d.get('expiration_time'),
+                            'key_type': d.get('key_type','general')
+                        }
+                    else:
+                        info = {'exists': False}
+                    self.send_response(200)
+                    self.send_header('Content-Type','application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(info, indent=2).encode())
                     return
 
                 if self.path == '/':
@@ -1954,9 +1987,11 @@ def start_health_check():
                             resp = result
                             if not result.get('success'):
                                 status_code = 400
+                                print(f"/api/activate failure for key={key}: {result}")
                         except Exception as e:
                             resp = {'success': False, 'error': str(e)}
                             status_code = 500
+                            print(f"/api/activate exception: {e}")
                     self.send_response(status_code)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
