@@ -35,7 +35,7 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 # Configuration
 GUILD_ID = 1402622761246916628
 ROLE_ID = 1404221578782183556
-ADMIN_ROLE_ID = 1404221578782183556  # Role that can manage keys
+ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
 
 # Special admin user IDs for key generation and management
 SPECIAL_ADMIN_IDS = [485182079923912734, 485182079923912734]  # Add both user IDs here
