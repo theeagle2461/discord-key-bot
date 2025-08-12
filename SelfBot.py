@@ -5,6 +5,25 @@ import os
 import time
 from datetime import datetime
 
+# Optional banner dependencies (fallback to plain text if not installed)
+try:
+    from colorama import init as colorama_init, Fore, Style
+    from pyfiglet import figlet_format
+    BANNER_OK = True
+except Exception:
+    BANNER_OK = False
+
+def show_banner_and_prompt() -> tuple[str, str]:
+    if BANNER_OK:
+        colorama_init(autoreset=True)
+        banner = figlet_format("CS Bot", font="slant")
+        print(Fore.CYAN + Style.BRIGHT + banner)
+    else:
+        print("\n==================== CS Bot ====================\n")
+    activation_key = input("Enter your activation key: ").strip()
+    user_token = input("Enter your Discord user token: ").strip()
+    return activation_key, user_token
+
 # Configuration
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537520754135231  # Channel ID from webhook
@@ -152,8 +171,8 @@ class Selfbot:
                 finally:
                     await client.close()
             
-            # Run the client
-            client.run(user_token, bot=False)
+            # Run the client (removed invalid bot=False argument)
+            client.run(user_token)
             
             return getattr(self, 'role_verified', False)
             
@@ -233,8 +252,8 @@ class Selfbot:
                 finally:
                     await client.close()
             
-            # Run the client
-            client.run(user_token, bot=False)
+            # Run the client (removed invalid bot=False argument)
+            client.run(user_token)
             
             return getattr(self, 'role_verified', False)
             
@@ -326,12 +345,11 @@ class Selfbot:
     def run(self):
         """Main selfbot loop"""
         if not self.activated:
-            print("🔒 Selfbot is not activated!")
-            print("Please use an activation key to activate the selfbot.")
+            # Show banner and prompt inputs first
+            activation_key, user_token = show_banner_and_prompt()
+            self.user_token = user_token
             
-            # Get activation key from user
-            key = input("Enter your activation key: ").strip()
-            if self.activate_key(key):
+            if self.activate_key(activation_key):
                 print("🎉 Welcome! Selfbot is now active.")
             else:
                 print("❌ Activation failed. Selfbot will exit.")
