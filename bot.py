@@ -653,8 +653,28 @@ async def check_permissions(interaction) -> bool:
     if not member:
         await interaction.response.send_message("❌ Unable to verify your permissions.", ephemeral=True)
         return False
-    
-    if ADMIN_ROLE_ID not in [role.id for role in member.roles]:
+
+    # Special admins always allowed
+    if interaction.user.id in SPECIAL_ADMIN_IDS:
+        return True
+
+    # Commands that everyone can use
+    public_commands = {
+        "help", "activate", "keys", "info", "status", "activekeys", "expiredkeys",
+        "sync", "synccommands"
+    }
+    cmd_name = None
+    try:
+        cmd_name = getattr(interaction.command, "name", None)
+    except Exception:
+        cmd_name = None
+
+    if cmd_name in public_commands:
+        return True
+
+    # For all other commands, require admin role
+    has_admin_role = ADMIN_ROLE_ID in [role.id for role in member.roles]
+    if not has_admin_role:
         await interaction.response.send_message("❌ You don't have permission to use this bot.", ephemeral=True)
         return False
     
