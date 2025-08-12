@@ -1649,10 +1649,11 @@ def start_health_check():
                     return
 
                 if self.path.startswith('/api/member-status'):
-                    # Return whether a user should have the role based on active keys and time remaining
+                    # Return whether a user should have access based on active keys and optional machine binding
                     parsed = urllib.parse.urlparse(self.path)
                     q = urllib.parse.parse_qs(parsed.query or '')
                     user_q = q.get('user_id', [None])[0]
+                    machine_q = q.get('machine_id', [None])[0]
                     try:
                         uid = int(user_q) if user_q is not None else None
                     except Exception:
@@ -1661,28 +1662,36 @@ def start_health_check():
                     now_ts = int(time.time())
                     active_items = []
                     expired_count = 0
+                    bound_match = False
                     if uid is not None:
                         for key, data in key_manager.keys.items():
                             if data.get('user_id', 0) != uid:
                                 continue
                             expires = data.get('expiration_time', 0)
                             if data.get('is_active', False) and expires > now_ts:
-                                active_items.append({
+                                item = {
                                     'key': key,
                                     'expires_at': expires,
                                     'time_remaining': expires - now_ts,
-                                    'type': data.get('key_type', 'general')
-                                })
+                                    'type': data.get('key_type', 'general'),
+                                    'machine_id': data.get('machine_id')
+                                }
+                                active_items.append(item)
+                                if machine_q and data.get('machine_id') and str(data.get('machine_id')) == str(machine_q):
+                                    bound_match = True
                             else:
                                 if expires and expires <= now_ts:
                                     expired_count += 1
 
-                    should_have_role = len(active_items) > 0
+                    has_active_key = len(active_items) > 0
+                    should_have_access = bound_match if machine_q else has_active_key
                     resp = {
                         'user_id': uid,
-                        'should_have_role': should_have_role,
                         'role_id': ROLE_ID,
                         'guild_id': GUILD_ID,
+                        'has_active_key': has_active_key,
+                        'bound_to_machine': bound_match,
+                        'should_have_access': should_have_access,
                         'active_keys': active_items,
                         'expired_keys_count': expired_count,
                         'last_updated': now_ts
