@@ -575,9 +575,21 @@ async def on_ready():
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} command(s)")
+        print(f"✅ Synced {len(synced)} command(s) globally")
     except Exception as e:
-        print(f"❌ Failed to sync commands: {e}")
+        print(f"❌ Failed to sync global commands: {e}")
+    
+    # Optional: fast sync to a specific guild for instant availability
+    try:
+        env_guild_id = os.getenv('GUILD_ID')
+        if env_guild_id:
+            guild_id = int(env_guild_id)
+            guild_obj = discord.Object(id=guild_id)
+            bot.tree.copy_global_to_guild(guild=guild_obj)
+            guild_synced = await bot.tree.sync(guild=guild_obj)
+            print(f"✅ Synced {len(guild_synced)} command(s) to guild {guild_id}")
+    except Exception as e:
+        print(f"⚠️ Guild sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
 
