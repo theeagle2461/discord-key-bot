@@ -1142,6 +1142,19 @@ async def active_keys(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
+async def sync_commands(interaction: discord.Interaction):
+    if not interaction.guild or interaction.guild.id != GUILD_ID:
+        await interaction.response.send_message("❌ Wrong server.", ephemeral=True)
+        return
+    try:
+        guild_obj = discord.Object(id=GUILD_ID)
+        bot.tree.copy_global_to_guild(guild=guild_obj)
+        synced = await bot.tree.sync(guild=guild_obj)
+        await interaction.response.send_message(f"✅ Synced {len(synced)} commands to this guild.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Sync failed: {e}", ephemeral=True)
+
 @bot.event
 async def on_member_join(member):
     """Automatically give role to new members if they have a valid key"""

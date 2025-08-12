@@ -10,8 +10,7 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: 3.9.16
-      - key: PORT
-        value: 8080
+      # Removed PORT: Render provides PORT automatically
       - key: GUILD_ID
         value: 1402622761246916628
     healthCheckPath: /
