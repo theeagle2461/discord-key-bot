@@ -20,6 +20,7 @@ import http.server
 import socketserver
 import threading
 import requests
+import urllib.parse
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -618,7 +619,8 @@ async def help_command(interaction: discord.Interaction):
         "/restore [backup_file]": "Restore keys from backup",
         "/status": "Show bot status and statistics",
         "/generatekeys [daily] [weekly] [monthly] [lifetime]": "🔒 Generate bulk keys (Special Admin Only)",
-        "/viewkeys": "🔒 View available keys by type (Special Admin Only)"
+        "/viewkeys": "🔒 View available keys by type (Special Admin Only)",
+        "/activekeys": "🔑 List all active keys with remaining time and assigned user"
     }
     
     for cmd, desc in commands_info.items():
@@ -1096,6 +1098,46 @@ async def view_deleted_keys(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.tree.command(name="activekeys", description="List all active keys with remaining time and assigned user")
+async def active_keys(interaction: discord.Interaction):
+    if not await check_permissions(interaction):
+        return
+
+    now = int(time.time())
+    active_items = []
+    for key, data in key_manager.keys.items():
+        if data.get("is_active", False):
+            expires = data.get("expiration_time", 0)
+            remaining = max(0, expires - now)
+            user_id = data.get("user_id", 0)
+            user_display = "Unassigned" if user_id == 0 else f"<@{user_id}>"
+            active_items.append((key, remaining, user_display))
+
+    if not active_items:
+        await interaction.response.send_message("📭 No active keys found.", ephemeral=True)
+        return
+
+    # Sort by soonest expiration
+    active_items.sort(key=lambda x: x[1])
+
+    def fmt_duration(seconds: int) -> str:
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        minutes = (seconds % 3600) // 60
+        return f"{days}d {hours}h {minutes}m"
+
+    lines = [f"`{k}` — {fmt_duration(rem)} left — {user}" for k, rem, user in active_items[:20]]
+
+    embed = discord.Embed(
+        title="🔑 Active Keys",
+        description="\n".join(lines),
+        color=0x00AAFF
+    )
+    if len(active_items) > 20:
+        embed.set_footer(text=f"Showing 20 of {len(active_items)} active keys")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @bot.event
 async def on_member_join(member):
     """Automatically give role to new members if they have a valid key"""
@@ -1136,6 +1178,54 @@ def start_health_check():
     """Start a simple HTTP server for health checks"""
     class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
+            # Simple HTML form for generating keys
+            if self.path == '/generate-form':
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                form_html = """
+                <html><head><title>Generate Keys</title></head>
+                <body>
+                  <h1>Generate Keys</h1>
+                  <form method='POST' action='/generate'>
+                    <label>Daily:</label><input type='number' name='daily' min='0' value='0'/><br/>
+                    <label>Weekly:</label><input type='number' name='weekly' min='0' value='0'/><br/>
+                    <label>Monthly:</label><input type='number' name='monthly' min='0' value='0'/><br/>
+                    <label>Lifetime:</label><input type='number' name='lifetime' min='0' value='0'/><br/>
+                    <button type='submit'>Generate</button>
+                  </form>
+                  <p><a href='/'>Back to status</a></p>
+                </body></html>
+                """
+                self.wfile.write(form_html.encode())
+                return
+
+        def do_POST(self):
+            if self.path == '/generate':
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode()
+                data = urllib.parse.parse_qs(body)
+                def to_int(name):
+                    try:
+                        return max(0, int(data.get(name, ['0'])[0]))
+                    except Exception:
+                        return 0
+                daily = to_int('daily')
+                weekly = to_int('weekly')
+                monthly = to_int('monthly')
+                lifetime = to_int('lifetime')
+
+                result = key_manager.generate_bulk_keys(daily, weekly, monthly, lifetime)
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                import json
+                self.wfile.write(json.dumps({"ok": True, "generated": result}, indent=2).encode())
+                return
+
+            self.send_response(404)
+            self.end_headers()
             if self.path == '/':
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
