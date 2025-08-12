@@ -587,12 +587,14 @@ async def on_ready():
         if env_guild_id:
             guild_id = int(env_guild_id)
             guild_obj = discord.Object(id=guild_id)
+            # First purge any existing global commands so duplicates disappear
+            await purge_global_commands()
+            # Then (re)sync commands only to the target guild
             bot.tree.clear_commands(guild=guild_obj)
             bot.tree.copy_global_to(guild=guild_obj)
             guild_synced = await bot.tree.sync(guild=guild_obj)
             print(f"✅ Synced {len(guild_synced)} command(s) to guild {guild_id}")
         else:
-            # Fallback to global sync if no guild specified
             synced = await bot.tree.sync()
             print(f"✅ Synced {len(synced)} command(s) globally")
     except Exception as e:
@@ -601,42 +603,6 @@ async def on_ready():
     print("🤖 Bot is now ready and online!")
     if not reconcile_roles_task.is_running():
         reconcile_roles_task.start()
-
-@bot.tree.command(name="help", description="Show help information")
-async def help_command(interaction: discord.Interaction):
-    """Show help information"""
-    if not await check_permissions(interaction):
-        return
-    
-    embed = discord.Embed(
-        title="🔑 Key Management Bot Help",
-        description="Commands for managing Discord keys",
-        color=0x2d6cdf
-    )
-    
-    commands_info = {
-        "/generate [@user] [channel_id] [days]": "Generate a new key for general use",
-        "/activate [key]": "Activate a key and get the user role",
-        "/sync [key]": "Sync key duration with SelfBot",
-        "/revoke [key]": "Revoke a key (access revoked)",
-        "/delete [key]": "🔒 Completely delete a key (Special Admin Only)",
-        "/deletedkeys": "🔒 View deleted keys database (Special Admin Only)",
-        "/keys [@user]": "Show all keys for a user",
-        "/info [key]": "Get detailed information about a key",
-        "/backup": "Create a backup of all keys",
-        "/restore [backup_file]": "Restore keys from backup",
-        "/status": "Show bot status and statistics",
-        "/generatekeys [daily] [weekly] [monthly] [lifetime]": "🔒 Generate bulk keys (Special Admin Only)",
-        "/viewkeys": "🔒 View available keys by type (Special Admin Only)",
-        "/activekeys": "🔑 List all active keys with remaining time and assigned user",
-        "/expiredkeys": "🗓️ List expired keys"
-    }
-    
-    for cmd, desc in commands_info.items():
-        embed.add_field(name=cmd, value=desc, inline=False)
-    
-    embed.set_footer(text="Only users with the required role can use these commands")
-    await interaction.response.send_message(embed=embed)
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -773,7 +739,8 @@ async def activate_key(interaction: discord.Interaction, key: str):
     except Exception as e:
         await interaction.response.send_message(f"❌ **Error during activation:** {str(e)}", ephemeral=True)
 
-@bot.tree.command(name="sync", description="Sync your key duration with SelfBot")
+# Removed duplicate sync command name to avoid conflicts
+@bot.tree.command(name="syncduration", description="Sync your key duration with SelfBot")
 async def sync_key(interaction: discord.Interaction, key: str):
     """Sync key duration with SelfBot"""
     try:
@@ -1750,3 +1717,12 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Fatal error: {e}")
         exit(1)
+
+async def purge_global_commands():
+    try:
+        app_id = (bot.user.id if bot.user else None)
+        if app_id:
+            await bot.http.bulk_upsert_global_commands(app_id, [])
+            print("🧹 Purged all global application commands")
+    except Exception as e:
+        print(f"⚠️ Failed to purge global commands: {e}")
