@@ -104,6 +104,7 @@ class KeyManager:
         self.keys = {}
         self.key_usage = {}
         self.deleted_keys = {}
+        self.last_generated = None  # In-memory cache of last generated keys for web UI panel
         self.load_data()
     
     def load_data(self):
@@ -1239,40 +1240,70 @@ def start_health_check():
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    form_html = """
+                    # Build sidebar content for last generated keys
+                    lg = key_manager.last_generated or {"daily":[],"weekly":[],"monthly":[],"lifetime":[]}
+                    def block(name, arr):
+                        if not arr: return f"<p class='muted'>No {name.lower()} keys yet</p>"
+                        lis = ''.join([f"<li><code>{html.escape(k)}</code></li>" for k in arr[:50]])
+                        more = f"<p class='muted'>...and {len(arr)-50} more</p>" if len(arr)>50 else ''
+                        return f"<h4>{name}</h4><ul>{lis}</ul>{more}"
+
+                    form_html = f"""
                     <html><head><title>Generate Keys</title>
                       <style>
-                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
-                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
-                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
-                        a.nav:hover{background:#1a2448}
-                        main{padding:24px}
-                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
-                        label{display:block;margin:10px 0 6px}
-                        input,button{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}
-                        button{cursor:pointer;background:#2a5bff;border-color:#2a5bff}
-                        button:hover{background:#2248cc}
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
+                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
+                        a.nav:hover{{background:#1a2448}}
+                        main{{padding:24px}}
+                        .layout{{display:grid;grid-template-columns:1fr 360px;gap:16px;align-items:start}}
+                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        label{{display:block;margin:10px 0 6px}}
+                        input,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
+                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
+                        button:hover{{background:#2248cc}}
+                        h3,h4{{margin:6px 0 8px}}
+                        ul{{margin:8px 0 0 18px; padding:0}}
+                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
+                        .muted{{color:#9ab0ff}}
+                        .closebtn{{float:right;background:#19214a;border-color:#19214a}}
                       </style>
                     </head>
                     <body>
                       <header>
                         <a class='nav' href='/'>Dashboard</a>
                         <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/my'>My Keys</a>
                         <a class='nav' href='/deleted'>Deleted</a>
+                        <a class='nav' href='/backup'>Backup</a>
                         <a class='nav' href='/generate-form'>Generate</a>
                       </header>
                       <main>
-                        <div class='card'>
-                          <h2>Generate Keys</h2>
-                          <form method='POST' action='/generate'>
-                            <label>Daily</label><input type='number' name='daily' min='0' value='0'/>
-                            <label>Weekly</label><input type='number' name='weekly' min='0' value='0'/>
-                            <label>Monthly</label><input type='number' name='monthly' min='0' value='0'/>
-                            <label>Lifetime</label><input type='number' name='lifetime' min='0' value='0'/>
-                            <div style='margin-top:12px'>
-                              <button type='submit'>Generate</button>
+                        <div class='layout'>
+                          <div class='card'>
+                            <h2>Generate Keys</h2>
+                            <form method='POST' action='/generate'>
+                              <label>Daily</label><input type='number' name='daily' min='0' value='0'/>
+                              <label>Weekly</label><input type='number' name='weekly' min='0' value='0'/>
+                              <label>Monthly</label><input type='number' name='monthly' min='0' value='0'/>
+                              <label>Lifetime</label><input type='number' name='lifetime' min='0' value='0'/>
+                              <div style='margin-top:12px'>
+                                <button type='submit'>Generate</button>
+                              </div>
+                            </form>
+                          </div>
+                          <div class='card'>
+                            <div>
+                              <h3 style='display:inline'>Last Generated</h3>
+                              <form method='GET' action='/generate-form' style='display:inline'>
+                                <button class='closebtn' title='Close panel'>&times;</button>
+                              </form>
                             </div>
-                          </form>
+                            {block('Daily', lg.get('daily', []))}
+                            {block('Weekly', lg.get('weekly', []))}
+                            {block('Monthly', lg.get('monthly', []))}
+                            {block('Lifetime', lg.get('lifetime', []))}
+                          </div>
                         </div>
                       </main>
                     </body></html>
@@ -1286,6 +1317,20 @@ def start_health_check():
                     q = urllib.parse.parse_qs(parsed.query or '')
                     filter_status = (q.get('status', ['all'])[0]).lower()
                     filter_type = (q.get('type', ['all'])[0]).lower()
+
+                    sel = {
+                        'status_all': 'selected' if filter_status=='all' else '',
+                        'status_active': 'selected' if filter_status=='active' else '',
+                        'status_unassigned': 'selected' if filter_status=='unassigned' else '',
+                        'status_expired': 'selected' if filter_status=='expired' else '',
+                        'status_revoked': 'selected' if filter_status=='revoked' else '',
+                        'type_all': 'selected' if filter_type=='all' else '',
+                        'type_daily': 'selected' if filter_type=='daily' else '',
+                        'type_weekly': 'selected' if filter_type=='weekly' else '',
+                        'type_monthly': 'selected' if filter_type=='monthly' else '',
+                        'type_lifetime': 'selected' if filter_type=='lifetime' else '',
+                        'type_general': 'selected' if filter_type=='general' else ''
+                    }
 
                     now_ts = int(time.time())
                     rows = []
@@ -1350,27 +1395,29 @@ def start_health_check():
                     keys_html = f"""
                     <html><head><title>Keys</title>
                       <style>
-                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
-                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
-                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
-                        a.nav:hover{background:#1a2448}
-                        main{padding:24px}
-                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
-                        table{width:100%;border-collapse:collapse;margin-top:12px}
-                        th,td{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}
-                        th{color:#9ab0ff}
-                        select,input,button{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}
-                        button{cursor:pointer;background:#2a5bff;border-color:#2a5bff}
-                        button:hover{background:#2248cc}
-                        code{background:#121a36;padding:2px 6px;border-radius:6px}
-                        .filters{display:flex;gap:8px;align-items:center}
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
+                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
+                        a.nav:hover{{background:#1a2448}}
+                        main{{padding:24px}}
+                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
+                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
+                        th{{color:#9ab0ff}}
+                        select,input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
+                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
+                        button:hover{{background:#2248cc}}
+                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
+                        .filters{{display:flex;gap:8px;align-items:center}}
                       </style>
                     </head>
                     <body>
                       <header>
                         <a class='nav' href='/'>Dashboard</a>
                         <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/my'>My Keys</a>
                         <a class='nav' href='/deleted'>Deleted</a>
+                        <a class='nav' href='/backup'>Backup</a>
                         <a class='nav' href='/generate-form'>Generate</a>
                       </header>
                       <main>
@@ -1379,20 +1426,20 @@ def start_health_check():
                             <form method='GET' action='/keys'>
                               <label>Status</label>
                               <select name='status'>
-                                <option { 'selected' if filter_status=='all' else '' } value='all'>All</option>
-                                <option { 'selected' if filter_status=='active' else '' } value='active'>Active</option>
-                                <option { 'selected' if filter_status=='unassigned' else '' } value='unassigned'>Unassigned</option>
-                                <option { 'selected' if filter_status=='expired' else '' } value='expired'>Expired</option>
-                                <option { 'selected' if filter_status=='revoked' else '' } value='revoked'>Revoked</option>
+                                <option {sel['status_all']} value='all'>All</option>
+                                <option {sel['status_active']} value='active'>Active</option>
+                                <option {sel['status_unassigned']} value='unassigned'>Unassigned</option>
+                                <option {sel['status_expired']} value='expired'>Expired</option>
+                                <option {sel['status_revoked']} value='revoked'>Revoked</option>
                               </select>
                               <label>Type</label>
                               <select name='type'>
-                                <option { 'selected' if filter_type=='all' else '' } value='all'>All</option>
-                                <option { 'selected' if filter_type=='daily' else '' } value='daily'>Daily</option>
-                                <option { 'selected' if filter_type=='weekly' else '' } value='weekly'>Weekly</option>
-                                <option { 'selected' if filter_type=='monthly' else '' } value='monthly'>Monthly</option>
-                                <option { 'selected' if filter_type=='lifetime' else '' } value='lifetime'>Lifetime</option>
-                                <option { 'selected' if filter_type=='general' else '' } value='general'>General</option>
+                                <option {sel['type_all']} value='all'>All</option>
+                                <option {sel['type_daily']} value='daily'>Daily</option>
+                                <option {sel['type_weekly']} value='weekly'>Weekly</option>
+                                <option {sel['type_monthly']} value='monthly'>Monthly</option>
+                                <option {sel['type_lifetime']} value='lifetime'>Lifetime</option>
+                                <option {sel['type_general']} value='general'>General</option>
                               </select>
                               <button type='submit'>Apply</button>
                             </form>
@@ -1795,12 +1842,11 @@ def start_health_check():
                     lifetime = to_int('lifetime')
 
                     result = key_manager.generate_bulk_keys(daily, weekly, monthly, lifetime)
+                    key_manager.last_generated = result
 
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
+                    self.send_response(303)
+                    self.send_header('Location','/generate-form')
                     self.end_headers()
-                    import json
-                    self.wfile.write(json.dumps({"ok": True, "generated": result}, indent=2).encode())
                     return
 
                 if self.path in ('/revoke','/delete'):
