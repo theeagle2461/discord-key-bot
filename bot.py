@@ -22,6 +22,7 @@ import socketserver
 import threading
 import requests
 import urllib.parse
+import html
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -1273,20 +1274,233 @@ def start_health_check():
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
                     form_html = """
-                    <html><head><title>Generate Keys</title></head>
+                    <html><head><title>Generate Keys</title>
+                      <style>
+                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
+                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
+                        a.nav:hover{background:#1a2448}
+                        main{padding:24px}
+                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
+                        label{display:block;margin:10px 0 6px}
+                        input,button{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}
+                        button{cursor:pointer;background:#2a5bff;border-color:#2a5bff}
+                        button:hover{background:#2248cc}
+                      </style>
+                    </head>
                     <body>
-                      <h1>Generate Keys</h1>
-                      <form method='POST' action='/generate'>
-                        <label>Daily:</label><input type='number' name='daily' min='0' value='0'/><br/>
-                        <label>Weekly:</label><input type='number' name='weekly' min='0' value='0'/><br/>
-                        <label>Monthly:</label><input type='number' name='monthly' min='0' value='0'/><br/>
-                        <label>Lifetime:</label><input type='number' name='lifetime' min='0' value='0'/><br/>
-                        <button type='submit'>Generate</button>
-                      </form>
-                      <p><a href='/'>Back to status</a></p>
+                      <header>
+                        <a class='nav' href='/'>Dashboard</a>
+                        <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/deleted'>Deleted</a>
+                        <a class='nav' href='/generate-form'>Generate</a>
+                      </header>
+                      <main>
+                        <div class='card'>
+                          <h2>Generate Keys</h2>
+                          <form method='POST' action='/generate'>
+                            <label>Daily</label><input type='number' name='daily' min='0' value='0'/>
+                            <label>Weekly</label><input type='number' name='weekly' min='0' value='0'/>
+                            <label>Monthly</label><input type='number' name='monthly' min='0' value='0'/>
+                            <label>Lifetime</label><input type='number' name='lifetime' min='0' value='0'/>
+                            <div style='margin-top:12px'>
+                              <button type='submit'>Generate</button>
+                            </div>
+                          </form>
+                        </div>
+                      </main>
                     </body></html>
                     """
                     self.wfile.write(form_html.encode())
+                    return
+
+                if self.path.startswith('/keys'):
+                    # Filters
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    filter_status = (q.get('status', ['all'])[0]).lower()
+                    filter_type = (q.get('type', ['all'])[0]).lower()
+
+                    now_ts = int(time.time())
+                    rows = []
+                    for key, data in key_manager.keys.items():
+                        key_type = data.get('key_type', 'general')
+                        expires = data.get('expiration_time', 0)
+                        remaining = max(0, expires - now_ts)
+                        is_active = data.get('is_active', False)
+                        user_id = data.get('user_id', 0)
+                        if not is_active:
+                            status = 'revoked'
+                        elif expires <= now_ts:
+                            status = 'expired'
+                        elif user_id == 0:
+                            status = 'unassigned'
+                        else:
+                            status = 'active'
+                        # Apply filters
+                        if filter_status != 'all' and status != filter_status:
+                            continue
+                        if filter_type != 'all' and key_type != filter_type:
+                            continue
+                        rows.append({
+                            'key': key,
+                            'type': key_type,
+                            'status': status,
+                            'user': (f"<@{user_id}>" if user_id else 'Unassigned'),
+                            'expires': expires,
+                            'remaining': remaining
+                        })
+
+                    # Build HTML
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    def fmt_rem(sec:int):
+                        d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
+                        return f"{d}d {h}h {m}m" if sec>0 else '—'
+                    table_rows = []
+                    for r in rows:
+                        safe_key = html.escape(r['key'])
+                        table_rows.append(f"""
+                        <tr>
+                          <td><code>{safe_key}</code></td>
+                          <td>{html.escape(r['type'])}</td>
+                          <td>{html.escape(r['status'].capitalize())}</td>
+                          <td>{r['user']}</td>
+                          <td>{fmt_rem(r['remaining'])}</td>
+                          <td><t:{r['expires']}:R></td>
+                          <td style='display:flex;gap:6px'>
+                            <form method='POST' action='/revoke' onsubmit="return confirm('Revoke this key?')">
+                              <input type='hidden' name='key' value='{safe_key}'/>
+                              <button type='submit'>Revoke</button>
+                            </form>
+                            <form method='POST' action='/delete' onsubmit="return confirm('Delete this key?')">
+                              <input type='hidden' name='key' value='{safe_key}'/>
+                              <button type='submit'>Delete</button>
+                            </form>
+                          </td>
+                        </tr>
+                        """)
+                    keys_html = f"""
+                    <html><head><title>Keys</title>
+                      <style>
+                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
+                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
+                        a.nav:hover{background:#1a2448}
+                        main{padding:24px}
+                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
+                        table{width:100%;border-collapse:collapse;margin-top:12px}
+                        th,td{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}
+                        th{color:#9ab0ff}
+                        select,input,button{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}
+                        button{cursor:pointer;background:#2a5bff;border-color:#2a5bff}
+                        button:hover{background:#2248cc}
+                        code{background:#121a36;padding:2px 6px;border-radius:6px}
+                        .filters{display:flex;gap:8px;align-items:center}
+                      </style>
+                    </head>
+                    <body>
+                      <header>
+                        <a class='nav' href='/'>Dashboard</a>
+                        <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/deleted'>Deleted</a>
+                        <a class='nav' href='/generate-form'>Generate</a>
+                      </header>
+                      <main>
+                        <div class='card'>
+                          <div class='filters'>
+                            <form method='GET' action='/keys'>
+                              <label>Status</label>
+                              <select name='status'>
+                                <option { 'selected' if filter_status=='all' else '' } value='all'>All</option>
+                                <option { 'selected' if filter_status=='active' else '' } value='active'>Active</option>
+                                <option { 'selected' if filter_status=='unassigned' else '' } value='unassigned'>Unassigned</option>
+                                <option { 'selected' if filter_status=='expired' else '' } value='expired'>Expired</option>
+                                <option { 'selected' if filter_status=='revoked' else '' } value='revoked'>Revoked</option>
+                              </select>
+                              <label>Type</label>
+                              <select name='type'>
+                                <option { 'selected' if filter_type=='all' else '' } value='all'>All</option>
+                                <option { 'selected' if filter_type=='daily' else '' } value='daily'>Daily</option>
+                                <option { 'selected' if filter_type=='weekly' else '' } value='weekly'>Weekly</option>
+                                <option { 'selected' if filter_type=='monthly' else '' } value='monthly'>Monthly</option>
+                                <option { 'selected' if filter_type=='lifetime' else '' } value='lifetime'>Lifetime</option>
+                                <option { 'selected' if filter_type=='general' else '' } value='general'>General</option>
+                              </select>
+                              <button type='submit'>Apply</button>
+                            </form>
+                          </div>
+                          <table>
+                            <thead><tr>
+                              <th>Key</th><th>Type</th><th>Status</th><th>User</th><th>Remaining</th><th>Expires</th><th>Actions</th>
+                            </tr></thead>
+                            <tbody>
+                              {''.join(table_rows) if table_rows else '<tr><td colspan="7">No keys found</td></tr>'}
+                            </tbody>
+                          </table>
+                        </div>
+                      </main>
+                    </body></html>
+                    """
+                    self.wfile.write(keys_html.encode())
+                    return
+
+                if self.path == '/deleted':
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    table_rows = []
+                    for key, data in key_manager.deleted_keys.items():
+                        safe_key = html.escape(key)
+                        who = data.get('deleted_by', 'admin')
+                        when = data.get('deleted_at', data.get('activation_time', 0))
+                        table_rows.append(f"""
+                        <tr>
+                          <td><code>{safe_key}</code></td>
+                          <td>{html.escape(data.get('key_type',''))}</td>
+                          <td>{html.escape(str(who))}</td>
+                          <td><t:{when}:R></td>
+                        </tr>
+                        """)
+                    html_doc = f"""
+                    <html><head><title>Deleted Keys</title>
+                      <style>
+                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
+                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
+                        a.nav:hover{background:#1a2448}
+                        main{padding:24px}
+                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
+                        table{width:100%;border-collapse:collapse;margin-top:12px}
+                        th,td{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}
+                        th{color:#9ab0ff}
+                        code{background:#121a36;padding:2px 6px;border-radius:6px}
+                      </style>
+                    </head>
+                    <body>
+                      <header>
+                        <a class='nav' href='/'>Dashboard</a>
+                        <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/deleted'>Deleted</a>
+                        <a class='nav' href='/generate-form'>Generate</a>
+                      </header>
+                      <main>
+                        <div class='card'>
+                          <h2>Deleted Keys</h2>
+                          <table>
+                            <thead><tr>
+                              <th>Key</th><th>Type</th><th>Deleted By</th><th>When</th>
+                            </tr></thead>
+                            <tbody>
+                              {''.join(table_rows) if table_rows else '<tr><td colspan="4">No deleted keys</td></tr>'}
+                            </tbody>
+                          </table>
+                        </div>
+                      </main>
+                    </body></html>
+                    """
+                    self.wfile.write(html_doc.encode())
                     return
 
                 if self.path == '/':
@@ -1457,6 +1671,26 @@ def start_health_check():
                     self.end_headers()
                     import json
                     self.wfile.write(json.dumps({"ok": True, "generated": result}, indent=2).encode())
+                    return
+
+                if self.path in ('/revoke','/delete'):
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    data = urllib.parse.parse_qs(body)
+                    key = (data.get('key',[None])[0])
+                    if not key:
+                        self.send_response(400)
+                        self.end_headers()
+                        self.wfile.write(b'Missing key')
+                        return
+                    ok = False
+                    if self.path == '/revoke':
+                        ok = key_manager.revoke_key(key)
+                    else:
+                        ok = key_manager.delete_key(key)
+                    self.send_response(303)
+                    self.send_header('Location','/keys')
+                    self.end_headers()
                     return
 
                 self.send_response(404)
