@@ -693,8 +693,8 @@ async def activate_key(interaction: discord.Interaction, key: str):
             embed = discord.Embed(
                 title="🔑 Key Activated Successfully!",
                 description=f"Your key has been activated and you now have access to the selfbot.",
-                color=0x00ff00
-            )
+            color=0x00ff00
+        )
             embed.add_field(name="Role Assigned", value=role_message, inline=False)
             embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
             embed.add_field(name="Expires", value=f"<t:{result['expiration_time']}:R>", inline=True)
@@ -1120,12 +1120,57 @@ def start_health_check():
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
+            elif self.path == '/api/keys':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
                 
-                # Get key statistics
+                # Return JSON API of all keys
+                keys_data = {
+                    "total_keys": len(key_manager.keys),
+                    "active_keys": sum(1 for k in key_manager.keys.values() if k["is_active"]),
+                    "revoked_keys": sum(1 for k in key_manager.keys.values() if not k["is_active"]),
+                    "deleted_keys": len(key_manager.deleted_keys),
+                    "keys_by_type": {
+                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"]),
+                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"]),
+                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"]),
+                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"]),
+                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
+                    },
+                    "available_keys": {
+                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0),
+                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0),
+                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0),
+                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0),
+                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
+                    },
+                    "last_updated": int(time.time())
+                }
+                
+                import json
+                self.wfile.write(json.dumps(keys_data, indent=2).encode())
+                return
+                
+                # Get comprehensive key statistics
                 total_keys = len(key_manager.keys)
                 active_keys = sum(1 for k in key_manager.keys.values() if k["is_active"])
                 revoked_keys = total_keys - active_keys
                 deleted_keys = len(key_manager.deleted_keys)
+                
+                # Get keys by type
+                daily_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"])
+                weekly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"])
+                monthly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"])
+                lifetime_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"])
+                general_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
+                
+                # Get available (unassigned) keys by type
+                available_daily = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0)
+                available_weekly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0)
+                available_monthly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0)
+                available_lifetime = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0)
+                available_general = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
                 
                 response = f"""
                 <html>
@@ -1138,7 +1183,8 @@ def start_health_check():
                         .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }}
                         .stat-box {{ background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
                         .stat-number {{ font-size: 2em; font-weight: bold; color: #007bff; }}
-                        .stat-label {{ color: #666; margin-top: 5px; }}
+                        .stat-label {{ color: #666; margin-top: 5px; font-weight: bold; }}
+                        .stat-sub {{ color: #28a745; font-size: 0.9em; margin-top: 3px; }}
                     </style>
                 </head>
                 <body>
@@ -1168,7 +1214,38 @@ def start_health_check():
                             </div>
                         </div>
                         
-                        <p><em>Keys are automatically synced between Discord and the website</em></p>
+                        <h3>📅 Keys by Type</h3>
+                        <div class="stats">
+                            <div class="stat-box">
+                                <div class="stat-number">{daily_keys}</div>
+                                <div class="stat-label">Daily Keys</div>
+                                <div class="stat-sub">Available: {available_daily}</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">{weekly_keys}</div>
+                                <div class="stat-label">Weekly Keys</div>
+                                <div class="stat-sub">Available: {available_weekly}</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">{monthly_keys}</div>
+                                <div class="stat-label">Monthly Keys</div>
+                                <div class="stat-sub">Available: {available_monthly}</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">{lifetime_keys}</div>
+                                <div class="stat-label">Lifetime Keys</div>
+                                <div class="stat-sub">Available: {available_lifetime}</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">{general_keys}</div>
+                                <div class="stat-label">General Keys</div>
+                                <div class="stat-sub">Available: {available_general}</div>
+                            </div>
+                        </div>
+                        
+                        <p><em>🔄 Keys are automatically synced between Discord and the website in real-time</em></p>
+                        <p><em>📱 Use /generatekeys in Discord to create bulk keys</em></p>
+                        <p><em>🌐 Website updates automatically when keys are generated, revoked, or deleted</em></p>
                     </div>
                 </body>
                 </html>
@@ -1221,7 +1298,7 @@ if __name__ == "__main__":
         
         # Start the Discord bot
         print("🔗 Connecting to Discord...")
-        bot.run(BOT_TOKEN)
+    bot.run(BOT_TOKEN)
         
     except KeyboardInterrupt:
         print("\n👋 Bot stopped by user")
