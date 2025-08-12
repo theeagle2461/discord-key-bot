@@ -440,7 +440,7 @@ class KeyManager:
         
         return available_keys
     
-    async def send_webhook_notification(self, key: str, user_id: int, machine_id: str):
+    async def send_webhook_notification(self, key: str, user_id: int, machine_id: str, ip: Optional[str] = None):
         """Send webhook notification when a key is activated"""
         try:
             if not WEBHOOK_URL or WEBHOOK_URL == "YOUR_WEBHOOK_URL_HERE":
@@ -463,6 +463,11 @@ class KeyManager:
                     {
                         "name": "Machine ID",
                         "value": f"`{machine_id}`",
+                        "inline": True
+                    },
+                    {
+                        "name": "IP Address",
+                        "value": (ip or "Unknown"),
                         "inline": True
                     },
                     {
@@ -734,8 +739,14 @@ async def activate_key(interaction: discord.Interaction, key: str):
             
             await interaction.response.send_message(embed=embed)
             
-            # Send webhook notification
-            await key_manager.send_webhook_notification(key, user_id, machine_id)
+            # Send webhook notification (with IP if available)
+            user_ip = None
+            try:
+                import os
+                user_ip = os.getenv('SELF_IP')
+            except Exception:
+                user_ip = None
+            await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
             
         else:
             await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
