@@ -1014,20 +1014,40 @@ async def view_available_keys(interaction: discord.Interaction):
     
     def list_block(items):
         if not items:
-            return "None"
-        return "\n".join([f"`{i['key']}` - Expires <t:{i['expires']}:R>" for i in items])
+            return ["None"]
+        lines = [f"`{i['key']}` - Expires <t:{i['expires']}:R>" for i in items]
+        chunks = []
+        current = ""
+        for line in lines:
+            if len(current) + len(line) + 1 > 1024:
+                if current:
+                    chunks.append(current)
+                current = line
+            else:
+                current = f"{current}\n{line}" if current else line
+        if current:
+            chunks.append(current)
+        return chunks
 
     daily_keys = available_keys["daily"]
-    embed.add_field(name=f"📅 Daily Keys ({len(daily_keys)})", value=list_block(daily_keys), inline=False)
+    for idx, chunk in enumerate(list_block(daily_keys), start=1):
+        suffix = f" (part {idx})" if idx > 1 else ""
+        embed.add_field(name=f"📅 Daily Keys ({len(daily_keys)}){suffix}", value=chunk, inline=False)
 
     weekly_keys = available_keys["weekly"]
-    embed.add_field(name=f"📅 Weekly Keys ({len(weekly_keys)})", value=list_block(weekly_keys), inline=False)
+    for idx, chunk in enumerate(list_block(weekly_keys), start=1):
+        suffix = f" (part {idx})" if idx > 1 else ""
+        embed.add_field(name=f"📅 Weekly Keys ({len(weekly_keys)}){suffix}", value=chunk, inline=False)
 
     monthly_keys = available_keys["monthly"]
-    embed.add_field(name=f"📅 Monthly Keys ({len(monthly_keys)})", value=list_block(monthly_keys), inline=False)
+    for idx, chunk in enumerate(list_block(monthly_keys), start=1):
+        suffix = f" (part {idx})" if idx > 1 else ""
+        embed.add_field(name=f"📅 Monthly Keys ({len(monthly_keys)}){suffix}", value=chunk, inline=False)
 
     lifetime_keys = available_keys["lifetime"]
-    embed.add_field(name=f"📅 Lifetime Keys ({len(lifetime_keys)})", value=list_block(lifetime_keys), inline=False)
+    for idx, chunk in enumerate(list_block(lifetime_keys), start=1):
+        suffix = f" (part {idx})" if idx > 1 else ""
+        embed.add_field(name=f"📅 Lifetime Keys ({len(lifetime_keys)}){suffix}", value=chunk, inline=False)
     
     embed.set_footer(text="Use /generatekeys to create more keys")
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1214,198 +1234,217 @@ def start_health_check():
     """Start a simple HTTP server for health checks"""
     class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            # Simple HTML form for generating keys
-            if self.path == '/generate-form':
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                form_html = """
-                <html><head><title>Generate Keys</title></head>
-                <body>
-                  <h1>Generate Keys</h1>
-                  <form method='POST' action='/generate'>
-                    <label>Daily:</label><input type='number' name='daily' min='0' value='0'/><br/>
-                    <label>Weekly:</label><input type='number' name='weekly' min='0' value='0'/><br/>
-                    <label>Monthly:</label><input type='number' name='monthly' min='0' value='0'/><br/>
-                    <label>Lifetime:</label><input type='number' name='lifetime' min='0' value='0'/><br/>
-                    <button type='submit'>Generate</button>
-                  </form>
-                  <p><a href='/'>Back to status</a></p>
-                </body></html>
-                """
-                self.wfile.write(form_html.encode())
-                return
+            try:
+                # Simple HTML form for generating keys
+                if self.path == '/generate-form':
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    form_html = """
+                    <html><head><title>Generate Keys</title></head>
+                    <body>
+                      <h1>Generate Keys</h1>
+                      <form method='POST' action='/generate'>
+                        <label>Daily:</label><input type='number' name='daily' min='0' value='0'/><br/>
+                        <label>Weekly:</label><input type='number' name='weekly' min='0' value='0'/><br/>
+                        <label>Monthly:</label><input type='number' name='monthly' min='0' value='0'/><br/>
+                        <label>Lifetime:</label><input type='number' name='lifetime' min='0' value='0'/><br/>
+                        <button type='submit'>Generate</button>
+                      </form>
+                      <p><a href='/'>Back to status</a></p>
+                    </body></html>
+                    """
+                    self.wfile.write(form_html.encode())
+                    return
 
-        def do_POST(self):
-            if self.path == '/generate':
-                content_length = int(self.headers.get('Content-Length', 0))
-                body = self.rfile.read(content_length).decode()
-                data = urllib.parse.parse_qs(body)
-                def to_int(name):
-                    try:
-                        return max(0, int(data.get(name, ['0'])[0]))
-                    except Exception:
-                        return 0
-                daily = to_int('daily')
-                weekly = to_int('weekly')
-                monthly = to_int('monthly')
-                lifetime = to_int('lifetime')
+                if self.path == '/':
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
 
-                result = key_manager.generate_bulk_keys(daily, weekly, monthly, lifetime)
+                    # Get comprehensive key statistics for HTML dashboard
+                    total_keys = len(key_manager.keys)
+                    active_keys = sum(1 for k in key_manager.keys.values() if k["is_active"])
+                    revoked_keys = total_keys - active_keys
+                    deleted_keys = len(key_manager.deleted_keys)
 
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                import json
-                self.wfile.write(json.dumps({"ok": True, "generated": result}, indent=2).encode())
-                return
+                    daily_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"])
+                    weekly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"])
+                    monthly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"])
+                    lifetime_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"])
+                    general_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
 
-            self.send_response(404)
-            self.end_headers()
-            if self.path == '/':
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
+                    available_daily = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0)
+                    available_weekly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0)
+                    available_monthly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0)
+                    available_lifetime = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0)
+                    available_general = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
 
-                # Get comprehensive key statistics for HTML dashboard
-                total_keys = len(key_manager.keys)
-                active_keys = sum(1 for k in key_manager.keys.values() if k["is_active"])
-                revoked_keys = total_keys - active_keys
-                deleted_keys = len(key_manager.deleted_keys)
-
-                daily_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"])
-                weekly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"])
-                monthly_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"])
-                lifetime_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"])
-                general_keys = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
-
-                available_daily = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0)
-                available_weekly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0)
-                available_monthly = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0)
-                available_lifetime = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0)
-                available_general = sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
-
-                response = f"""
-                <html>
-                <head>
-                    <title>Discord Bot Status</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f0f0f0; }}
-                        .container {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-                        .status {{ color: #00aa00; font-weight: bold; }}
-                        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }}
-                        .stat-box {{ background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
-                        .stat-number {{ font-size: 2em; font-weight: bold; color: #007bff; }}
-                        .stat-label {{ color: #666; margin-top: 5px; font-weight: bold; }}
-                        .stat-sub {{ color: #28a745; font-size: 0.9em; margin-top: 3px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <h1>🤖 Discord Bot Status</h1>
-                        <p><span class="status">Status: Online</span></p>
-                        <p>Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-                        <p>Bot: {bot.user.name if bot.user else 'Starting...'}</p>
-                        
-                        <h2>🔑 Key Statistics</h2>
-                        <div class="stats">
-                            <div class="stat-box">
-                                <div class="stat-number">{total_keys}</div>
-                                <div class="stat-label">Total Keys</div>
+                    response = f"""
+                    <html>
+                    <head>
+                        <title>Discord Bot Status</title>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f0f0f0; }}
+                            .container {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                            .status {{ color: #00aa00; font-weight: bold; }}
+                            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }}
+                            .stat-box {{ background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
+                            .stat-number {{ font-size: 2em; font-weight: bold; color: #007bff; }}
+                            .stat-label {{ color: #666; margin-top: 5px; font-weight: bold; }}
+                            .stat-sub {{ color: #28a745; font-size: 0.9em; margin-top: 3px; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <h1>🤖 Discord Bot Status</h1>
+                            <p><span class="status">Status: Online</span></p>
+                            <p>Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                            <p>Bot: {bot.user.name if bot.user else 'Starting...'}</p>
+                            
+                            <h2>🔑 Key Statistics</h2>
+                            <div class="stats">
+                                <div class="stat-box">
+                                    <div class="stat-number">{total_keys}</div>
+                                    <div class="stat-label">Total Keys</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">{active_keys}</div>
+                                    <div class="stat-label">Active Keys</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">{revoked_keys}</div>
+                                    <div class="stat-label">Revoked Keys</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">{deleted_keys}</div>
+                                    <div class="stat-label">Deleted Keys</div>
+                                </div>
                             </div>
-                            <div class="stat-box">
-                                <div class="stat-number">{active_keys}</div>
-                                <div class="stat-label">Active Keys</div>
+                            
+                            <h3>📅 Keys by Type</h3>
+                            <div class="stats">
+                                <div class="stat-box">
+                                    <div class="stat-number">{daily_keys}</div>
+                                    <div class="stat-label">Daily Keys</div>
+                                    <div class="stat-sub">Available: {available_daily}</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">{weekly_keys}</div>
+                                    <div class="stat-label">Weekly Keys</div>
+                                    <div class="stat-sub">Available: {available_weekly}</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">{monthly_keys}</div>
+                                    <div class="stat-label">Monthly Keys</div>
+                                    <div class="stat-sub">Available: {available_monthly}</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">{lifetime_keys}</div>
+                                    <div class="stat-label">Lifetime Keys</div>
+                                    <div class="stat-sub">Available: {available_lifetime}</div>
+                                </div>
+                                <div class="stat-box">
+                                    <div class="stat-number">{general_keys}</div>
+                                    <div class="stat-label">General Keys</div>
+                                    <div class="stat-sub">Available: {available_general}</div>
+                                </div>
                             </div>
-                            <div class="stat-box">
-                                <div class="stat-number">{revoked_keys}</div>
-                                <div class="stat-label">Revoked Keys</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-number">{deleted_keys}</div>
-                                <div class="stat-label">Deleted Keys</div>
-                            </div>
+                            
+                            <p><em>🔄 Keys are automatically synced between Discord and the website in real-time</em></p>
+                            <p><em>📱 Use /generatekeys in Discord to create bulk keys</em></p>
+                            <p><em>🌐 Website updates automatically when keys are generated, revoked, or deleted</em></p>
                         </div>
-                        
-                        <h3>📅 Keys by Type</h3>
-                        <div class="stats">
-                            <div class="stat-box">
-                                <div class="stat-number">{daily_keys}</div>
-                                <div class="stat-label">Daily Keys</div>
-                                <div class="stat-sub">Available: {available_daily}</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-number">{weekly_keys}</div>
-                                <div class="stat-label">Weekly Keys</div>
-                                <div class="stat-sub">Available: {available_weekly}</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-number">{monthly_keys}</div>
-                                <div class="stat-label">Monthly Keys</div>
-                                <div class="stat-sub">Available: {available_monthly}</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-number">{lifetime_keys}</div>
-                                <div class="stat-label">Lifetime Keys</div>
-                                <div class="stat-sub">Available: {available_lifetime}</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-number">{general_keys}</div>
-                                <div class="stat-label">General Keys</div>
-                                <div class="stat-sub">Available: {available_general}</div>
-                            </div>
-                        </div>
-                        
-                        <p><em>🔄 Keys are automatically synced between Discord and the website in real-time</em></p>
-                        <p><em>📱 Use /generatekeys in Discord to create bulk keys</em></p>
-                        <p><em>🌐 Website updates automatically when keys are generated, revoked, or deleted</em></p>
-                    </div>
-                </body>
-                </html>
-                """
-                self.wfile.write(response.encode())
-            elif self.path == '/api/keys':
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
+                    </body>
+                    </html>
+                    """
+                    self.wfile.write(response.encode())
+                    return
 
-                keys_data = {
-                    "total_keys": len(key_manager.keys),
-                    "active_keys": sum(1 for k in key_manager.keys.values() if k["is_active"]),
-                    "revoked_keys": sum(1 for k in key_manager.keys.values() if not k["is_active"]),
-                    "deleted_keys": len(key_manager.deleted_keys),
-                    "keys_by_type": {
-                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"]),
-                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"]),
-                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"]),
-                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"]),
-                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
-                    },
-                    "available_keys": {
-                        "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0),
-                        "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0),
-                        "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0),
-                        "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0),
-                        "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
-                    },
-                    "last_updated": int(time.time())
-                }
-                import json
-                self.wfile.write(json.dumps(keys_data, indent=2).encode())
-            else:
+                if self.path == '/api/keys':
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+
+                    keys_data = {
+                        "total_keys": len(key_manager.keys),
+                        "active_keys": sum(1 for k in key_manager.keys.values() if k["is_active"]),
+                        "revoked_keys": sum(1 for k in key_manager.keys.values() if not k["is_active"]),
+                        "deleted_keys": len(key_manager.deleted_keys),
+                        "keys_by_type": {
+                            "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"]),
+                            "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"]),
+                            "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"]),
+                            "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"]),
+                            "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"])
+                        },
+                        "available_keys": {
+                            "daily": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "daily" and k["is_active"] and k["user_id"] == 0),
+                            "weekly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "weekly" and k["is_active"] and k["user_id"] == 0),
+                            "monthly": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "monthly" and k["is_active"] and k["user_id"] == 0),
+                            "lifetime": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "lifetime" and k["is_active"] and k["user_id"] == 0),
+                            "general": sum(1 for k in key_manager.keys.values() if k.get("key_type") == "general" and k["is_active"] and k["user_id"] == 0)
+                        },
+                        "last_updated": int(time.time())
+                    }
+                    import json
+                    self.wfile.write(json.dumps(keys_data, indent=2).encode())
+                    return
+
                 self.send_response(404)
                 self.end_headers()
+            except Exception as e:
+                try:
+                    self.send_response(500)
+                    self.send_header('Content-type', 'text/plain')
+                    self.end_headers()
+                    self.wfile.write(f"Internal Server Error: {e}".encode())
+                except Exception:
+                    pass
 
-        def log_message(self, format, *args):
-            # Suppress logging for health checks
-            pass
+        def do_POST(self):
+            try:
+                if self.path == '/generate':
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    data = urllib.parse.parse_qs(body)
+                    def to_int(name):
+                        try:
+                            return max(0, int(data.get(name, ['0'])[0]))
+                        except Exception:
+                            return 0
+                    daily = to_int('daily')
+                    weekly = to_int('weekly')
+                    monthly = to_int('monthly')
+                    lifetime = to_int('lifetime')
+
+                    result = key_manager.generate_bulk_keys(daily, weekly, monthly, lifetime)
+
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    import json
+                    self.wfile.write(json.dumps({"ok": True, "generated": result}, indent=2).encode())
+                    return
+
+                self.send_response(404)
+                self.end_headers()
+            except Exception as e:
+                try:
+                    self.send_response(500)
+                    self.send_header('Content-type', 'text/plain')
+                    self.end_headers()
+                    self.wfile.write(f"Internal Server Error: {e}".encode())
+                except Exception:
+                    pass
     
     try:
         # Use Render's PORT environment variable or default to 8080
         port = int(os.getenv('PORT', 8080))
-        with socketserver.TCPServer(("", port), HealthCheckHandler) as httpd:
-            print(f"🌐 Health check server started on port {port}")
-            httpd.serve_forever()
+        from http.server import ThreadingHTTPServer
+        server = ThreadingHTTPServer(("", port), HealthCheckHandler)
+        print(f"🌐 Health check server started on port {port}")
+        server.serve_forever()
     except Exception as e:
         print(f"❌ Health check server failed: {e}")
 
