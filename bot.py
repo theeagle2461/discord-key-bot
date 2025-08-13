@@ -1341,7 +1341,7 @@ def start_health_check():
                 authed_mid = str(session.get('machine_id')) if session else None
                 authed_ok = (_has_active_access(authed_uid, authed_mid) if authed_uid is not None else False)
 
-                gated_paths = ['/', '/keys', '/generate-form', '/deleted', '/my', '/backup', '/sender']
+                gated_paths = ['/', '/keys', '/generate-form', '/deleted', '/backup', '/sender']
                 if any(self.path == p or self.path.startswith(p + '?') for p in gated_paths):
                     if not authed_ok:
                         # Redirect to login
@@ -1379,39 +1379,34 @@ def start_health_check():
                         self.send_header('Location', '/')
                         self.end_headers()
                         return
-                    # Render login form
+                    # Render public info page (no login form needed)
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
                     page = f"""
-                    <html><head><title>Login</title>
+                    <html><head><title>Key Panel</title>
                       <style>
                         body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
                         header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        main{{padding:24px;max-width:520px;margin:0 auto}}
+                        main{{padding:24px;max-width:620px;margin:0 auto}}
                         .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
-                        label{{display:block;margin:10px 0 6px}}
-                        input,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0;width:100%}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff;width:auto}}
-                        button:hover{{background:#2248cc}}
                         .muted{{color:#9ab0ff}}
+                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
+                        a.nav:hover{{background:#1a2448}}
                       </style>
                     </head>
                     <body>
-                      <header>🔑 Discord Key Bot • Login</header>
+                      <header>🔑 Discord Key Bot • Panel</header>
                       <main>
                         <div class='card'>
-                          <form method='POST' action='/login'>
-                            <label>Discord User ID</label>
-                            <input type='text' name='user_id' placeholder='e.g. 123456789012345678' required />
-                            <label>Activation Key</label>
-                            <input type='text' name='key' placeholder='Your activated key' required />
-                            <div style='margin-top:12px;display:flex;gap:8px'>
-                              <button type='submit'>Login</button>
-                              <a class='muted' href='/'>Back</a>
-                            </div>
-                          </form>
-                          <p class='muted' style='margin-top:10px'>Access requires an active key assigned to your user.</p>
+                          <p class='muted'>This panel syncs with the Discord bot to generate, manage, and back up keys. Use Discord slash commands to activate keys; this page reflects status and provides tools.</p>
+                          <p style='margin-top:12px'>
+                            <a class='nav' href='/'>Dashboard</a>
+                            <a class='nav' href='/keys'>Keys</a>
+                            <a class='nav' href='/deleted'>Deleted</a>
+                            <a class='nav' href='/backup'>Backup</a>
+                            <a class='nav' href='/generate-form'>Generate</a>
+                          </p>
                         </div>
                       </main>
                     </body></html>
