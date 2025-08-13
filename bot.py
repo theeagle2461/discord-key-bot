@@ -139,16 +139,16 @@ class KeyManager:
             if os.path.exists(DELETED_KEYS_FILE):
                 with open(DELETED_KEYS_FILE, 'r') as f:
                     self.deleted_keys = json.load(f)
-+            if os.path.exists(LOGS_FILE):
-+                with open(LOGS_FILE, 'r') as f:
-+                    self.key_logs = json.load(f)
+            if os.path.exists(LOGS_FILE):
+                with open(LOGS_FILE, 'r') as f:
+                    self.key_logs = json.load(f)
         except Exception as e:
             print(f"Error loading data: {e}")
             self.keys = {}
             self.key_usage = {}
             self.deleted_keys = {}
-+            self.key_logs = []
-    
+            self.key_logs = []
+            
     def save_data(self):
         """Save keys and usage data to files (atomically) and also write a timestamped backup"""
         try:
