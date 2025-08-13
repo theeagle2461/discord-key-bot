@@ -2061,7 +2061,9 @@ def start_health_check():
                     self.wfile.write(json.dumps(keys_data, indent=2).encode())
                     return
 
-                self.send_response(404)
+                # Redirect unknown routes to dashboard instead of 404
+                self.send_response(303)
+                self.send_header('Location', '/')
                 self.end_headers()
             except Exception as e:
                 try:
@@ -2226,7 +2228,9 @@ def start_health_check():
                     self.end_headers()
                     return
 
-                self.send_response(404)
+                # Redirect unknown routes to dashboard instead of 404
+                self.send_response(303)
+                self.send_header('Location', '/')
                 self.end_headers()
             except Exception as e:
                 try:
