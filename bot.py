@@ -103,12 +103,25 @@ KEYS_FILE = "keys.json"
 BACKUP_FILE = "keys_backup.json"
 USAGE_FILE = "key_usage.json"
 DELETED_KEYS_FILE = "deleted_keys.json"
+LOGS_FILE = "key_logs.json"
+
+# Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
+ONLINE_USERS: dict[int, int] = {}
+
+def normalize_key(raw: str | None) -> str:
+    if not raw:
+        return ""
+    k = raw.strip()
+    if k.startswith("`") and k.endswith("`") and len(k) >= 2:
+        k = k[1:-1]
+    return k.strip()
 
 class KeyManager:
     def __init__(self):
         self.keys = {}
         self.key_usage = {}
         self.deleted_keys = {}
+        self.key_logs: list[dict] = []
         self.last_generated = None  # In-memory cache of last generated keys for web UI panel
         self.load_data()
     
@@ -126,23 +139,40 @@ class KeyManager:
             if os.path.exists(DELETED_KEYS_FILE):
                 with open(DELETED_KEYS_FILE, 'r') as f:
                     self.deleted_keys = json.load(f)
+            if os.path.exists(LOGS_FILE):
+                with open(LOGS_FILE, 'r') as f:
+                    self.key_logs = json.load(f)
         except Exception as e:
             print(f"Error loading data: {e}")
             self.keys = {}
             self.key_usage = {}
             self.deleted_keys = {}
+            self.key_logs = []
     
     def save_data(self):
-        """Save keys and usage data to files"""
+        """Save keys and usage data to files (atomically) and also write a timestamped backup"""
         try:
-            with open(KEYS_FILE, 'w') as f:
-                json.dump(self.keys, f, indent=2)
-            
-            with open(USAGE_FILE, 'w') as f:
-                json.dump(self.key_usage, f, indent=2)
-                
-            with open(DELETED_KEYS_FILE, 'w') as f:
-                json.dump(self.deleted_keys, f, indent=2)
+            # Atomic writes via temp files and replace
+            def atomic_write(path: str, data: dict):
+                tmp = f"{path}.tmp"
+                with open(tmp, 'w') as f:
+                    json.dump(data, f, indent=2)
+                os.replace(tmp, path)
+            atomic_write(KEYS_FILE, self.keys)
+            atomic_write(USAGE_FILE, self.key_usage)
+            atomic_write(DELETED_KEYS_FILE, self.deleted_keys)
+            atomic_write(LOGS_FILE, self.key_logs)
+            # Extra rolling backup snapshot
+            ts = int(time.time())
+            snap_dir = "backups"
+            os.makedirs(snap_dir, exist_ok=True)
+            with open(os.path.join(snap_dir, f"keys_{ts}.json"), 'w') as f:
+                json.dump({
+                    'ts': ts,
+                    'keys': self.keys,
+                    'usage': self.key_usage,
+                    'deleted': self.deleted_keys
+                }, f, indent=2)
         except Exception as e:
             print(f"Error saving data: {e}")
     
@@ -178,6 +208,10 @@ class KeyManager:
         }
         
         self.save_data()
+        try:
+            self.add_log('generate', key, user_id=user_id, details={'duration_days': duration_days, 'channel_id': channel_id})
+        except Exception:
+            pass
         return key
     
     def revoke_key(self, key: str) -> bool:
@@ -185,6 +219,10 @@ class KeyManager:
         if key in self.keys:
             self.keys[key]["is_active"] = False
             self.save_data()
+            try:
+                self.add_log('revoke', key)
+            except Exception:
+                pass
             return True
         return False
     
@@ -207,6 +245,10 @@ class KeyManager:
                 del self.key_usage[key]
             
             self.save_data()
+            try:
+                self.add_log('delete', key)
+            except Exception:
+                pass
             return True
         return False
     
@@ -216,6 +258,7 @@ class KeyManager:
     
     def activate_key(self, key: str, machine_id: str, user_id: int) -> Dict:
         """Activate a key for a specific machine"""
+        key = normalize_key(key)
         # Check if key is deleted first
         if self.is_key_deleted(key):
             return {"success": False, "error": "No access, deleted key"}
@@ -253,6 +296,11 @@ class KeyManager:
             self.key_usage[key]["usage_count"] += 1
         
         self.save_data()
+        # Log activation
+        try:
+            self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'expires': key_data.get('expiration_time')})
+        except Exception:
+            pass
         
         return {
             "success": True,
@@ -430,316 +478,12 @@ class KeyManager:
         
         self.save_data()
         return generated_keys
-    
-    def get_available_keys_by_type(self) -> Dict:
-        """Get all available (unassigned) keys grouped by type"""
-        available_keys = {
-            "daily": [],
-            "weekly": [],
-            "monthly": [],
-            "lifetime": []
-        }
-        
-        for key, data in self.keys.items():
-            if data["is_active"] and data["user_id"] == 0:  # Unassigned and active
-                key_type = data.get("key_type", "unknown")
-                available_entry = {
-                    "key": key,
-                    "created": data.get("created_time") or data.get("activation_time") or 0,
-                    "expires": data.get("expiration_time") or 0
-                }
-                if key_type in available_keys:
-                    available_keys[key_type].append(available_entry)
-        
-        return available_keys
-    
-    async def send_webhook_notification(self, key: str, user_id: int, machine_id: str, ip: Optional[str] = None):
-        """Send webhook notification when a key is activated"""
-        try:
-            if not WEBHOOK_URL or WEBHOOK_URL == "YOUR_WEBHOOK_URL_HERE":
-                return
-            
-            embed = {
-                "title": "🔑 Key Activated",
-                "color": 0x00ff00,
-                "fields": [
-                    {
-                        "name": "Key",
-                        "value": f"`{key}`",
-                        "inline": True
-                    },
-                    {
-                        "name": "User ID",
-                        "value": f"<@{user_id}>",
-                        "inline": True
-                    },
-                    {
-                        "name": "Machine ID",
-                        "value": f"`{machine_id}`",
-                        "inline": True
-                    },
-                    {
-                        "name": "IP Address",
-                        "value": (ip or "Unknown"),
-                        "inline": True
-                    },
-                    {
-                        "name": "Activation Time",
-                        "value": f"<t:{int(time.time())}:F>",
-                        "inline": False
-                    }
-                ],
-                "timestamp": datetime.datetime.utcnow().isoformat()
-            }
-            
-            payload = {
-                "embeds": [embed]
-            }
-            
-            response = requests.post(WEBHOOK_URL, json=payload)
-            if response.status_code != 204:
-                print(f"Failed to send webhook notification: {response.status_code}")
-                
-        except Exception as e:
-            print(f"Error sending webhook notification: {e}")
-    
-    async def send_generated_key_to_webhook(self, key: str, duration_days: int, created_by: str):
-        """Send newly generated key to webhook"""
-        try:
-            if not WEBHOOK_URL or WEBHOOK_URL == "YOUR_WEBHOOK_URL_HERE":
-                return
-            
-            embed = {
-                "title": "🔑 New Key Generated",
-                "color": 0x00ff00,
-                "fields": [
-                    {
-                        "name": "Key",
-                        "value": f"`{key}`",
-                        "inline": True
-                    },
-                    {
-                        "name": "Duration",
-                        "value": f"{duration_days} days",
-                        "inline": True
-                    },
-                    {
-                        "name": "Created By",
-                        "value": created_by,
-                        "inline": True
-                    },
-                    {
-                        "name": "Status",
-                        "value": "✅ Available for use",
-                        "inline": False
-                    },
-                    {
-                        "name": "Generated At",
-                        "value": f"<t:{int(time.time())}:F>",
-                        "inline": False
-                    }
-                ],
-                "timestamp": datetime.datetime.utcnow().isoformat()
-            }
-            
-            payload = {
-                "embeds": [embed]
-            }
-            
-            response = requests.post(WEBHOOK_URL, json=payload)
-            if response.status_code != 204:
-                print(f"Failed to send generated key to webhook: {response.status_code}")
-                
-        except Exception as e:
-            print(f"Error sending generated key to webhook: {e}")
-    
-    def get_key_duration_for_selfbot(self, key: str) -> Optional[Dict]:
-        """Get key duration info for SelfBot integration"""
-        if key in self.keys:
-            key_data = self.keys[key]
-            if key_data["is_active"]:
-                current_time = int(time.time())
-                time_remaining = key_data["expiration_time"] - current_time
-                
-                if time_remaining > 0:
-                    days = time_remaining // 86400
-                    hours = (time_remaining % 86400) // 3600
-                    minutes = (time_remaining % 3600) // 60
-                    
-                    return {
-                        "success": True,
-                        "duration_days": key_data.get("duration_days", 30),
-                        "time_remaining": time_remaining,
-                        "days": days,
-                        "hours": hours,
-                        "minutes": minutes,
-                        "expires_at": key_data["expiration_time"]
-                    }
-                else:
-                    return {"success": False, "error": "Key has expired"}
-            else:
-                return {"success": False, "error": "Key has been revoked"}
-        return {"success": False, "error": "Key not found"}
-
-    def rebind_key(self, key: str, user_id: int, new_machine_id: str) -> Dict:
-        """Rebind a key to a new machine if requested by the same user who activated it.
-        Conditions:
-        - key exists, not deleted, is_active True
-        - key has an activated_by or user_id that matches the requester
-        - key not expired
-        """
-        if self.is_key_deleted(key):
-            return {"success": False, "error": "No access, deleted key"}
-        if key not in self.keys:
-            return {"success": False, "error": "Invalid key"}
-        data = self.keys[key]
-        if not data.get("is_active", False):
-            return {"success": False, "error": "Access revoked"}
-        now_ts = int(time.time())
-        expires = data.get("expiration_time") or 0
-        if expires and expires <= now_ts:
-            return {"success": False, "error": "Key has expired"}
-        owner = data.get("activated_by") or data.get("user_id")
-        if not owner or int(owner) != int(user_id):
-            return {"success": False, "error": "Key is owned by a different user"}
-        # Update machine binding
-        data["machine_id"] = str(new_machine_id)
-        # Touch usage
-        if key in self.key_usage:
-            self.key_usage[key]["last_used"] = now_ts
-        self.save_data()
-        return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id)}
-
-# Initialize key manager
-key_manager = KeyManager()
-
-@bot.event
-async def on_ready():
-    print(f'✅ {bot.user} has connected to Discord!')
-    print(f'🆔 Bot ID: {bot.user.id}')
-    print(f'🌐 Connected to {len(bot.guilds)} guild(s)')
-    
-    # Set bot status
-    await bot.change_presence(activity=discord.Game(name="Managing Keys | /help"))
-    
-    # Skip command sync on startup to reduce API calls; use /synccommands when needed
-    # try:
-    #     env_guild_id = os.getenv('GUILD_ID')
-    #     if env_guild_id:
-    #         guild_id = int(env_guild_id)
-    #         guild_obj = discord.Object(id=guild_id)
-    #         await purge_global_commands()
-    #         bot.tree.clear_commands(guild=guild_obj)
-    #         bot.tree.copy_global_to(guild=guild_obj)
-    #         guild_synced = await bot.tree.sync(guild=guild_obj)
-    #         print(f"✅ Synced {len(guild_synced)} command(s) to guild {guild_id}")
-    #     else:
-    #         synced = await bot.tree.sync()
-    #         print(f"✅ Synced {len(synced)} command(s) globally")
-    # except Exception as e:
-    #     print(f"⚠️ Command sync failed: {e}")
-    
-    print("🤖 Bot is now ready and online!")
-    if not reconcile_roles_task.is_running():
-        reconcile_roles_task.start()
-
-async def check_permissions(interaction) -> bool:
-    """Check if user has permission to use bot commands"""
-    if not interaction.guild:
-        await interaction.response.send_message("❌ This bot can only be used in a server.", ephemeral=True)
-        return False
-    
-    if interaction.guild.id != GUILD_ID:
-        await interaction.response.send_message("❌ This bot is not configured for this server.", ephemeral=True)
-        return False
-    
-    member = interaction.guild.get_member(interaction.user.id)
-    if not member:
-        await interaction.response.send_message("❌ Unable to verify your permissions.", ephemeral=True)
-        return False
-
-    # Special admins always allowed
-    if interaction.user.id in SPECIAL_ADMIN_IDS:
-        return True
-
-    # Commands that everyone can use
-    public_commands = {
-        "help", "activate", "keys", "info", "status", "activekeys", "expiredkeys",
-        "sync", "synccommands"
-    }
-    cmd_name = None
-    try:
-        cmd_name = getattr(interaction.command, "name", None)
-    except Exception:
-        cmd_name = None
-
-    if cmd_name in public_commands:
-        return True
-
-    # For all other commands, require admin role
-    has_admin_role = ADMIN_ROLE_ID in [role.id for role in member.roles]
-    if not has_admin_role:
-        await interaction.response.send_message("❌ You don't have permission to use this bot.", ephemeral=True)
-        return False
-    
-    return True
-
-@bot.tree.command(name="generate", description="Generate a new key for a user")
-async def generate_key(interaction: discord.Interaction, user: discord.Member, channel_id: Optional[int] = None, duration_days: int = 30):
-    """Generate a new key for a user"""
-    if not await check_permissions(interaction):
-        return
-    
-    if duration_days < 1 or duration_days > 365:
-        await interaction.response.send_message("❌ Duration must be between 1 and 365 days.", ephemeral=True)
-        return
-    
-    # Generate the key
-    key = key_manager.generate_key(interaction.user.id, channel_id, duration_days)
-    
-    # Send key to webhook
-    await key_manager.send_generated_key_to_webhook(key, duration_days, interaction.user.display_name)
-    
-    # Create embed
-    embed = discord.Embed(
-        title="🔑 New Key Generated",
-        color=0x00ff00
-    )
-    
-    embed.add_field(name="Generated For", value=f"{user.mention} ({user.display_name})", inline=False)
-    embed.add_field(name="Key", value=f"`{key}`", inline=False)
-    embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
-    embed.add_field(name="Expires", value=f"<t:{int(time.time()) + (duration_days * 24 * 60 * 60)}:R>", inline=True)
-    
-    if channel_id:
-        embed.add_field(name="Channel Locked", value=f"<#{channel_id}>", inline=True)
-    
-    embed.add_field(name="📱 Webhook", value="✅ Key sent to webhook for distribution", inline=False)
-    embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
-    embed.set_footer(text=f"Generated by {interaction.user.display_name}")
-    
-    # Send to channel
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="activate", description="Activate a key and get the user role")
-async def activate_key(interaction: discord.Interaction, key: str):
-    """Activate a key and assign the user role"""
-    try:
-        # Get machine ID (using user's ID as a simple identifier)
-        machine_id = str(interaction.user.id)
-        user_id = interaction.user.id
-        
-        # Attempt to activate the key
-        result = key_manager.activate_key(key, machine_id, user_id)
-        
-        if result["success"]:
-            # Give the user the role
             role = interaction.guild.get_role(ROLE_ID)
             if role and role not in interaction.user.roles:
                 await interaction.user.add_roles(role)
-                role_message = f"✅ Role **{role.name}** has been assigned to you!"
+                role_message = f"✅ Role {role.name} has been assigned to you!"
             else:
-                role_message = f"✅ You already have the **{role.name}** role!"
+                role_message = f"✅ You already have the {role.name} role!"
             
             # Get key duration info
             key_data = key_manager.get_key_info(key)
@@ -749,8 +493,8 @@ async def activate_key(interaction: discord.Interaction, key: str):
             embed = discord.Embed(
                 title="🔑 Key Activated Successfully!",
                 description=f"Your key has been activated and you now have access to the selfbot.",
-            color=0x00ff00
-        )
+                color=0x00ff00
+            )
             embed.add_field(name="Role Assigned", value=role_message, inline=False)
             embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
             embed.add_field(name="Expires", value=f"<t:{result['expiration_time']}:R>", inline=True)
@@ -773,15 +517,14 @@ async def activate_key(interaction: discord.Interaction, key: str):
             await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
             
         else:
-            await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
+            await interaction.response.send_message(f"❌ Activation Failed: {result['error']}", ephemeral=True)
             
     except Exception as e:
-        await interaction.response.send_message(f"❌ **Error during activation:** {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error during activation: {str(e)}", ephemeral=True)
 
 # Removed duplicate sync command name to avoid conflicts
 @bot.tree.command(name="syncduration", description="Sync your key duration with SelfBot")
 async def sync_key(interaction: discord.Interaction, key: str):
-    """Sync key duration with SelfBot"""
     try:
         key_data = key_manager.get_key_info(key)
         if not key_data:
@@ -826,7 +569,6 @@ async def sync_key(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="revoke", description="Revoke a specific key")
 async def revoke_key(interaction: discord.Interaction, key: str):
-    """Revoke a specific key"""
     if not await check_permissions(interaction):
         return
     
@@ -842,7 +584,6 @@ async def revoke_key(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="keys", description="Show all keys for a user")
 async def show_keys(interaction: discord.Interaction, user: Optional[discord.Member] = None):
-    """Show all keys for a user (or yourself if no user specified)"""
     if not await check_permissions(interaction):
         return
     
@@ -858,7 +599,7 @@ async def show_keys(interaction: discord.Interaction, user: Optional[discord.Mem
         color=0x2d6cdf
     )
     
-    for key_data in user_keys[:10]:  # Limit to 10 keys to avoid embed limits
+    for key_data in user_keys[:10]:
         key = key_data["key"]
         status = "✅ Active" if key_data["is_active"] else "❌ Revoked"
         expires = f"<t:{key_data['expiration_time']}:R>"
@@ -877,7 +618,6 @@ async def show_keys(interaction: discord.Interaction, user: Optional[discord.Mem
 
 @bot.tree.command(name="info", description="Get detailed information about a key")
 async def key_info(interaction: discord.Interaction, key: str):
-    """Get detailed information about a key"""
     if not await check_permissions(interaction):
         return
     
@@ -913,7 +653,6 @@ async def key_info(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="backup", description="Create a backup of all keys")
 async def backup_keys(interaction: discord.Interaction):
-    """Create a backup of all keys"""
     if not await check_permissions(interaction):
         return
     
@@ -932,7 +671,6 @@ async def backup_keys(interaction: discord.Interaction):
 
 @bot.tree.command(name="restore", description="Restore keys from a backup file")
 async def restore_keys(interaction: discord.Interaction, backup_file: str):
-    """Restore keys from a backup file"""
     if not await check_permissions(interaction):
         return
     
@@ -956,7 +694,6 @@ async def restore_keys(interaction: discord.Interaction, backup_file: str):
 
 @bot.tree.command(name="status", description="Show bot status and statistics")
 async def bot_status(interaction: discord.Interaction):
-    """Show bot status and statistics"""
     if not await check_permissions(interaction):
         return
     
@@ -981,27 +718,22 @@ async def bot_status(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-# New bulk key generation command for special admins
 @bot.tree.command(name="generatekeys", description="Generate multiple keys of different types (Special Admin Only)")
 async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int, weekly_count: int, monthly_count: int, lifetime_count: int):
-    """Generate multiple keys of different types - Special Admin Only"""
-    # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ Access Denied: Only special admins can use this command.", ephemeral=True)
         return
     
     if daily_count < 0 or weekly_count < 0 or monthly_count < 0 or lifetime_count < 0:
-        await interaction.response.send_message("❌ **Invalid Input:** All counts must be 0 or positive numbers.", ephemeral=True)
+        await interaction.response.send_message("❌ Invalid Input: counts must be 0 or positive.", ephemeral=True)
         return
     
     if daily_count == 0 and weekly_count == 0 and monthly_count == 0 and lifetime_count == 0:
-        await interaction.response.send_message("❌ **Invalid Input:** At least one key type must have a count greater than 0.", ephemeral=True)
+        await interaction.response.send_message("❌ Invalid Input: At least one key type must be > 0.", ephemeral=True)
         return
     
-    # Generate the keys
     generated_keys = key_manager.generate_bulk_keys(daily_count, weekly_count, monthly_count, lifetime_count)
     
-    # Create embed showing what was generated
     embed = discord.Embed(
         title="🔑 Bulk Keys Generated Successfully!",
         description="Keys have been generated and saved to the system.",
@@ -1018,19 +750,14 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# New command to view available keys by type
 @bot.tree.command(name="viewkeys", description="View all available keys by type (Special Admin Only)")
 async def view_available_keys(interaction: discord.Interaction):
-    """View all available keys grouped by type - Special Admin Only"""
-    # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ Access Denied: Only special admins can use this command.", ephemeral=True)
         return
     
-    # Get available keys by type
     available_keys = key_manager.get_available_keys_by_type()
     
-    # Create embed showing available keys
     embed = discord.Embed(
         title="🔑 Available Keys by Type",
         description="All unassigned keys currently in the system",
@@ -1041,8 +768,7 @@ async def view_available_keys(interaction: discord.Interaction):
         if not items:
             return ["None"]
         lines = [f"`{i['key']}` - Expires <t:{i['expires']}:R>" for i in items]
-        chunks = []
-        current = ""
+        chunks, current = [], ""
         for line in lines:
             if len(current) + len(line) + 1 > 1024:
                 if current:
@@ -1054,35 +780,22 @@ async def view_available_keys(interaction: discord.Interaction):
             chunks.append(current)
         return chunks
 
-    daily_keys = available_keys["daily"]
-    for idx, chunk in enumerate(list_block(daily_keys), start=1):
-        suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"📅 Daily Keys ({len(daily_keys)}){suffix}", value=chunk, inline=False)
-
-    weekly_keys = available_keys["weekly"]
-    for idx, chunk in enumerate(list_block(weekly_keys), start=1):
-        suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"📅 Weekly Keys ({len(weekly_keys)}){suffix}", value=chunk, inline=False)
-
-    monthly_keys = available_keys["monthly"]
-    for idx, chunk in enumerate(list_block(monthly_keys), start=1):
-        suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"📅 Monthly Keys ({len(monthly_keys)}){suffix}", value=chunk, inline=False)
-
-    lifetime_keys = available_keys["lifetime"]
-    for idx, chunk in enumerate(list_block(lifetime_keys), start=1):
-        suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"📅 Lifetime Keys ({len(lifetime_keys)}){suffix}", value=chunk, inline=False)
+    for idx, chunk in enumerate(list_block(available_keys["daily"]), start=1):
+        embed.add_field(name=f"📅 Daily Keys ({len(available_keys['daily'])}){(' (part '+str(idx)+')' if idx>1 else '')}", value=chunk, inline=False)
+    for idx, chunk in enumerate(list_block(available_keys["weekly"]), start=1):
+        embed.add_field(name=f"📅 Weekly Keys ({len(available_keys['weekly'])}){(' (part '+str(idx)+')' if idx>1 else '')}", value=chunk, inline=False)
+    for idx, chunk in enumerate(list_block(available_keys["monthly"]), start=1):
+        embed.add_field(name=f"📅 Monthly Keys ({len(available_keys['monthly'])}){(' (part '+str(idx)+')' if idx>1 else '')}", value=chunk, inline=False)
+    for idx, chunk in enumerate(list_block(available_keys["lifetime"]), start=1):
+        embed.add_field(name=f"📅 Lifetime Keys ({len(available_keys['lifetime'])}){(' (part '+str(idx)+')' if idx>1 else '')}", value=chunk, inline=False)
     
     embed.set_footer(text="Use /generatekeys to create more keys")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="delete", description="Completely delete a key (Special Admin Only)")
 async def delete_key(interaction: discord.Interaction, key: str):
-    """Completely delete a key - Special Admin Only"""
-    # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ Access Denied: Only special admins can use this command.", ephemeral=True)
         return
     
     if key_manager.delete_key(key):
@@ -1094,21 +807,17 @@ async def delete_key(interaction: discord.Interaction, key: str):
         embed.add_field(name="Status", value="✅ Key removed from active keys", inline=True)
         embed.add_field(name="Database", value="📁 Moved to deleted keys", inline=True)
         embed.add_field(name="SelfBot Access", value="❌ No access, deleted key", inline=False)
-        
         await interaction.response.send_message(embed=embed)
     else:
         await interaction.response.send_message("❌ Key not found or already deleted.", ephemeral=True)
 
 @bot.tree.command(name="deletedkeys", description="View all deleted keys (Special Admin Only)")
 async def view_deleted_keys(interaction: discord.Interaction):
-    """View all deleted keys - Special Admin Only"""
-    # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ Access Denied: Only special admins can use this command.", ephemeral=True)
         return
     
     deleted_keys = key_manager.deleted_keys
-    
     if not deleted_keys:
         await interaction.response.send_message("📭 No deleted keys found.", ephemeral=True)
         return
@@ -1118,22 +827,17 @@ async def view_deleted_keys(interaction: discord.Interaction):
         description=f"Total deleted keys: {len(deleted_keys)}",
         color=0xff0000
     )
-    
-    # Show first 10 deleted keys
     for i, (key, data) in enumerate(list(deleted_keys.items())[:10]):
         deleted_time = f"<t:{data.get('deleted_at', 0)}:R>"
         created_time = f"<t:{data.get('activation_time', 0)}:R>"
         duration = data.get('duration_days', 'Unknown')
-        
         embed.add_field(
             name=f"🗑️ {key}",
             value=f"Duration: {duration} days\nCreated: {created_time}\nDeleted: {deleted_time}",
             inline=True
         )
-    
     if len(deleted_keys) > 10:
         embed.set_footer(text=f"Showing 10 of {len(deleted_keys)} deleted keys")
-    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="activekeys", description="List all active keys with remaining time and assigned user")
@@ -1155,7 +859,6 @@ async def active_keys(interaction: discord.Interaction):
         await interaction.response.send_message("📭 No active keys found.", ephemeral=True)
         return
 
-    # Sort by soonest expiration
     active_items.sort(key=lambda x: x[1])
 
     def fmt_duration(seconds: int) -> str:
@@ -1226,11 +929,8 @@ async def sync_commands(interaction: discord.Interaction):
 @bot.event
 async def on_member_join(member):
     """Automatically give role to new members if they have a valid key"""
-    # This would be triggered when someone joins with a valid key
-    # Implementation depends on your activation flow
     pass
 
-# Error handling for slash commands
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
     if isinstance(error, discord.app_commands.CommandOnCooldown):
@@ -1242,7 +942,6 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
     else:
         await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
 
-# Error handling
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
@@ -1254,11 +953,6 @@ async def on_command_error(ctx, error):
     else:
         await ctx.send(f"❌ An error occurred: {str(error)}")
 
-# Add a simple health check for Render
-import http.server
-import socketserver
-import threading
-
 def start_health_check():
     """Start a simple HTTP server for health checks"""
     import base64, json as _json, hmac, hashlib
@@ -1267,15 +961,10 @@ def start_health_check():
         return hmac.new(PANEL_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
     def _encode_session(user_id: int, machine_id: str, ttl_seconds: int = 12*3600) -> str:
-        data = {
-            'user_id': int(user_id),
-            'machine_id': str(machine_id or ''),
-            'exp': int(time.time()) + int(ttl_seconds),
-        }
+        data = {'user_id': int(user_id), 'machine_id': str(machine_id or ''), 'exp': int(time.time()) + int(ttl_seconds)}
         raw = _json.dumps(data, separators=(',', ':'))
         sig = _sign_payload(raw)
-        tok = base64.urlsafe_b64encode((raw + '.' + sig).encode()).decode()
-        return tok
+        return base64.urlsafe_b64encode((raw + '.' + sig).encode()).decode()
 
     def _decode_session(token: str):
         try:
@@ -1296,8 +985,7 @@ def start_health_check():
         cookies = {}
         if not header:
             return cookies
-        parts = [p.strip() for p in header.split(';') if p.strip()]
-        for p in parts:
+        for p in [p.strip() for p in header.split(';') if p.strip()]:
             if '=' in p:
                 k, v = p.split('=', 1)
                 cookies[k.strip()] = v.strip()
@@ -1329,20 +1017,16 @@ def start_health_check():
                 return
             self.send_response(404)
             self.end_headers()
- 
+
         def do_GET(self):
             try:
-                # Session check (kept for potential future use)
                 cookies = _parse_cookies(self.headers.get('Cookie'))
                 session = _decode_session(cookies.get('panel_session')) if cookies.get('panel_session') else None
                 authed_uid = int(session.get('user_id')) if session else None
                 authed_mid = str(session.get('machine_id')) if session else None
                 authed_ok = (_has_active_access(authed_uid, authed_mid) if authed_uid is not None else False)
 
-                # Public panel: no login gating; remove legacy commented block
-
                 if self.path.startswith('/login'):
-                    # Redirect away from legacy login to the dashboard (no login used)
                     self.send_response(303)
                     self.send_header('Location', '/')
                     self.end_headers()
@@ -1401,12 +1085,10 @@ def start_health_check():
                     self.wfile.write(page.encode())
                     return
 
-                # Simple HTML form for generating keys
                 if self.path == '/generate-form':
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    # Build sidebar content for last generated keys
                     lg = key_manager.last_generated or {"daily":[],"weekly":[],"monthly":[],"lifetime":[]}
                     def block(name, arr):
                         if not arr: return f"<p class='muted'>No {name.lower()} keys yet</p>"
@@ -1463,7 +1145,6 @@ def start_health_check():
                     return
 
                 if self.path.startswith('/keys'):
-                    # Filters
                     parsed = urllib.parse.urlparse(self.path)
                     q = urllib.parse.parse_qs(parsed.query or '')
                     filter_status = (q.get('status', ['all'])[0]).lower()
@@ -1499,7 +1180,6 @@ def start_health_check():
                             status = 'unassigned'
                         else:
                             status = 'active'
-                        # Apply filters
                         if filter_status != 'all' and status != filter_status:
                             continue
                         if filter_type != 'all' and key_type != filter_type:
@@ -1514,7 +1194,6 @@ def start_health_check():
                             'not_activated': (data.get('activation_time') is None)
                         })
 
-                    # Build HTML
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
@@ -1534,7 +1213,9 @@ def start_health_check():
                           <td>{r['user']}</td>
                           <td>{fmt_rem(r['remaining'], r['not_activated'])}</td>
                           <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else '—'}</td>
-                          <td style='display:flex;gap:6px'>
+                        </tr>
+                        """)
+                                                  <td style='display:flex;gap:6px'>
                             <form method='POST' action='/revoke' onsubmit="return confirm('Revoke this key?')">
                               <input type='hidden' name='key' value='{safe_key}'/>
                               <button type='submit'>Revoke</button>
@@ -1549,20 +1230,20 @@ def start_health_check():
                     keys_html = f"""
                     <html><head><title>Keys</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
-                        main{{padding:24px}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
-                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
-                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
-                        th{{color:#9ab0ff}}
-                        select,input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
-                        button:hover{{background:#2248cc}}
-                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
-                        .filters{{display:flex;gap:8px;align-items:center}}
+                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
+                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
+                        a.nav:hover{background:#1a2448}
+                        main{padding:24px}
+                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
+                        table{width:100%;border-collapse:collapse;margin-top:12px}
+                        th,td{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}
+                        th{color:#9ab0ff}
+                        select,input,button{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}
+                        button{cursor:pointer;background:#2a5bff;border-color:#2a5bff}
+                        button:hover{background:#2248cc}
+                        code{background:#121a36;padding:2px 6px;border-radius:6px}
+                        .filters{display:flex;gap:8px;align-items:center}
                       </style>
                     </head>
                     <body>
@@ -1633,10 +1314,10 @@ def start_health_check():
                     html_doc = f"""
                     <html><head><title>Deleted Keys</title>
                       <style>
-                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
-                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
-                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
-                        a.nav:hover{background:#1a2448}
+                        body{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}
+                        header{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}
+                        a.nav:hover{background:#1e154d}
                         main{padding:24px}
                         .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
                         table{width:100%;border-collapse:collapse;margin-top:12px}
@@ -1671,7 +1352,6 @@ def start_health_check():
                     return
 
                 if self.path.startswith('/my'):
-                    # My Keys page: enter Discord user ID to view assigned keys
                     parsed = urllib.parse.urlparse(self.path)
                     q = urllib.parse.parse_qs(parsed.query or '')
                     user_q = q.get('user_id', [""])[0]
@@ -1716,19 +1396,19 @@ def start_health_check():
                     page = f"""
                     <html><head><title>My Keys</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
-                        main{{padding:24px}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
-                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
-                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
-                        th{{color:#9ab0ff}}
-                        input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
-                        button:hover{{background:#2248cc}}
-                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
+                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
+                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
+                        a.nav:hover{background:#1a2448}
+                        main{padding:24px}
+                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
+                        table{width:100%;border-collapse:collapse;margin-top:12px}
+                        th,td{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}
+                        th{color:#9ab0ff}
+                        input,button{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}
+                        button{cursor:pointer;background:#2a5bff;border-color:#2a5bff}
+                        button:hover{background:#2248cc}
+                        code{background:#121a36;padding:2px 6px;border-radius:6px}
                       </style>
                     </head>
                     <body>
@@ -1766,7 +1446,6 @@ def start_health_check():
                     return
 
                 if self.path.startswith('/backup'):
-                    # JSON backup; optional user_id filter
                     parsed = urllib.parse.urlparse(self.path)
                     q = urllib.parse.parse_qs(parsed.query or '')
                     user_q = q.get('user_id', [None])[0]
@@ -1777,25 +1456,17 @@ def start_health_check():
                         except Exception:
                             uid = None
                         if uid is not None:
-                            subset = {}
-                            subset_usage = {}
+                            subset, subset_usage = {}, {}
                             for k, data in key_manager.keys.items():
                                 if data.get('user_id', 0) == uid:
                                     subset[k] = data
                                     if k in key_manager.key_usage:
                                         subset_usage[k] = key_manager.key_usage[k]
-                            payload = {
-                                'keys': subset,
-                                'usage': subset_usage
-                            }
+                            payload = {'keys': subset, 'usage': subset_usage}
                         else:
                             payload = {'error': 'invalid user_id'}
                     else:
-                        payload = {
-                            'keys': key_manager.keys,
-                            'usage': key_manager.key_usage,
-                            'deleted_keys': key_manager.deleted_keys
-                        }
+                        payload = {'keys': key_manager.keys, 'usage': key_manager.key_usage, 'deleted_keys': key_manager.deleted_keys}
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.send_header('Content-Disposition', 'attachment; filename="backup.json"')
@@ -1805,7 +1476,6 @@ def start_health_check():
                     return
 
                 if self.path.startswith('/api/member-status'):
-                    # Return whether a user should have access based on active keys and optional machine binding
                     parsed = urllib.parse.urlparse(self.path)
                     q = urllib.parse.parse_qs(parsed.query or '')
                     user_q = q.get('user_id', [None])[0]
@@ -1816,9 +1486,7 @@ def start_health_check():
                         uid = None
 
                     now_ts = int(time.time())
-                    active_items = []
-                    expired_count = 0
-                    bound_match = False
+                    active_items, expired_count, bound_match = [], 0, False
                     if uid is not None:
                         for key, data in key_manager.keys.items():
                             if data.get('user_id', 0) != uid:
@@ -1835,7 +1503,6 @@ def start_health_check():
                                 active_items.append(item)
                                 if machine_q:
                                     mid = str(data.get('machine_id') or '')
-                                    # Accept exact machine binding OR legacy slash-activation binding (machine_id == user_id)
                                     if (mid and str(machine_q) == mid) or (mid and str(uid) == mid):
                                         bound_match = True
                             else:
@@ -1900,7 +1567,6 @@ def start_health_check():
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
 
-                    # Get comprehensive key statistics for HTML dashboard
                     total_keys = len(key_manager.keys)
                     active_keys = sum(1 for k in key_manager.keys.values() if k["is_active"])
                     revoked_keys = total_keys - active_keys
@@ -1924,7 +1590,7 @@ def start_health_check():
                         <title>Discord Key Bot</title>
                         <meta name='viewport' content='width=device-width, initial-scale=1'/>
                         <style>
-                          :root {{ --bg:#0b1020; --panel:#0e1630; --muted:#9ab0ff; --border:#1f2a4a; --text:#e6e9f0; --accent:#2a5bff; }}
+                          :root {{ --bg:#0b0718; --panel:#120a2a; --muted:#b399ff; --border:#1f1440; --text:#efeaff; --accent:#6c4af2; }}
                           * {{ box-sizing: border-box; }}
                           body {{ margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }}
                           header {{ background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; align-items:center; gap:12px; flex-wrap: wrap; }}
@@ -1950,7 +1616,7 @@ def start_health_check():
                       </head>
                       <body>
                         <header>
-                          <div class='brand'>🔑 Discord Key Bot</div>
+                          <div class='brand' style='font-size:28px;font-weight:800;letter-spacing:0.6px'>CS BOT <span style='font-weight:600;color:#b799ff'>made by iris&classical</span></div>
                           <a class='nav' href='/'>Dashboard</a>
                           <a class='nav' href='/keys'>Keys</a>
                           <a class='nav' href='/my'>My Keys</a>
@@ -2061,7 +1727,9 @@ def start_health_check():
                     self.wfile.write(json.dumps(keys_data, indent=2).encode())
                     return
 
-                self.send_response(404)
+                # Redirect unknown routes to dashboard instead of 404
+                self.send_response(303)
+                self.send_header('Location', '/')
                 self.end_headers()
             except Exception as e:
                 try:
@@ -2106,11 +1774,7 @@ def start_health_check():
                         self.end_headers()
                         self.wfile.write(b'Missing key')
                         return
-                    ok = False
-                    if self.path == '/revoke':
-                        ok = key_manager.revoke_key(key)
-                    else:
-                        ok = key_manager.delete_key(key)
+                    ok = key_manager.revoke_key(key) if self.path == '/revoke' else key_manager.delete_key(key)
                     self.send_response(303)
                     self.send_header('Location','/keys')
                     self.end_headers()
@@ -2127,11 +1791,9 @@ def start_health_check():
                         user_id_val = int(user_id_str) if user_id_str is not None else None
                     except Exception:
                         user_id_val = None
-                    resp = {}
-                    status_code = 200
+                    resp, status_code = {}, 200
                     if not key or not user_id_val:
-                        resp = {'success': False, 'error': 'missing key or user_id'}
-                        status_code = 400
+                        resp, status_code = {'success': False, 'error': 'missing key or user_id'}, 400
                     else:
                         try:
                             if not machine:
@@ -2142,8 +1804,7 @@ def start_health_check():
                                 status_code = 400
                                 print(f"/api/activate failure for key={key}: {result}")
                         except Exception as e:
-                            resp = {'success': False, 'error': str(e)}
-                            status_code = 500
+                            resp, status_code = {'success': False, 'error': str(e)}, 500
                             print(f"/api/activate exception: {e}")
                     self.send_response(status_code)
                     self.send_header('Content-Type', 'application/json')
@@ -2163,11 +1824,9 @@ def start_health_check():
                         user_id_val = int(user_id_str) if user_id_str is not None else None
                     except Exception:
                         user_id_val = None
-                    resp = {}
-                    status_code = 200
+                    resp, status_code = {}, 200
                     if not key or not user_id_val or not new_machine:
-                        resp = {'success': False, 'error': 'missing key, user_id, or machine_id'}
-                        status_code = 400
+                        resp, status_code = {'success': False, 'error': 'missing key, user_id, or machine_id'}, 400
                     else:
                         try:
                             result = key_manager.rebind_key(key, int(user_id_val), str(new_machine))
@@ -2175,8 +1834,7 @@ def start_health_check():
                             if not result.get('success'):
                                 status_code = 400
                         except Exception as e:
-                            resp = {'success': False, 'error': str(e)}
-                            status_code = 500
+                            resp, status_code = {'success': False, 'error': str(e)}, 500
                     self.send_response(status_code)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
@@ -2185,7 +1843,6 @@ def start_health_check():
                     return
 
                 if self.path == '/sender':
-                    # Auth check via cookie
                     cookies = _parse_cookies(self.headers.get('Cookie'))
                     session = _decode_session(cookies.get('panel_session')) if cookies.get('panel_session') else None
                     authed_uid = int(session.get('user_id')) if session else None
@@ -2195,14 +1852,12 @@ def start_health_check():
                         self.send_header('Location', '/login')
                         self.end_headers()
                         return
-                    # Parse form
                     content_length = int(self.headers.get('Content-Length', 0))
                     body = self.rfile.read(content_length).decode()
                     data = urllib.parse.parse_qs(body)
                     chan_str = (data.get('channel_id', [''])[0]).strip()
                     content = (data.get('content', [''])[0]).strip()
-                    ok = False
-                    err = None
+                    ok, err = False, None
                     try:
                         cid = int(chan_str)
                         ch = bot.get_channel(cid)
@@ -2216,17 +1871,13 @@ def start_health_check():
                             ok = True
                     except Exception as e:
                         err = str(e)
-                    # Redirect back with a flash-like message in query
                     self.send_response(303)
-                    if ok:
-                        self.send_header('Location', '/sender')
-                    else:
-                        msg = urllib.parse.quote(err or 'Failed')
-                        self.send_header('Location', f'/sender?err={msg}')
+                    self.send_header('Location', '/sender' if ok else f"/sender?err={urllib.parse.quote(err or 'Failed')}")
                     self.end_headers()
                     return
 
-                self.send_response(404)
+                self.send_response(303)
+                self.send_header('Location', '/')
                 self.end_headers()
             except Exception as e:
                 try:
@@ -2238,7 +1889,6 @@ def start_health_check():
                     pass
     
     try:
-        # Use Render's PORT environment variable or default to 8080
         port = int(os.getenv('PORT', 8080))
         from http.server import ThreadingHTTPServer
         server = ThreadingHTTPServer(("", port), HealthCheckHandler)
@@ -2247,7 +1897,6 @@ def start_health_check():
     except Exception as e:
         print(f"❌ Health check server failed: {e}")
 
-# Error handling
 @bot.event
 async def on_error(event, *args, **kwargs):
     print(f"❌ Error in {event}: {args}")
@@ -2255,7 +1904,7 @@ async def on_error(event, *args, **kwargs):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        return  # Ignore unknown commands
+        return
     elif isinstance(error, commands.MissingPermissions):
         await ctx.send("❌ You don't have permission to use this command.")
     elif isinstance(error, commands.BotMissingPermissions):
@@ -2264,25 +1913,21 @@ async def on_command_error(ctx, error):
         print(f"❌ Command error: {error}")
         await ctx.send(f"❌ An error occurred: {str(error)}")
 
-# Run the bot
 if __name__ == "__main__":
     print("🚀 Starting Discord Bot...")
     print("=" * 40)
     
-    # Start health check server in a separate thread
     health_thread = threading.Thread(target=start_health_check, daemon=True)
     health_thread.start()
     print("✅ Health check server started")
 
     async def start_with_backoff():
-        delay_seconds = 60
-        max_delay = 900
+        delay_seconds, max_delay = 60, 900
         while True:
             try:
                 print("🔗 Connecting to Discord...")
                 await bot.start(BOT_TOKEN)
             except Exception as e:
-                # If Discord is rate-limiting or network issue, back off and retry
                 msg = str(e)
                 if "429" in msg or "Too Many Requests" in msg:
                     print(f"⚠️ 429/Rate limited. Retrying in {delay_seconds}s...")
@@ -2301,11 +1946,20 @@ if __name__ == "__main__":
         print(f"❌ Fatal error: {e}")
         exit(1)
 
-async def purge_global_commands():
-    try:
-        app_id = (bot.user.id if bot.user else None)
-        if app_id:
-            await bot.http.bulk_upsert_global_commands(app_id, [])
-            print("🧹 Purged all global application commands")
-    except Exception as e:
-        print(f"⚠️ Failed to purge global commands: {e}")
+@bot.tree.command(name="keylogs", description="Show recent key logs (last 15)")
+async def keylogs(interaction: discord.Interaction):
+    if not await check_permissions(interaction):
+        return
+    logs = list(reversed(key_manager.key_logs[-15:]))
+    if not logs:
+        await interaction.response.send_message("📭 No logs yet.", ephemeral=True)
+        return
+    lines = []
+    for e in logs:
+        when = f"<t:{e.get('ts',0)}:R>"
+        event = e.get('event','?')
+        key = e.get('key','')
+        uid = e.get('user_id')
+        lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
+    embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
