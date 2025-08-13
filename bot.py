@@ -1581,14 +1581,17 @@ def start_health_check():
                             'status': status,
                             'user': (f"<@{user_id}>" if user_id else 'Unassigned'),
                             'expires': expires,
-                            'remaining': remaining
+                            'remaining': remaining,
+                            'not_activated': (data.get('activation_time') is None)
                         })
 
                     # Build HTML
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    def fmt_rem(sec:int):
+                    def fmt_rem(sec:int, not_activated: bool) -> str:
+                        if not_activated:
+                            return 'Not activated yet'
                         d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
                         return f"{d}d {h}h {m}m" if sec>0 else '—'
                     table_rows = []
@@ -1600,8 +1603,8 @@ def start_health_check():
                           <td>{html.escape(r['type'])}</td>
                           <td>{html.escape(r['status'].capitalize())}</td>
                           <td>{r['user']}</td>
-                          <td>{fmt_rem(r['remaining'])}</td>
-                          <td><t:{r['expires']}:R></td>
+                          <td>{fmt_rem(r['remaining'], r['not_activated'])}</td>
+                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else '—'}</td>
                           <td style='display:flex;gap:6px'>
                             <form method='POST' action='/revoke' onsubmit="return confirm('Revoke this key?')">
                               <input type='hidden' name='key' value='{safe_key}'/>
@@ -1764,7 +1767,9 @@ def start_health_check():
                                     'remaining': remaining,
                                     'type': data.get('key_type','')
                                 })
-                    def fmt_rem(sec:int):
+                    def fmt_rem(sec:int, not_activated: bool) -> str:
+                        if not_activated:
+                            return 'Not activated yet'
                         d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
                         return f"{d}d {h}h {m}m" if sec>0 else '—'
                     table_rows = []
@@ -1775,8 +1780,8 @@ def start_health_check():
                           <td><code>{safe_key}</code></td>
                           <td>{html.escape(r['type'])}</td>
                           <td>{html.escape(r['status'].capitalize())}</td>
-                          <td>{fmt_rem(r['remaining'])}</td>
-                          <td><t:{r['expires']}:R></td>
+                          <td>{fmt_rem(r['remaining'], False)}</td>
+                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else '—'}</td>
                         </tr>
                         """)
                     page = f"""
@@ -1899,8 +1904,11 @@ def start_health_check():
                                     'machine_id': data.get('machine_id')
                                 }
                                 active_items.append(item)
-                                if machine_q and data.get('machine_id') and str(data.get('machine_id')) == str(machine_q):
-                                    bound_match = True
+                                if machine_q:
+                                    mid = str(data.get('machine_id') or '')
+                                    # Accept exact machine binding OR legacy slash-activation binding (machine_id == user_id)
+                                    if (mid and str(machine_q) == mid) or (mid and str(uid) == mid):
+                                        bound_match = True
                             else:
                                 if expires and expires <= now_ts:
                                     expired_count += 1
