@@ -622,24 +622,22 @@ async def on_ready():
     # Set bot status
     await bot.change_presence(activity=discord.Game(name="Managing Keys | /help"))
     
-    # Guild-only sync for instant availability, avoid duplicate global+guild commands
-    try:
-        env_guild_id = os.getenv('GUILD_ID')
-        if env_guild_id:
-            guild_id = int(env_guild_id)
-            guild_obj = discord.Object(id=guild_id)
-            # First purge any existing global commands so duplicates disappear
-            await purge_global_commands()
-            # Then (re)sync commands only to the target guild
-            bot.tree.clear_commands(guild=guild_obj)
-            bot.tree.copy_global_to(guild=guild_obj)
-            guild_synced = await bot.tree.sync(guild=guild_obj)
-            print(f"✅ Synced {len(guild_synced)} command(s) to guild {guild_id}")
-        else:
-            synced = await bot.tree.sync()
-            print(f"✅ Synced {len(synced)} command(s) globally")
-    except Exception as e:
-        print(f"⚠️ Command sync failed: {e}")
+    # Skip command sync on startup to reduce API calls; use /synccommands when needed
+    # try:
+    #     env_guild_id = os.getenv('GUILD_ID')
+    #     if env_guild_id:
+    #         guild_id = int(env_guild_id)
+    #         guild_obj = discord.Object(id=guild_id)
+    #         await purge_global_commands()
+    #         bot.tree.clear_commands(guild=guild_obj)
+    #         bot.tree.copy_global_to(guild=guild_obj)
+    #         guild_synced = await bot.tree.sync(guild=guild_obj)
+    #         print(f"✅ Synced {len(guild_synced)} command(s) to guild {guild_id}")
+    #     else:
+    #         synced = await bot.tree.sync()
+    #         print(f"✅ Synced {len(synced)} command(s) globally")
+    # except Exception as e:
+    #     print(f"⚠️ Command sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
     if not reconcile_roles_task.is_running():
@@ -2271,16 +2269,32 @@ if __name__ == "__main__":
     print("🚀 Starting Discord Bot...")
     print("=" * 40)
     
+    # Start health check server in a separate thread
+    health_thread = threading.Thread(target=start_health_check, daemon=True)
+    health_thread.start()
+    print("✅ Health check server started")
+
+    async def start_with_backoff():
+        delay_seconds = 60
+        max_delay = 900
+        while True:
+            try:
+                print("🔗 Connecting to Discord...")
+                await bot.start(BOT_TOKEN)
+            except Exception as e:
+                # If Discord is rate-limiting or network issue, back off and retry
+                msg = str(e)
+                if "429" in msg or "Too Many Requests" in msg:
+                    print(f"⚠️ 429/Rate limited. Retrying in {delay_seconds}s...")
+                else:
+                    print(f"⚠️ Startup error: {e}. Retrying in {delay_seconds}s...")
+                await asyncio.sleep(delay_seconds)
+                delay_seconds = min(delay_seconds * 2, max_delay)
+            else:
+                break
+
     try:
-        # Start health check server in a separate thread
-        health_thread = threading.Thread(target=start_health_check, daemon=True)
-        health_thread.start()
-        print("✅ Health check server started")
-        
-        # Start the Discord bot
-        print("🔗 Connecting to Discord...")
-        bot.run(BOT_TOKEN)
-        
+        asyncio.run(start_with_backoff())
     except KeyboardInterrupt:
         print("\n👋 Bot stopped by user")
     except Exception as e:
