@@ -1334,21 +1334,14 @@ def start_health_check():
  
         def do_GET(self):
             try:
-                # Session check for gated routes
+                # Session check (kept for potential future use)
                 cookies = _parse_cookies(self.headers.get('Cookie'))
                 session = _decode_session(cookies.get('panel_session')) if cookies.get('panel_session') else None
                 authed_uid = int(session.get('user_id')) if session else None
                 authed_mid = str(session.get('machine_id')) if session else None
                 authed_ok = (_has_active_access(authed_uid, authed_mid) if authed_uid is not None else False)
 
-                gated_paths = []
-                # Public panel: no login gating
-                # if any(self.path == p or self.path.startswith(p + '?') for p in gated_paths):
-                #     if not authed_ok:
-                #         self.send_response(303)
-                #         self.send_header('Location', '/login')
-                #         self.end_headers()
-                #         return
+                # Public panel: no login gating; remove legacy commented block
 
                 if self.path.startswith('/login'):
                     # Redirect away from legacy login to the dashboard (no login used)
