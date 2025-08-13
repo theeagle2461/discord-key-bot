@@ -1351,67 +1351,10 @@ def start_health_check():
                 #         return
 
                 if self.path.startswith('/login'):
-                    # Support GET auto-login with query params
-                    parsed = urllib.parse.urlparse(self.path)
-                    q = urllib.parse.parse_qs(parsed.query or '')
-                    key_q = (q.get('key', [None])[0])
-                    user_q = (q.get('user_id', [None])[0])
-                    ok = False
-                    uid = None
-                    machine_id = None
-                    if key_q and user_q:
-                        try:
-                            uid = int(user_q)
-                        except Exception:
-                            uid = None
-                        if uid is not None and key_q in key_manager.keys:
-                            d = key_manager.keys[key_q]
-                            now_ts = int(time.time())
-                            if int(d.get('user_id', 0) or 0) == int(uid) and d.get('is_active', False):
-                                exp = d.get('expiration_time') or 0
-                                if exp == 0 or exp > now_ts:
-                                    ok = True
-                                    machine_id = d.get('machine_id') or ''
-                    if ok and uid is not None:
-                        tok = _encode_session(uid, machine_id or str(uid))
-                        self.send_response(303)
-                        self.send_header('Set-Cookie', f'panel_session={tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200')
-                        self.send_header('Location', '/')
-                        self.end_headers()
-                        return
-                    # Render public info page (no login form needed)
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
+                    # Redirect away from legacy login to the dashboard (no login used)
+                    self.send_response(303)
+                    self.send_header('Location', '/')
                     self.end_headers()
-                    page = f"""
-                    <html><head><title>Key Panel</title>
-                      <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        main{{padding:24px;max-width:620px;margin:0 auto}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
-                        .muted{{color:#9ab0ff}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
-                      </style>
-                    </head>
-                    <body>
-                      <header>🔑 Discord Key Bot • Panel</header>
-                      <main>
-                        <div class='card'>
-                          <p class='muted'>This panel syncs with the Discord bot to generate, manage, and back up keys. Use Discord slash commands to activate keys; this page reflects status and provides tools.</p>
-                          <p style='margin-top:12px'>
-                            <a class='nav' href='/'>Dashboard</a>
-                            <a class='nav' href='/keys'>Keys</a>
-                            <a class='nav' href='/deleted'>Deleted</a>
-                            <a class='nav' href='/backup'>Backup</a>
-                            <a class='nav' href='/generate-form'>Generate</a>
-                          </p>
-                        </div>
-                      </main>
-                    </body></html>
-                    """
-                    self.wfile.write(page.encode())
                     return
 
                 if self.path == '/logout':
