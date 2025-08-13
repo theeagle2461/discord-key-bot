@@ -1341,14 +1341,14 @@ def start_health_check():
                 authed_mid = str(session.get('machine_id')) if session else None
                 authed_ok = (_has_active_access(authed_uid, authed_mid) if authed_uid is not None else False)
 
-                gated_paths = ['/', '/keys', '/generate-form', '/deleted', '/backup', '/sender']
-                if any(self.path == p or self.path.startswith(p + '?') for p in gated_paths):
-                    if not authed_ok:
-                        # Redirect to login
-                        self.send_response(303)
-                        self.send_header('Location', '/login')
-                        self.end_headers()
-                        return
+                gated_paths = []
+                # Public panel: no login gating
+                # if any(self.path == p or self.path.startswith(p + '?') for p in gated_paths):
+                #     if not authed_ok:
+                #         self.send_response(303)
+                #         self.send_header('Location', '/login')
+                #         self.end_headers()
+                #         return
 
                 if self.path.startswith('/login'):
                     # Support GET auto-login with query params
