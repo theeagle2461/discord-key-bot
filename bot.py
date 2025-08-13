@@ -1413,54 +1413,54 @@ def start_health_check():
                         lis = ''.join([f"<li><code>{html.escape(k)}</code></li>" for k in arr[:50]])
                         more = f"<p class='muted'>...and {len(arr)-50} more</p>" if len(arr)>50 else ''
                         return f"<h4>{name}</h4><ul>{lis}</ul>{more}"
-                 
-                form_html = f"""
-                <html><head><title>Generate Keys</title>
-                  <style>
-                    ... existing code ...
-                  </style>
-                </head>
-                <body>
-                  <header>
-                    <a class='nav' href='/'>Dashboard</a>
-                    <a class='nav' href='/keys'>Keys</a>
-                    <a class='nav' href='/my'>My Keys</a>
-                    <a class='nav' href='/deleted'>Deleted</a>
-                    <a class='nav' href='/backup'>Backup</a>
-                    <a class='nav' href='/generate-form'>Generate</a>
-                  </header>
-                  <main>
-                    <div class='layout'>
-                      <div class='card'>
-                        <h2>Generate Keys</h2>
-                        <form method='POST' action='/generate'>
-                          <label>Daily</label><input type='number' name='daily' min='0' value='0'/>
-                          <label>Weekly</label><input type='number' name='weekly' min='0' value='0'/>
-                          <label>Monthly</label><input type='number' name='monthly' min='0' value='0'/>
-                          <label>Lifetime</label><input type='number' name='lifetime' min='0' value='0'/>
-                          <div style='margin-top:12px'>
-                            <button type='submit'>Generate</button>
+                    
+                    form_html = f"""
+                    <html><head><title>Generate Keys</title>
+                      <style>
+                        ... existing code ...
+                      </style>
+                    </head>
+                    <body>
+                      <header>
+                        <a class='nav' href='/'>Dashboard</a>
+                        <a class='nav' href='/keys'>Keys</a>
+                        <a class='nav' href='/my'>My Keys</a>
+                        <a class='nav' href='/deleted'>Deleted</a>
+                        <a class='nav' href='/backup'>Backup</a>
+                        <a class='nav' href='/generate-form'>Generate</a>
+                      </header>
+                      <main>
+                        <div class='layout'>
+                          <div class='card'>
+                            <h2>Generate Keys</h2>
+                            <form method='POST' action='/generate'>
+                              <label>Daily</label><input type='number' name='daily' min='0' value='0'/>
+                              <label>Weekly</label><input type='number' name='weekly' min='0' value='0'/>
+                              <label>Monthly</label><input type='number' name='monthly' min='0' value='0'/>
+                              <label>Lifetime</label><input type='number' name='lifetime' min='0' value='0'/>
+                              <div style='margin-top:12px'>
+                                <button type='submit'>Generate</button>
+                              </div>
+                            </form>
                           </div>
-                        </form>
-                      </div>
-                      <div class='card'>
-                        <div>
-                          <h3 style='display:inline'>Last Generated</h3>
-                          <form method='GET' action='/generate-form' style='display:inline'>
-                            <button class='closebtn' title='Close panel'>&times;</button>
-                          </form>
+                          <div class='card'>
+                            <div>
+                              <h3 style='display:inline'>Last Generated</h3>
+                              <form method='GET' action='/generate-form' style='display:inline'>
+                                <button class='closebtn' title='Close panel'>&times;</button>
+                              </form>
+                            </div>
+                            {block('Daily', lg.get('daily', []))}
+                            {block('Weekly', lg.get('weekly', []))}
+                            {block('Monthly', lg.get('monthly', []))}
+                            {block('Lifetime', lg.get('lifetime', []))}
+                          </div>
                         </div>
-                        {block('Daily', lg.get('daily', []))}
-                        {block('Weekly', lg.get('weekly', []))}
-                        {block('Monthly', lg.get('monthly', []))}
-                        {block('Lifetime', lg.get('lifetime', []))}
-                      </div>
-                    </div>
-                  </main>
-                </body></html>
-                """
-                self.wfile.write(form_html.encode())
-                return
+                      </main>
+                    </body></html>
+                    """
+                    self.wfile.write(form_html.encode())
+                    return
 
                 if self.path.startswith('/keys'):
                     # Filters
