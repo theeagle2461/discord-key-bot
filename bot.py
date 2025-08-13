@@ -1334,89 +1334,20 @@ def start_health_check():
  
         def do_GET(self):
             try:
-                # Session check for gated routes
+                # Session check (kept for potential future use)
                 cookies = _parse_cookies(self.headers.get('Cookie'))
                 session = _decode_session(cookies.get('panel_session')) if cookies.get('panel_session') else None
                 authed_uid = int(session.get('user_id')) if session else None
                 authed_mid = str(session.get('machine_id')) if session else None
                 authed_ok = (_has_active_access(authed_uid, authed_mid) if authed_uid is not None else False)
 
-                gated_paths = ['/', '/keys', '/generate-form', '/deleted', '/my', '/backup', '/sender']
-                if any(self.path == p or self.path.startswith(p + '?') for p in gated_paths):
-                    if not authed_ok:
-                        # Redirect to login
-                        self.send_response(303)
-                        self.send_header('Location', '/login')
-                        self.end_headers()
-                        return
+                # Public panel: no login gating; remove legacy commented block
 
                 if self.path.startswith('/login'):
-                    # Support GET auto-login with query params
-                    parsed = urllib.parse.urlparse(self.path)
-                    q = urllib.parse.parse_qs(parsed.query or '')
-                    key_q = (q.get('key', [None])[0])
-                    user_q = (q.get('user_id', [None])[0])
-                    ok = False
-                    uid = None
-                    machine_id = None
-                    if key_q and user_q:
-                        try:
-                            uid = int(user_q)
-                        except Exception:
-                            uid = None
-                        if uid is not None and key_q in key_manager.keys:
-                            d = key_manager.keys[key_q]
-                            now_ts = int(time.time())
-                            if int(d.get('user_id', 0) or 0) == int(uid) and d.get('is_active', False):
-                                exp = d.get('expiration_time') or 0
-                                if exp == 0 or exp > now_ts:
-                                    ok = True
-                                    machine_id = d.get('machine_id') or ''
-                    if ok and uid is not None:
-                        tok = _encode_session(uid, machine_id or str(uid))
-                        self.send_response(303)
-                        self.send_header('Set-Cookie', f'panel_session={tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200')
-                        self.send_header('Location', '/')
-                        self.end_headers()
-                        return
-                    # Render login form
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
+                    # Redirect away from legacy login to the dashboard (no login used)
+                    self.send_response(303)
+                    self.send_header('Location', '/')
                     self.end_headers()
-                    page = f"""
-                    <html><head><title>Login</title>
-                      <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        main{{padding:24px;max-width:520px;margin:0 auto}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
-                        label{{display:block;margin:10px 0 6px}}
-                        input,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0;width:100%}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff;width:auto}}
-                        button:hover{{background:#2248cc}}
-                        .muted{{color:#9ab0ff}}
-                      </style>
-                    </head>
-                    <body>
-                      <header>🔑 Discord Key Bot • Login</header>
-                      <main>
-                        <div class='card'>
-                          <form method='POST' action='/login'>
-                            <label>Discord User ID</label>
-                            <input type='text' name='user_id' placeholder='e.g. 123456789012345678' required />
-                            <label>Activation Key</label>
-                            <input type='text' name='key' placeholder='Your activated key' required />
-                            <div style='margin-top:12px;display:flex;gap:8px'>
-                              <button type='submit'>Login</button>
-                              <a class='muted' href='/'>Back</a>
-                            </div>
-                          </form>
-                          <p class='muted' style='margin-top:10px'>Access requires an active key assigned to your user.</p>
-                        </div>
-                      </main>
-                    </body></html>
-                    """
-                    self.wfile.write(page.encode())
                     return
 
                 if self.path == '/logout':
@@ -1581,14 +1512,17 @@ def start_health_check():
                             'status': status,
                             'user': (f"<@{user_id}>" if user_id else 'Unassigned'),
                             'expires': expires,
-                            'remaining': remaining
+                            'remaining': remaining,
+                            'not_activated': (data.get('activation_time') is None)
                         })
 
                     # Build HTML
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    def fmt_rem(sec:int):
+                    def fmt_rem(sec:int, not_activated: bool) -> str:
+                        if not_activated:
+                            return 'Not activated yet'
                         d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
                         return f"{d}d {h}h {m}m" if sec>0 else '—'
                     table_rows = []
@@ -1600,8 +1534,8 @@ def start_health_check():
                           <td>{html.escape(r['type'])}</td>
                           <td>{html.escape(r['status'].capitalize())}</td>
                           <td>{r['user']}</td>
-                          <td>{fmt_rem(r['remaining'])}</td>
-                          <td><t:{r['expires']}:R></td>
+                          <td>{fmt_rem(r['remaining'], r['not_activated'])}</td>
+                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else '—'}</td>
                           <td style='display:flex;gap:6px'>
                             <form method='POST' action='/revoke' onsubmit="return confirm('Revoke this key?')">
                               <input type='hidden' name='key' value='{safe_key}'/>
@@ -1764,7 +1698,9 @@ def start_health_check():
                                     'remaining': remaining,
                                     'type': data.get('key_type','')
                                 })
-                    def fmt_rem(sec:int):
+                    def fmt_rem(sec:int, not_activated: bool) -> str:
+                        if not_activated:
+                            return 'Not activated yet'
                         d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
                         return f"{d}d {h}h {m}m" if sec>0 else '—'
                     table_rows = []
@@ -1775,8 +1711,8 @@ def start_health_check():
                           <td><code>{safe_key}</code></td>
                           <td>{html.escape(r['type'])}</td>
                           <td>{html.escape(r['status'].capitalize())}</td>
-                          <td>{fmt_rem(r['remaining'])}</td>
-                          <td><t:{r['expires']}:R></td>
+                          <td>{fmt_rem(r['remaining'], False)}</td>
+                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else '—'}</td>
                         </tr>
                         """)
                     page = f"""
@@ -1899,8 +1835,11 @@ def start_health_check():
                                     'machine_id': data.get('machine_id')
                                 }
                                 active_items.append(item)
-                                if machine_q and data.get('machine_id') and str(data.get('machine_id')) == str(machine_q):
-                                    bound_match = True
+                                if machine_q:
+                                    mid = str(data.get('machine_id') or '')
+                                    # Accept exact machine binding OR legacy slash-activation binding (machine_id == user_id)
+                                    if (mid and str(machine_q) == mid) or (mid and str(uid) == mid):
+                                        bound_match = True
                             else:
                                 if expires and expires <= now_ts:
                                     expired_count += 1
