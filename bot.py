@@ -813,8 +813,8 @@ async def activate_key(interaction: discord.Interaction, key: str):
             embed = discord.Embed(
                 title="🔑 Key Activated Successfully!",
                 description=f"Your key has been activated and you now have access to the selfbot.",
-            color=0x00ff00
-        )
+                color=0x00ff00
+            )
             embed.add_field(name="Role Assigned", value=role_message, inline=False)
             embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
             embed.add_field(name="Expires", value=f"<t:{result['expiration_time']}:R>", inline=True)
