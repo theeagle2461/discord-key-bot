@@ -98,12 +98,14 @@ if not BOT_TOKEN:
     print("For local: Create .env file with BOT_TOKEN=your_token")
     exit(1)
 
-# Data storage
-KEYS_FILE = "keys.json"
-BACKUP_FILE = "keys_backup.json"
-USAGE_FILE = "key_usage.json"
-DELETED_KEYS_FILE = "deleted_keys.json"
-LOGS_FILE = "key_logs.json"
+# Data storage (support persistent directory via DATA_DIR)
+DATA_DIR = os.getenv('DATA_DIR', '.')
+os.makedirs(DATA_DIR, exist_ok=True)
+KEYS_FILE = os.path.join(DATA_DIR, "keys.json")
+BACKUP_FILE = os.path.join(DATA_DIR, "keys_backup.json")
+USAGE_FILE = os.path.join(DATA_DIR, "key_usage.json")
+DELETED_KEYS_FILE = os.path.join(DATA_DIR, "deleted_keys.json")
+LOGS_FILE = os.path.join(DATA_DIR, "key_logs.json")
 
 # Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
 ONLINE_USERS: dict[int, int] = {}
@@ -1481,11 +1483,28 @@ def start_health_check():
                     form_html = f"""
                     <html><head><title>Generate Keys</title>
                       <style>
-                        ... existing code ...
+                        :root { --bg:#0b0718; --panel:#120a2a; --muted:#b399ff; --border:#1f1440; --text:#efeaff; --accent:#6c4af2; }
+                        * { box-sizing: border-box; }
+                        body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
+                        header { background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; gap:12px; align-items:center }
+                        a.nav { color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#1a1240; border:1px solid #1f1440 }
+                        a.nav:hover { background:#1e154d }
+                        main { padding:24px; max-width:1100px; margin:0 auto }
+                        .layout { display:grid; grid-template-columns: 1.2fr 0.8fr; gap:16px }
+                        .card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px }
+                        label { display:block; margin:10px 0 6px }
+                        input,button { padding:10px 12px; border-radius:10px; border:1px solid #2a3866; background:#0b132b; color:var(--text) }
+                        input[type=number] { width:120px }
+                        button { cursor:pointer; background: var(--accent); border-color:#2049cc }
+                        button:hover { filter:brightness(0.95) }
+                        ul { margin:8px 0 0 20px }
+                        code { background:#121a36; padding:2px 6px; border-radius:6px }
+                        .muted { color:#a4b1d6 }
                       </style>
                     </head>
                     <body>
                       <header>
+                        <div class='brand' style='font-size:22px;font-weight:800;letter-spacing:0.6px'>CS BOT <span style='font-weight:600;color:#b799ff'>made by iris&classical</span></div>
                         <a class='nav' href='/'>Dashboard</a>
                         <a class='nav' href='/keys'>Keys</a>
                         <a class='nav' href='/my'>My Keys</a>
