@@ -104,6 +104,17 @@ BACKUP_FILE = "keys_backup.json"
 USAGE_FILE = "key_usage.json"
 DELETED_KEYS_FILE = "deleted_keys.json"
 
+# Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
+ONLINE_USERS: dict[int, int] = {}
+
+def normalize_key(raw: str | None) -> str:
+    if not raw:
+        return ""
+    k = raw.strip()
+    if k.startswith("`") and k.endswith("`") and len(k) >= 2:
+        k = k[1:-1]
+    return k.strip()
+
 class KeyManager:
     def __init__(self):
         self.keys = {}
@@ -133,16 +144,28 @@ class KeyManager:
             self.deleted_keys = {}
     
     def save_data(self):
-        """Save keys and usage data to files"""
+        """Save keys and usage data to files (atomically) and also write a timestamped backup"""
         try:
-            with open(KEYS_FILE, 'w') as f:
-                json.dump(self.keys, f, indent=2)
-            
-            with open(USAGE_FILE, 'w') as f:
-                json.dump(self.key_usage, f, indent=2)
-                
-            with open(DELETED_KEYS_FILE, 'w') as f:
-                json.dump(self.deleted_keys, f, indent=2)
+            # Atomic writes via temp files and replace
+            def atomic_write(path: str, data: dict):
+                tmp = f"{path}.tmp"
+                with open(tmp, 'w') as f:
+                    json.dump(data, f, indent=2)
+                os.replace(tmp, path)
+            atomic_write(KEYS_FILE, self.keys)
+            atomic_write(USAGE_FILE, self.key_usage)
+            atomic_write(DELETED_KEYS_FILE, self.deleted_keys)
+            # Extra rolling backup snapshot
+            ts = int(time.time())
+            snap_dir = "backups"
+            os.makedirs(snap_dir, exist_ok=True)
+            with open(os.path.join(snap_dir, f"keys_{ts}.json"), 'w') as f:
+                json.dump({
+                    'ts': ts,
+                    'keys': self.keys,
+                    'usage': self.key_usage,
+                    'deleted': self.deleted_keys
+                }, f, indent=2)
         except Exception as e:
             print(f"Error saving data: {e}")
     
@@ -216,6 +239,7 @@ class KeyManager:
     
     def activate_key(self, key: str, machine_id: str, user_id: int) -> Dict:
         """Activate a key for a specific machine"""
+        key = normalize_key(key)
         # Check if key is deleted first
         if self.is_key_deleted(key):
             return {"success": False, "error": "No access, deleted key"}
@@ -695,7 +719,7 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
         return
     
     # Generate the key
-    key = key_manager.generate_key(interaction.user.id, channel_id, duration_days)
+    key = key_manager.generate_key(interaction.user.id, channel_id, duration_days)  # saved immediately; atomic and snapshotted
     
     # Send key to webhook
     await key_manager.send_generated_key_to_webhook(key, duration_days, interaction.user.display_name)
@@ -2313,3 +2337,40 @@ async def purge_global_commands():
             print("🧹 Purged all global application commands")
     except Exception as e:
         print(f"⚠️ Failed to purge global commands: {e}")
+
+                if self.path.startswith('/api/heartbeat'):
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    user_q = q.get('user_id', [None])[0]
+                    try:
+                        uid = int(user_q) if user_q else None
+                    except Exception:
+                        uid = None
+                    ok = False
+                    if uid is not None:
+                        ONLINE_USERS[uid] = int(time.time())
+                        ok = True
+                    # Cull stale (5 min)
+                    now_ts = int(time.time())
+                    stale = [u for u,t in ONLINE_USERS.items() if now_ts - t > 300]
+                    for u in stale:
+                        ONLINE_USERS.pop(u, None)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    import json
+                    self.wfile.write(json.dumps({'ok': ok, 'online': len(ONLINE_USERS)}).encode())
+                    return
+
+                if self.path.startswith('/api/online'):
+                    # Return current online count (stale cleaned)
+                    now_ts = int(time.time())
+                    stale = [u for u,t in ONLINE_USERS.items() if now_ts - t > 300]
+                    for u in stale:
+                        ONLINE_USERS.pop(u, None)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    import json
+                    self.wfile.write(json.dumps({'online': len(ONLINE_USERS)}).encode())
+                    return
