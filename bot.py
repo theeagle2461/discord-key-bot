@@ -103,6 +103,7 @@ KEYS_FILE = "keys.json"
 BACKUP_FILE = "keys_backup.json"
 USAGE_FILE = "key_usage.json"
 DELETED_KEYS_FILE = "deleted_keys.json"
+LOGS_FILE = "key_logs.json"
 
 # Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
 ONLINE_USERS: dict[int, int] = {}
@@ -120,6 +121,7 @@ class KeyManager:
         self.keys = {}
         self.key_usage = {}
         self.deleted_keys = {}
+        self.key_logs: list[dict] = []
         self.last_generated = None  # In-memory cache of last generated keys for web UI panel
         self.load_data()
     
@@ -137,11 +139,15 @@ class KeyManager:
             if os.path.exists(DELETED_KEYS_FILE):
                 with open(DELETED_KEYS_FILE, 'r') as f:
                     self.deleted_keys = json.load(f)
++            if os.path.exists(LOGS_FILE):
++                with open(LOGS_FILE, 'r') as f:
++                    self.key_logs = json.load(f)
         except Exception as e:
             print(f"Error loading data: {e}")
             self.keys = {}
             self.key_usage = {}
             self.deleted_keys = {}
++            self.key_logs = []
     
     def save_data(self):
         """Save keys and usage data to files (atomically) and also write a timestamped backup"""
@@ -155,6 +161,7 @@ class KeyManager:
             atomic_write(KEYS_FILE, self.keys)
             atomic_write(USAGE_FILE, self.key_usage)
             atomic_write(DELETED_KEYS_FILE, self.deleted_keys)
+            atomic_write(LOGS_FILE, self.key_logs)
             # Extra rolling backup snapshot
             ts = int(time.time())
             snap_dir = "backups"
@@ -201,6 +208,10 @@ class KeyManager:
         }
         
         self.save_data()
+        try:
+            self.add_log('generate', key, user_id=user_id, details={'duration_days': duration_days, 'channel_id': channel_id})
+        except Exception:
+            pass
         return key
     
     def revoke_key(self, key: str) -> bool:
@@ -208,6 +219,10 @@ class KeyManager:
         if key in self.keys:
             self.keys[key]["is_active"] = False
             self.save_data()
+            try:
+                self.add_log('revoke', key)
+            except Exception:
+                pass
             return True
         return False
     
@@ -230,6 +245,10 @@ class KeyManager:
                 del self.key_usage[key]
             
             self.save_data()
+            try:
+                self.add_log('delete', key)
+            except Exception:
+                pass
             return True
         return False
     
@@ -277,6 +296,11 @@ class KeyManager:
             self.key_usage[key]["usage_count"] += 1
         
         self.save_data()
+        # Log activation
+        try:
+            self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'expires': key_data.get('expiration_time')})
+        except Exception:
+            pass
         
         return {
             "success": True,
@@ -633,6 +657,22 @@ class KeyManager:
             self.key_usage[key]["last_used"] = now_ts
         self.save_data()
         return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id)}
+
+    def add_log(self, event: str, key: str, user_id: int | None = None, details: dict | None = None):
+        try:
+            entry = {
+                'ts': int(time.time()),
+                'event': event,
+                'key': key,
+                'user_id': int(user_id) if user_id is not None else None,
+                'details': details or {}
+            }
+            self.key_logs.append(entry)
+            # Keep last 1000 entries
+            if len(self.key_logs) > 1000:
+                self.key_logs = self.key_logs[-1000:]
+        except Exception as e:
+            print(f"Failed to append log: {e}")
 
 # Initialize key manager
 key_manager = KeyManager()
@@ -1657,10 +1697,10 @@ def start_health_check():
                     html_doc = f"""
                     <html><head><title>Deleted Keys</title>
                       <style>
-                        body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}
-                        header{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}
-                        a.nav{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}
-                        a.nav:hover{background:#1a2448}
+                        body{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}
+                        header{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}
+                        a.nav:hover{background:#1e154d}
                         main{padding:24px}
                         .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
                         table{width:100%;border-collapse:collapse;margin-top:12px}
@@ -1948,7 +1988,7 @@ def start_health_check():
                         <title>Discord Key Bot</title>
                         <meta name='viewport' content='width=device-width, initial-scale=1'/>
                         <style>
-                          :root {{ --bg:#0b1020; --panel:#0e1630; --muted:#9ab0ff; --border:#1f2a4a; --text:#e6e9f0; --accent:#2a5bff; }}
+                          :root {{ --bg:#0b0718; --panel:#120a2a; --muted:#b399ff; --border:#1f1440; --text:#efeaff; --accent:#6c4af2; }}
                           * {{ box-sizing: border-box; }}
                           body {{ margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }}
                           header {{ background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; align-items:center; gap:12px; flex-wrap: wrap; }}
@@ -1974,7 +2014,7 @@ def start_health_check():
                       </head>
                       <body>
                         <header>
-                          <div class='brand'>🔑 Discord Key Bot</div>
+                          <div class='brand' style='font-size:28px;font-weight:800;letter-spacing:0.6px'>CS BOT <span style='font-weight:600;color:#b799ff'>made by iris&classical</span></div>
                           <a class='nav' href='/'>Dashboard</a>
                           <a class='nav' href='/keys'>Keys</a>
                           <a class='nav' href='/my'>My Keys</a>
@@ -2374,3 +2414,21 @@ async def purge_global_commands():
                     import json
                     self.wfile.write(json.dumps({'online': len(ONLINE_USERS)}).encode())
                     return
+
+@bot.tree.command(name="keylogs", description="Show recent key logs (last 15)")
+async def keylogs(interaction: discord.Interaction):
+    if not await check_permissions(interaction):
+        return
+    logs = list(reversed(key_manager.key_logs[-15:]))
+    if not logs:
+        await interaction.response.send_message("📭 No logs yet.", ephemeral=True)
+        return
+    lines = []
+    for e in logs:
+        when = f"<t:{e.get('ts',0)}:R>"
+        event = e.get('event','?')
+        key = e.get('key','')
+        uid = e.get('user_id')
+        lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
+    embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
