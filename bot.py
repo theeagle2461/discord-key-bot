@@ -23,6 +23,11 @@ import threading
 import requests
 import urllib.parse
 import html
+import random
+import string
+import base64
+import io
+import re
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -36,6 +41,20 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Configuration
 GUILD_ID = 1402622761246916628
+# Allow overriding GUILD_ID via environment
+try:
+    GUILD_ID = int(os.getenv('GUILD_ID', str(GUILD_ID)))
+except Exception:
+    pass
+# Separate activation guild/channel (optional)
+try:
+    ACTIVATION_GUILD_ID = int(os.getenv('ACTIVATION_GUILD_ID', str(GUILD_ID)))
+except Exception:
+    ACTIVATION_GUILD_ID = GUILD_ID
+try:
+    ACTIVATION_CHANNEL_ID = int(os.getenv('ACTIVATION_CHANNEL_ID', '0') or 0)
+except Exception:
+    ACTIVATION_CHANNEL_ID = 0
 ROLE_ID = 1404221578782183556
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
 
@@ -45,6 +64,12 @@ SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734
 # Webhook configuration for key notifications and selfbot launches
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
+
+# Optional backup channel and automation flags
+BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
+AUTO_RESTORE_ON_STARTUP = os.getenv('AUTO_RESTORE_ON_STARTUP', '1') != '0'
+AUTO_UPLOAD_BACKUPS = os.getenv('AUTO_UPLOAD_BACKUPS', '1') != '0'
+BACKUP_UPLOAD_INTERVAL_SECS = int(os.getenv('BACKUP_UPLOAD_INTERVAL_SECS', '300'))
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -185,6 +210,12 @@ class KeyManager:
                 }, f, indent=2)
         except Exception as e:
             print(f"Error saving data: {e}")
+        # Schedule async upload to Discord channel (throttled)
+        try:
+            if AUTO_UPLOAD_BACKUPS:
+                schedule_backup_upload()
+        except Exception as e:
+            print(f"Backup upload scheduling failed: {e}")
     
     def generate_key(self, user_id: int, channel_id: Optional[int] = None, duration_days: int = 30) -> str:
         """Generate a new key for general use"""
@@ -266,7 +297,7 @@ class KeyManager:
         """Check if a key has been deleted"""
         return key in self.deleted_keys
     
-    def activate_key(self, key: str, machine_id: str, user_id: int) -> Dict:
+    def activate_key(self, key: str, machine_id: str, user_id: int, client_ip: str | None = None) -> Dict:
         """Activate a key for a specific machine"""
         key = normalize_key(key)
         # Check if key is deleted first
@@ -281,7 +312,7 @@ class KeyManager:
         if not key_data["is_active"]:
             return {"success": False, "error": "Access revoked"}
         
-        if key_data["machine_id"] and key_data["machine_id"] != machine_id:
+        if key_data.get("machine_id") and key_data["machine_id"] != machine_id:
             return {"success": False, "error": "Key is already activated on another machine"}
         
         # If already has expiration_time and it's expired, block
@@ -291,6 +322,8 @@ class KeyManager:
         # Activate the key (first-time activation sets activation/expiration)
         now_ts = int(time.time())
         key_data["machine_id"] = machine_id
+        if client_ip:
+            key_data["ip_address"] = str(client_ip)
         key_data["activated_by"] = user_id
         key_data["user_id"] = user_id
         if not key_data.get("activation_time"):
@@ -308,7 +341,7 @@ class KeyManager:
         self.save_data()
         # Log activation
         try:
-            self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'expires': key_data.get('expiration_time')})
+            self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'ip_address': key_data.get('ip_address'), 'expires': key_data.get('expiration_time')})
         except Exception:
             pass
         
@@ -547,7 +580,7 @@ class KeyManager:
                         "inline": False
                     }
                 ],
-                "timestamp": datetime.datetime.utcnow().isoformat()
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
             
             payload = {
@@ -597,7 +630,7 @@ class KeyManager:
                         "inline": False
                     }
                 ],
-                "timestamp": datetime.datetime.utcnow().isoformat()
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
             
             payload = {
@@ -639,7 +672,7 @@ class KeyManager:
                 return {"success": False, "error": "Key has been revoked"}
         return {"success": False, "error": "Key not found"}
 
-    def rebind_key(self, key: str, user_id: int, new_machine_id: str) -> Dict:
+    def rebind_key(self, key: str, user_id: int, new_machine_id: str, client_ip: str | None = None) -> Dict:
         """Rebind a key to a new machine if requested by the same user who activated it.
         Conditions:
         - key exists, not deleted, is_active True
@@ -660,13 +693,15 @@ class KeyManager:
         owner = data.get("activated_by") or data.get("user_id")
         if not owner or int(owner) != int(user_id):
             return {"success": False, "error": "Key is owned by a different user"}
-        # Update machine binding
+        # Update machine binding and optional IP
         data["machine_id"] = str(new_machine_id)
+        if client_ip:
+            data["ip_address"] = str(client_ip)
         # Touch usage
         if key in self.key_usage:
             self.key_usage[key]["last_used"] = now_ts
         self.save_data()
-        return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id)}
+        return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id), "ip_address": data.get("ip_address")}
 
     def add_log(self, event: str, key: str, user_id: int | None = None, details: dict | None = None):
         try:
@@ -714,6 +749,14 @@ async def on_ready():
     #     print(f"⚠️ Command sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
+    # Auto-restore on startup if keys storage is empty
+    try:
+        if AUTO_RESTORE_ON_STARTUP and (not os.path.exists(KEYS_FILE) or not key_manager.keys):
+            ok = await restore_from_pinned_backup_pointer()
+            if not ok:
+                print('ℹ️ No backup pointer found or restore failed')
+    except Exception as e:
+        print(f"Auto-restore failed: {e}")
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -721,7 +764,7 @@ async def check_permissions(interaction) -> bool:
         await interaction.response.send_message("❌ This bot can only be used in a server.", ephemeral=True)
         return False
     
-    if interaction.guild.id != GUILD_ID:
+    if interaction.guild.id != ACTIVATION_GUILD_ID:
         await interaction.response.send_message("❌ This bot is not configured for this server.", ephemeral=True)
         return False
     
@@ -797,53 +840,52 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
 async def activate_key(interaction: discord.Interaction, key: str):
     """Activate a key and assign the user role"""
     try:
+        # Enforce activation channel if configured
+        if ACTIVATION_CHANNEL_ID and getattr(interaction.channel, 'id', None) != ACTIVATION_CHANNEL_ID:
+            await interaction.response.send_message("❌ Use this command in the designated activation channel.", ephemeral=True)
+            return
         # Get machine ID (using user's ID as a simple identifier)
         machine_id = str(interaction.user.id)
         user_id = interaction.user.id
         
         # Attempt to activate the key
-        result = key_manager.activate_key(key, machine_id, user_id)
+        # Try to capture client IP from X-Forwarded-For if present in the environment
+        client_ip = None
+        try:
+            # discord interactions do not expose raw request headers; leave None
+            client_ip = None
+        except Exception:
+            client_ip = None
+        result = key_manager.activate_key(key, machine_id, user_id, client_ip)
         
         if result["success"]:
             # Give the user the role
             role = interaction.guild.get_role(ROLE_ID)
-            if role and role not in interaction.user.roles:
-                await interaction.user.add_roles(role)
-                role_message = f"✅ Role **{role.name}** has been assigned to you!"
-            else:
-                role_message = f"✅ You already have the **{role.name}** role!"
-            
-            # Get key duration info
-            key_data = key_manager.get_key_info(key)
-            duration_days = key_data.get("duration_days", 30)
-            
-            # Send success message
+            if role:
+                try:
+                    await interaction.user.add_roles(role)
+                except Exception:
+                    pass
+            # Construct success message
+            expiration_time = result.get("expiration_time")
+            channel_id = result.get("channel_id")
+            channel_display = f"<#${channel_id}>" if channel_id else "N/A"
             embed = discord.Embed(
-                title="🔑 Key Activated Successfully!",
-                description=f"Your key has been activated and you now have access to the selfbot.",
+                title="🔑 Activation Successful",
+                description=f"Key activated for <@{user_id}>",
                 color=0x00ff00
             )
-            embed.add_field(name="Role Assigned", value=role_message, inline=False)
-            embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
-            embed.add_field(name="Expires", value=f"<t:{result['expiration_time']}:R>", inline=True)
-            
-            if result.get('channel_id'):
-                embed.add_field(name="Channel Locked", value=f"<#{result['channel_id']}>", inline=True)
-            
-            # Add SelfBot instructions
-            embed.add_field(name="📱 SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {duration_days} days duration!", inline=False)
-            
+            if expiration_time:
+                embed.add_field(name="Expiration", value=f"<t:{expiration_time}:F>", inline=True)
+            embed.add_field(name="Assigned Role", value=role.name if role else "N/A", inline=True)
+            embed.add_field(name="Channel", value=channel_display, inline=True)
+            embed.add_field(name="Machine ID", value=f"`{machine_id}`", inline=False)
             await interaction.response.send_message(embed=embed)
-            
             # Send webhook notification (with IP if available)
-            user_ip = None
             try:
-                import os
-                user_ip = os.getenv('SELF_IP')
+                await key_manager.send_activation_to_webhook(key, user_id, machine_id)
             except Exception:
-                user_ip = None
-            await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
-            
+                pass
         else:
             await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
             
@@ -1214,6 +1256,12 @@ async def active_keys(interaction: discord.Interaction):
     if not await check_permissions(interaction):
         return
 
+    # Acknowledge early to avoid 3s timeout; use ephemeral deferred response
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass
+
     now = int(time.time())
     active_items = []
     for key, data in key_manager.keys.items():
@@ -1226,7 +1274,8 @@ async def active_keys(interaction: discord.Interaction):
             active_items.append((key, remaining, user_display))
 
     if not active_items:
-        await interaction.response.send_message("📭 No active keys found.", ephemeral=True)
+        # Use followup after deferring
+        await interaction.followup.send("📭 No active keys found.", ephemeral=True)
         return
 
     # Sort by soonest expiration
@@ -1248,7 +1297,8 @@ async def active_keys(interaction: discord.Interaction):
     if len(active_items) > 20:
         embed.set_footer(text=f"Showing 20 of {len(active_items)} active keys")
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    # Send via followup (since we deferred)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="expiredkeys", description="List expired keys")
 async def expired_keys(interaction: discord.Interaction):
@@ -1282,11 +1332,11 @@ async def expired_keys(interaction: discord.Interaction):
 
 @bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
 async def sync_commands(interaction: discord.Interaction):
-    if not interaction.guild or interaction.guild.id != GUILD_ID:
+    if not interaction.guild or interaction.guild.id != ACTIVATION_GUILD_ID:
         await interaction.response.send_message("❌ Wrong server.", ephemeral=True)
         return
     try:
-        guild_obj = discord.Object(id=GUILD_ID)
+        guild_obj = discord.Object(id=ACTIVATION_GUILD_ID)
         bot.tree.clear_commands(guild=guild_obj)
         bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
@@ -1307,14 +1357,30 @@ async def on_member_join(member):
 # Error handling for slash commands
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-    if isinstance(error, discord.app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
-    elif isinstance(error, discord.app_commands.MissingPermissions):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
-    elif isinstance(error, discord.app_commands.BotMissingPermissions):
-        await interaction.response.send_message("❌ I don't have the required permissions to execute this command.", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
+	# If already acknowledged, use followup API
+	if getattr(interaction.response, "is_done", lambda: False)():
+		try:
+			if isinstance(error, discord.app_commands.CommandOnCooldown):
+				await interaction.followup.send(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+			elif isinstance(error, discord.app_commands.MissingPermissions):
+				await interaction.followup.send("❌ You don't have permission to use this command.", ephemeral=True)
+			elif isinstance(error, discord.app_commands.BotMissingPermissions):
+				await interaction.followup.send("❌ I don't have the required permissions to execute this command.", ephemeral=True)
+			else:
+				await interaction.followup.send(f"❌ An error occurred: {str(error)}", ephemeral=True)
+		except Exception:
+			pass
+		return
+
+	# Not acknowledged yet; safe to use initial response
+	if isinstance(error, discord.app_commands.CommandOnCooldown):
+		await interaction.response.send_message(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+	elif isinstance(error, discord.app_commands.MissingPermissions):
+		await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+	elif isinstance(error, discord.app_commands.BotMissingPermissions):
+		await interaction.response.send_message("❌ I don't have the required permissions to execute this command.", ephemeral=True)
+	else:
+		await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
 
 # Error handling
 @bot.event
@@ -1475,7 +1541,6 @@ def start_health_check():
                     self.wfile.write(page.encode())
                     return
 
-                # Simple HTML form for generating keys
                 if self.path == '/generate-form':
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
@@ -1903,6 +1968,7 @@ def start_health_check():
                     q = urllib.parse.parse_qs(parsed.query or '')
                     user_q = q.get('user_id', [None])[0]
                     machine_q = q.get('machine_id', [None])[0]
+                    client_ip = self.headers.get('X-Forwarded-For') or self.client_address[0]
                     try:
                         uid = int(user_q) if user_q is not None else None
                     except Exception:
@@ -1912,6 +1978,7 @@ def start_health_check():
                     active_items = []
                     expired_count = 0
                     bound_match = False
+                    ip_match = False
                     if uid is not None:
                         for key, data in key_manager.keys.items():
                             if data.get('user_id', 0) != uid:
@@ -1923,7 +1990,8 @@ def start_health_check():
                                     'expires_at': expires,
                                     'time_remaining': (expires - now_ts) if expires else 0,
                                     'type': data.get('key_type', 'general'),
-                                    'machine_id': data.get('machine_id')
+                                    'machine_id': data.get('machine_id'),
+                                    'ip_address': data.get('ip_address')
                                 }
                                 active_items.append(item)
                                 if machine_q:
@@ -1931,18 +1999,24 @@ def start_health_check():
                                     # Accept exact machine binding OR legacy slash-activation binding (machine_id == user_id)
                                     if (mid and str(machine_q) == mid) or (mid and str(uid) == mid):
                                         bound_match = True
+                                # IP match regardless of query
+                                ip_saved = str(data.get('ip_address') or '').strip()
+                                if ip_saved and client_ip and ip_saved == str(client_ip).strip():
+                                    ip_match = True
                             else:
                                 if expires and expires <= now_ts:
                                     expired_count += 1
 
                     has_active_key = len(active_items) > 0
-                    should_have_access = bound_match if machine_q else has_active_key
+                    # Strict access: require either exact machine match (when provided) OR IP match
+                    should_have_access = (bound_match if machine_q else False) or ip_match
                     resp = {
                         'user_id': uid,
                         'role_id': ROLE_ID,
                         'guild_id': GUILD_ID,
                         'has_active_key': has_active_key,
                         'bound_to_machine': bound_match,
+                        'ip_match': ip_match,
                         'should_have_access': should_have_access,
                         'active_keys': active_items,
                         'expired_keys_count': expired_count,
@@ -2275,6 +2349,41 @@ def start_health_check():
                     self.end_headers()
                     return
 
+                if self.path == '/api/restore':
+                    # Accept JSON backup payload and restore
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    try:
+                        payload = json.loads(body)
+                    except Exception as e:
+                        self.send_response(400)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': False, 'error': f'invalid JSON: {e}'}).encode())
+                        return
+                    try:
+                        keys = payload.get('keys')
+                        usage = payload.get('usage', {})
+                        deleted = payload.get('deleted', {})
+                        if not isinstance(keys, dict):
+                            raise ValueError('keys must be a JSON object')
+                        if not isinstance(usage, dict) or not isinstance(deleted, dict):
+                            raise ValueError('usage/deleted must be JSON objects')
+                        key_manager.keys = keys
+                        key_manager.key_usage = usage
+                        key_manager.deleted_keys = deleted
+                        key_manager.save_data()
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': True}).encode())
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode())
+                    return
+
                 if self.path in ('/revoke','/delete'):
                     content_length = int(self.headers.get('Content-Length', 0))
                     body = self.rfile.read(content_length).decode()
@@ -2315,7 +2424,8 @@ def start_health_check():
                         try:
                             if not machine:
                                 machine = str(user_id_val)
-                            result = key_manager.activate_key(key, str(machine), int(user_id_val))
+                            client_ip = self.headers.get('X-Forwarded-For') or self.client_address[0]
+                            result = key_manager.activate_key(key, str(machine), int(user_id_val), client_ip)
                             resp = result
                             if not result.get('success'):
                                 status_code = 400
@@ -2349,7 +2459,8 @@ def start_health_check():
                         status_code = 400
                     else:
                         try:
-                            result = key_manager.rebind_key(key, int(user_id_val), str(new_machine))
+                            client_ip = self.headers.get('X-Forwarded-For') or self.client_address[0]
+                            result = key_manager.rebind_key(key, int(user_id_val), str(new_machine), client_ip)
                             resp = result
                             if not result.get('success'):
                                 status_code = 400
@@ -2568,3 +2679,126 @@ async def keylogs(interaction: discord.Interaction):
         lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
     embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+_last_backup_upload_ts = 0
+_backup_upload_pending = False
+
+def _effective_backup_channel_id() -> int:
+    return BACKUP_CHANNEL_ID or CHANNEL_ID
+
+async def upload_latest_backup_to_channel():
+    global _last_backup_upload_ts, _backup_upload_pending
+    try:
+        chan_id = _effective_backup_channel_id()
+        guild = bot.get_guild(GUILD_ID)
+        channel = None
+        if guild:
+            channel = guild.get_channel(chan_id)
+        if not channel:
+            # Fallback: try global lookup
+            try:
+                channel = bot.get_channel(chan_id) or await bot.fetch_channel(chan_id)
+            except Exception:
+                channel = None
+        if not channel:
+            print(f"Backup upload skipped: channel {chan_id} not found")
+            return
+        payload = {
+            'ts': int(time.time()),
+            'keys': key_manager.keys,
+            'usage': key_manager.key_usage,
+            'deleted': key_manager.deleted_keys,
+        }
+        data = json.dumps(payload, indent=2).encode()
+        file = discord.File(fp=io.BytesIO(data), filename='keys_backup.json')
+        msg = await channel.send(content='Keys backup snapshot', file=file)
+        # Update or create pinned pointer message
+        try:
+            pins = await channel.pins()
+        except Exception:
+            pins = []
+        pointer = None
+        for m in pins:
+            if getattr(m, 'author', None) and m.author.id == bot.user.id and isinstance(m.content, str) and m.content.startswith('BACKUP_POINTER:'):
+                pointer = m
+                break
+        url = msg.attachments[0].url if msg.attachments else None
+        pointer_text = f"BACKUP_POINTER: {url} ts={payload['ts']}"
+        if pointer:
+            try:
+                await pointer.edit(content=pointer_text)
+            except Exception:
+                pass
+        else:
+            try:
+                pmsg = await channel.send(pointer_text)
+                try:
+                    await pmsg.pin()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        _last_backup_upload_ts = int(time.time())
+    finally:
+        _backup_upload_pending = False
+
+def schedule_backup_upload():
+    global _last_backup_upload_ts, _backup_upload_pending
+    if _backup_upload_pending:
+        return
+    now = int(time.time())
+    if now - _last_backup_upload_ts < BACKUP_UPLOAD_INTERVAL_SECS:
+        return
+    _backup_upload_pending = True
+    try:
+        bot.loop.create_task(upload_latest_backup_to_channel())
+    except Exception:
+        try:
+            asyncio.run_coroutine_threadsafe(upload_latest_backup_to_channel(), bot.loop)
+        except Exception as e:
+            _backup_upload_pending = False
+            print(f"Failed to schedule backup upload: {e}")
+
+async def restore_from_pinned_backup_pointer():
+    chan_id = _effective_backup_channel_id()
+    guild = bot.get_guild(GUILD_ID)
+    channel = None
+    if guild:
+        try:
+            channel = guild.get_channel(chan_id)
+        except Exception:
+            channel = None
+    if not channel:
+        # Fallback: try global lookup by channel ID
+        try:
+            channel = bot.get_channel(chan_id) or await bot.fetch_channel(chan_id)
+        except Exception:
+            channel = None
+    if not channel:
+        return False
+    try:
+        pins = await channel.pins()
+        for m in pins:
+            if m.author.id == bot.user.id and m.content.startswith('BACKUP_POINTER:'):
+                # Extract URL
+                match = re.search(r'(https?://\S+)', m.content)
+                if not match:
+                    continue
+                url = match.group(1)
+                try:
+                    resp = requests.get(url, timeout=10)
+                    if resp.status_code == 200:
+                        payload = resp.json()
+                        if isinstance(payload, dict) and 'keys' in payload and 'usage' in payload:
+                            key_manager.keys = payload.get('keys', {})
+                            key_manager.key_usage = payload.get('usage', {})
+                            key_manager.deleted_keys = payload.get('deleted', {})
+                            key_manager.save_data()
+                            print('✅ Restored keys from pinned backup pointer')
+                            return True
+                except Exception as e:
+                    print(f"Restore fetch failed: {e}")
+    except Exception as e:
+        print(f"Restore pointer scan failed: {e}")
+    return False
+

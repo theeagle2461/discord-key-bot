@@ -3,7 +3,7 @@ import requests
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import platform
 import hashlib
 import threading
@@ -286,6 +286,16 @@ class DiscordBotGUI:
         self.log_text.grid(row=8, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         self.log_scrollbar.config(command=self.log_text.yview)
 
+        # User info (avatar + username)
+        self.user_info_frame = tk.Frame(left, bg="#1e1b29")
+        self.user_info_frame.grid(row=9, column=1, columnspan=3, sticky="w", pady=(10, 0))
+
+        self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
+        self.avatar_label.pack(side="left", padx=(0, 10))
+
+        self.username_label = tk.Label(self.user_info_frame, text="", font=self.title_font, bg="#1e1b29", fg="#e0d7ff")
+        self.username_label.pack(side="left")
+
         # Right: Admin broadcast chat (read for all, write only for admin)
         tk.Label(right, text="Broadcast Chat (Only an admin can chat)").pack(anchor="w", padx=6, pady=(4, 2))
         self.chat_list = tk.Listbox(right, height=24)
@@ -320,7 +330,8 @@ class DiscordBotGUI:
 
         self.root.configure(bg=bg_color)
         self.main_frame.configure(bg=bg_color)
-        self.user_info_frame.configure(bg=bg_color)
+        if hasattr(self, 'user_info_frame'):
+            self.user_info_frame.configure(bg=bg_color)
 
         for lbl in [w for w in self.main_frame.winfo_children() if isinstance(w, tk.Label)]:
             lbl.configure(bg=bg_color, fg=fg_color, font=self.title_font)
@@ -341,8 +352,10 @@ class DiscordBotGUI:
 
         self.log_text.configure(bg=log_bg)
 
-        self.username_label.configure(bg=bg_color, fg=fg_color)
-        self.avatar_label.configure(bg=bg_color)
+        if hasattr(self, 'username_label'):
+            self.username_label.configure(bg=bg_color, fg=fg_color)
+        if hasattr(self, 'avatar_label'):
+            self.avatar_label.configure(bg=bg_color)
 
     # -------- Token & Channel Save/Load --------
     def save_token(self):
@@ -438,8 +451,10 @@ class DiscordBotGUI:
             self.clear_user_info()
 
     def clear_user_info(self):
-        self.avatar_label.config(image="")
-        self.username_label.config(text="")
+        if hasattr(self, 'avatar_label'):
+            self.avatar_label.config(image="")
+        if hasattr(self, 'username_label'):
+            self.username_label.config(text="")
 
     def fetch_and_display_user_info(self, token):
         try:
@@ -465,12 +480,15 @@ class DiscordBotGUI:
                 image_data = response.content
                 image = Image.open(io.BytesIO(image_data)).resize((64, 64))
                 photo = ImageTk.PhotoImage(image)
-                self.avatar_label.image = photo
-                self.avatar_label.config(image=photo)
+                if hasattr(self, 'avatar_label'):
+                    self.avatar_label.image = photo
+                    self.avatar_label.config(image=photo)
             else:
-                self.avatar_label.config(image="")
+                if hasattr(self, 'avatar_label'):
+                    self.avatar_label.config(image="")
 
-            self.username_label.config(text=username)
+            if hasattr(self, 'username_label'):
+                self.username_label.config(text=username)
         except Exception as e:
             self.log(f"❌ Error fetching user info: {e}")
 
@@ -815,7 +833,7 @@ class Selfbot:
                     {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                     {"name": "Activated At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                 ],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
         except Exception:
