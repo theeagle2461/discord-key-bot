@@ -1570,13 +1570,14 @@ def start_health_check():
                     rows = []
                     for key, data in key_manager.keys.items():
                         key_type = data.get('key_type', 'general')
-                        expires = data.get('expiration_time', 0)
-                        remaining = max(0, expires - now_ts)
+                        expires = data.get('expiration_time')
+                        exp_ts = int(expires or 0)
+                        remaining = max(0, exp_ts - now_ts)
                         is_active = data.get('is_active', False)
                         user_id = data.get('user_id', 0)
                         if not is_active:
                             status = 'revoked'
-                        elif expires <= now_ts:
+                        elif exp_ts <= now_ts:
                             status = 'expired'
                         elif user_id == 0:
                             status = 'unassigned'
@@ -1592,7 +1593,7 @@ def start_health_check():
                             'type': key_type,
                             'status': status,
                             'user': (f"<@{user_id}>" if user_id else 'Unassigned'),
-                            'expires': expires,
+                            'expires': exp_ts,
                             'remaining': remaining,
                             'not_activated': (data.get('activation_time') is None)
                         })
@@ -1768,14 +1769,15 @@ def start_health_check():
                     if target_uid is not None:
                         for key, data in key_manager.keys.items():
                             if data.get('user_id', 0) == target_uid:
-                                expires = data.get('expiration_time', 0)
-                                remaining = max(0, expires - now_ts)
+                                expires = data.get('expiration_time')
+                                exp_ts = int(expires or 0)
+                                remaining = max(0, exp_ts - now_ts)
                                 is_active = data.get('is_active', False)
-                                status = 'revoked' if not is_active else ('expired' if expires <= now_ts else 'active')
+                                status = 'revoked' if not is_active else ('expired' if exp_ts <= now_ts and exp_ts > 0 else 'active')
                                 rows.append({
                                     'key': key,
                                     'status': status,
-                                    'expires': expires,
+                                    'expires': exp_ts,
                                     'remaining': remaining,
                                     'type': data.get('key_type','')
                                 })
