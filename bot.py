@@ -706,8 +706,6 @@ async def on_ready():
     #     print(f"⚠️ Command sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
-    if not reconcile_roles_task.is_running():
-        reconcile_roles_task.start()
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -1483,23 +1481,23 @@ def start_health_check():
                     form_html = f"""
                     <html><head><title>Generate Keys</title>
                       <style>
-                        :root { --bg:#0b0718; --panel:#120a2a; --muted:#b399ff; --border:#1f1440; --text:#efeaff; --accent:#6c4af2; }
-                        * { box-sizing: border-box; }
-                        body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
-                        header { background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; gap:12px; align-items:center }
-                        a.nav { color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#1a1240; border:1px solid #1f1440 }
-                        a.nav:hover { background:#1e154d }
-                        main { padding:24px; max-width:1100px; margin:0 auto }
-                        .layout { display:grid; grid-template-columns: 1.2fr 0.8fr; gap:16px }
-                        .card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px }
-                        label { display:block; margin:10px 0 6px }
-                        input,button { padding:10px 12px; border-radius:10px; border:1px solid #2a3866; background:#0b132b; color:var(--text) }
-                        input[type=number] { width:120px }
-                        button { cursor:pointer; background: var(--accent); border-color:#2049cc }
-                        button:hover { filter:brightness(0.95) }
-                        ul { margin:8px 0 0 20px }
-                        code { background:#121a36; padding:2px 6px; border-radius:6px }
-                        .muted { color:#a4b1d6 }
+                        :root {{ --bg:#0b0718; --panel:#120a2a; --muted:#b399ff; --border:#1f1440; --text:#efeaff; --accent:#6c4af2; }}
+                        * {{ box-sizing: border-box; }}
+                        body {{ margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }}
+                        header {{ background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; gap:12px; align-items:center }}
+                        a.nav {{ color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#1a1240; border:1px solid #1f1440 }}
+                        a.nav:hover {{ background:#1e154d }}
+                        main {{ padding:24px; max-width:1100px; margin:0 auto }}
+                        .layout {{ display:grid; grid-template-columns: 1.2fr 0.8fr; gap:16px }}
+                        .card {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px }}
+                        label {{ display:block; margin:10px 0 6px }}
+                        input,button {{ padding:10px 12px; border-radius:10px; border:1px solid #2a3866; background:#0b132b; color:var(--text) }}
+                        input[type=number] {{ width:120px }}
+                        button {{ cursor:pointer; background: var(--accent); border-color:#2049cc }}
+                        button:hover {{ filter:brightness(0.95) }}
+                        ul {{ margin:8px 0 0 20px }}
+                        code {{ background:#121a36; padding:2px 6px; border-radius:6px }}
+                        .muted {{ color:#a4b1d6 }}
                       </style>
                     </head>
                     <body>
@@ -1632,18 +1630,18 @@ def start_health_check():
                     keys_html = f"""
                     <html><head><title>Keys</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}}
+                        header{{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        a.nav{{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}}
+                        a.nav:hover{{background:#1e154d}}
                         main{{padding:24px}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        .card{{background:#120a2a;border:1px solid #1f1440;border-radius:12px;padding:20px}}
                         table{{width:100%;border-collapse:collapse;margin-top:12px}}
-                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
-                        th{{color:#9ab0ff}}
-                        select,input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
-                        button:hover{{background:#2248cc}}
+                        th,td{{border-bottom:1px solid #1f1440;padding:8px 10px;text-align:left}}
+                        th{{color:#b399ff}}
+                        select,input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#efeaff}}
+                        button{{cursor:pointer;background:#6c4af2;border-color:#2049cc}}
+                        button:hover{{filter:brightness(0.95)}}
                         code{{background:#121a36;padding:2px 6px;border-radius:6px}}
                         .filters{{display:flex;gap:8px;align-items:center}}
                       </style>
@@ -1716,16 +1714,16 @@ def start_health_check():
                     html_doc = f"""
                     <html><head><title>Deleted Keys</title>
                       <style>
-                        body{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}
-                        header{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}
-                        a.nav{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}
-                        a.nav:hover{background:#1e154d}
-                        main{padding:24px}
-                        .card{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}
-                        table{width:100%;border-collapse:collapse;margin-top:12px}
-                        th,td{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}
-                        th{color:#9ab0ff}
-                        code{background:#121a36;padding:2px 6px;border-radius:6px}
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}}
+                        header{{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        a.nav{{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}}
+                        a.nav:hover{{background:#1e154d}}
+                        main{{padding:24px}}
+                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
+                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
+                        th{{color:#9ab0ff}}
+                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
                       </style>
                     </head>
                     <body>
@@ -1799,18 +1797,18 @@ def start_health_check():
                     page = f"""
                     <html><head><title>My Keys</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
+                        body{{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}}
+                        header{{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        a.nav{{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}}
+                        a.nav:hover{{background:#1e154d}}
                         main{{padding:24px}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        .card{{background:#120a2a;border:1px solid #1f1440;border-radius:12px;padding:20px}}
                         table{{width:100%;border-collapse:collapse;margin-top:12px}}
-                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
-                        th{{color:#9ab0ff}}
-                        input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff}}
-                        button:hover{{background:#2248cc}}
+                        th,td{{border-bottom:1px solid #1f1440;padding:8px 10px;text-align:left}}
+                        th{{color:#b399ff}}
+                        input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#efeaff}}
+                        button{{cursor:pointer;background:#6c4af2;border-color:#2049cc}}
+                        button:hover{{filter:brightness(0.95)}}
                         code{{background:#121a36;padding:2px 6px;border-radius:6px}}
                       </style>
                     </head>
