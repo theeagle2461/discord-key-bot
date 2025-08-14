@@ -82,7 +82,7 @@ CHANNEL_ID = 1404537520754135231  # Channel ID from webhook
 ACTIVATION_FILE = "activation.json"
 GUILD_ID = 1402622761246916628  # Your Discord server ID
 ROLE_ID = 1404221578782183556  # Role ID that grants access
-SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-wd75.onrender.com")  # Bot website for API (overridable)
+SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
