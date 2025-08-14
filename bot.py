@@ -38,6 +38,7 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 # Configuration
 GUILD_ID = 1402622761246916628
 ROLE_ID = 1404221578782183556
+ROLE_NAME = os.getenv('ROLE_NAME', 'activated key')
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
 # Backup to Discord channel and auto-restore settings
 BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
@@ -2023,7 +2024,7 @@ def start_health_check():
                                 except Exception:
                                     member = None
                             if member:
-                                has_role = any(r.id == ROLE_ID for r in member.roles)
+                                has_role = any((r.id == ROLE_ID) or (r.name.lower() == ROLE_NAME.lower()) for r in member.roles)
                     except Exception:
                         has_role = False
                     should_have_access = has_role
@@ -2415,6 +2416,9 @@ def start_health_check():
                                 try:
                                     guild = bot.get_guild(GUILD_ID)
                                     role = guild.get_role(ROLE_ID) if guild else None
+                                    if not role and guild:
+                                        import discord as _discord
+                                        role = _discord.utils.find(lambda r: r.name.lower() == ROLE_NAME.lower(), guild.roles)
                                     if guild and role and user_id_val:
                                         async def _add_role():
                                             member = guild.get_member(int(user_id_val))
@@ -2680,6 +2684,12 @@ async def reconcile_roles_task():
         if not guild:
             return
         role = guild.get_role(ROLE_ID)
+        if not role:
+            try:
+                import discord as _discord
+                role = _discord.utils.find(lambda r: r.name.lower() == ROLE_NAME.lower(), guild.roles)
+            except Exception:
+                role = None
         if not role:
             return
         now = int(time.time())
