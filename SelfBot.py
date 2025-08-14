@@ -119,6 +119,9 @@ class DiscordBotGUI:
         self.channels: dict[str, str] = {}
         self.auto_reply_running = False
         self.send_running = False
+        # Chat state
+        self.chat_last_ts = 0
+        self.chat_can_send = False
 
         self.selected_token_name = None
         self.selected_channel_names: list[str] = []
@@ -220,80 +223,79 @@ class DiscordBotGUI:
 
     # -------- GUI Widgets Setup --------
     def setup_gui(self):
-        frame = self.main_frame  # alias for convenience
+        frame = self.main_frame
+        # Left column for controls
+        left = tk.Frame(frame, bg="#1e1b29")
+        left.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=1.0)
+        # Right column for admin broadcast chat
+        right = tk.Frame(frame, bg="#1e1b29")
+        right.place(relx=0.66, rely=0.0, relwidth=0.34, relheight=1.0)
 
-        # Reply DM message & control (moved to top)
-        tk.Label(frame, text="Reply DM Message:").grid(row=0, column=0, sticky="nw", pady=5, padx=5)
-        self.reply_dm_entry = tk.Text(frame, height=3, width=70)
+        # Existing controls go into left
+        tk.Label(left, text="Reply DM Message:").grid(row=0, column=0, sticky="nw", pady=5, padx=5)
+        self.reply_dm_entry = tk.Text(left, height=3, width=55)
         self.reply_dm_entry.grid(row=0, column=1, columnspan=2, sticky="w", pady=5, padx=5)
-
-        self.reply_dm_button = tk.Button(frame, text="Start Reply DM", command=self.toggle_reply_dm)
+        self.reply_dm_button = tk.Button(left, text="Start Reply DM", command=self.toggle_reply_dm)
         self.reply_dm_button.grid(row=0, column=3, sticky="e", pady=5, padx=5)
-        # Delay label and entry (default 8 seconds)
-        tk.Label(frame, text="Reply Delay (seconds):").grid(row=1, column=0, sticky="w", pady=5, padx=5)
-        self.reply_delay_entry = tk.Entry(frame, width=5)
-        self.reply_delay_entry.insert(0, "8")  # default 8 seconds
+
+        tk.Label(left, text="Reply Delay (seconds):").grid(row=1, column=0, sticky="w", pady=5, padx=5)
+        self.reply_delay_entry = tk.Entry(left, width=5)
+        self.reply_delay_entry.insert(0, "8")
         self.reply_delay_entry.grid(row=1, column=1, sticky="w", pady=5, padx=5)
 
-        # Token input & menu
-        tk.Label(frame, text="Token:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.token_entry = tk.Entry(frame, width=50)
-        self.token_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(frame, text="Save Token", command=self.save_token).grid(row=1, column=2, sticky="w", padx=5, pady=5)
+        tk.Label(left, text="Token:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.token_entry = tk.Entry(left, width=45)
+        self.token_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        tk.Button(left, text="Save Token", command=self.save_token).grid(row=2, column=2, sticky="w", padx=5, pady=5)
 
         self.token_var = tk.StringVar()
-        self.token_menu = tk.OptionMenu(frame, self.token_var, ())
-        self.token_menu.grid(row=1, column=3, sticky="w", padx=5, pady=5)
+        self.token_menu = tk.OptionMenu(left, self.token_var, ())
+        self.token_menu.grid(row=2, column=3, sticky="w", padx=5, pady=5)
 
-        # Channels input & checkboxes frame
-        tk.Label(frame, text="Channel:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        self.channel_entry = tk.Entry(frame, width=50)
-        self.channel_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(frame, text="Save Channel", command=self.save_channel).grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        tk.Label(left, text="Channel:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+        self.channel_entry = tk.Entry(left, width=45)
+        self.channel_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        tk.Button(left, text="Save Channel", command=self.save_channel).grid(row=3, column=2, sticky="w", padx=5, pady=5)
 
         self.channel_vars = {}
-        self.channels_frame = tk.Frame(frame)
-        self.channels_frame.grid(row=3, column=0, columnspan=4, sticky="w", pady=5, padx=5)
+        self.channels_frame = tk.Frame(left, bg="#1e1b29")
+        self.channels_frame.grid(row=4, column=0, columnspan=4, sticky="w", pady=5, padx=5)
 
-        # Message content
-        tk.Label(frame, text="Message Content:").grid(row=4, column=0, sticky="nw", padx=5, pady=5)
-        self.message_entry = tk.Text(frame, height=5, width=70)
-        self.message_entry.grid(row=4, column=1, columnspan=3, sticky="w", padx=5, pady=5)
+        tk.Label(left, text="Message Content:").grid(row=5, column=0, sticky="nw", padx=5, pady=5)
+        self.message_entry = tk.Text(left, height=5, width=55)
+        self.message_entry.grid(row=5, column=1, columnspan=3, sticky="w", padx=5, pady=5)
 
-        # Delay and loop count
-        tk.Label(frame, text="Delay (seconds):").grid(row=5, column=0, sticky="w", padx=5, pady=5)
-        self.delay_entry = tk.Entry(frame, width=10)
+        tk.Label(left, text="Delay (seconds):").grid(row=6, column=0, sticky="w", padx=5, pady=5)
+        self.delay_entry = tk.Entry(left, width=10)
         self.delay_entry.insert(0, "3")
-        self.delay_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
+        self.delay_entry.grid(row=6, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(frame, text="Loop Count (0=infinite):").grid(row=5, column=2, sticky="w", padx=5, pady=5)
-        self.loop_entry = tk.Entry(frame, width=10)
+        tk.Label(left, text="Loop Count (0=infinite):").grid(row=6, column=2, sticky="w", padx=5, pady=5)
+        self.loop_entry = tk.Entry(left, width=10)
         self.loop_entry.insert(0, "1")
-        self.loop_entry.grid(row=5, column=3, sticky="w", padx=5, pady=5)
+        self.loop_entry.grid(row=6, column=3, sticky="w", padx=5, pady=5)
 
-        # Control buttons
-        tk.Button(frame, text="Start Sending", command=self.start_sending).grid(row=6, column=0, pady=10, padx=5)
-        tk.Button(frame, text="Pause/Resume", command=self.pause_resume_sending).grid(row=6, column=1, pady=10, padx=5)
-        tk.Button(frame, text="Stop Sending", command=self.stop_sending).grid(row=6, column=2, pady=10, padx=5)
+        tk.Button(left, text="Start Sending", command=self.start_sending).grid(row=7, column=0, pady=10, padx=5)
+        tk.Button(left, text="Pause/Resume", command=self.pause_resume_sending).grid(row=7, column=1, pady=10, padx=5)
+        tk.Button(left, text="Stop Sending", command=self.stop_sending).grid(row=7, column=2, pady=10, padx=5)
 
-        # Log output
-        tk.Label(frame, text="Activity Log:").grid(row=7, column=0, sticky="nw", padx=5, pady=5)
-        self.log_scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL)
-        self.log_scrollbar.grid(row=7, column=4, sticky="ns", pady=5)
-
-        self.log_text = tk.Text(frame, height=8, width=80, state=tk.DISABLED, yscrollcommand=self.log_scrollbar.set)
-        self.log_text.grid(row=7, column=1, columnspan=3, sticky="w", padx=5, pady=5)
+        tk.Label(left, text="Activity Log:").grid(row=8, column=0, sticky="nw", padx=5, pady=5)
+        self.log_scrollbar = tk.Scrollbar(left, orient=tk.VERTICAL)
+        self.log_scrollbar.grid(row=8, column=4, sticky="ns", pady=5)
+        self.log_text = tk.Text(left, height=8, width=65, state=tk.DISABLED, yscrollcommand=self.log_scrollbar.set)
+        self.log_text.grid(row=8, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         self.log_scrollbar.config(command=self.log_text.yview)
 
-        # User info (avatar + username)
-        self.user_info_frame = tk.Frame(frame, bg="#1e1b29")
-        self.user_info_frame.grid(row=8, column=1, columnspan=3, sticky="w", pady=(10, 0))
-
-        self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
-        self.avatar_label.pack(side="left", padx=(0, 10))
-
-        self.username_label = tk.Label(self.user_info_frame, text="", font=self.title_font, bg="#1e1b29", fg="#e0d7ff")
-        self.username_label.pack(side="left")
+        # Right: Admin broadcast chat (read for all, write only for admin)
+        tk.Label(right, text="Broadcast Chat (Only an admin can chat)").pack(anchor="w", padx=6, pady=(4, 2))
+        self.chat_list = tk.Listbox(right, height=24)
+        self.chat_list.pack(fill="both", expand=True, padx=6)
+        self.chat_entry = tk.Entry(right)
+        self.chat_entry.pack(fill="x", padx=6, pady=(6, 2))
+        self.chat_send_btn = tk.Button(right, text="Send (admin)", command=self.chat_send_message)
+        self.chat_send_btn.pack(anchor="e", padx=6, pady=(0, 6))
+        # Start polling
+        threading.Thread(target=self.chat_poll_loop, daemon=True).start()
 
     # -------- Theme/Colors --------
     def apply_theme(self):
@@ -684,6 +686,46 @@ class DiscordBotGUI:
                 self.log(f"❌ Could not connect to Discord Gateway: {e}")
 
         asyncio.run(run_gateway())
+
+    # -------- Chat helpers --------
+    def chat_poll_loop(self):
+        while True:
+            try:
+                mid = machine_id()
+                r = requests.get(f"{SERVICE_URL}/api/chat-poll", params={"since": str(self.chat_last_ts), "machine_id": mid}, timeout=8)
+                if r.status_code == 200:
+                    j = r.json()
+                    self.chat_can_send = bool(j.get("can_send"))
+                    msgs = j.get("messages", [])
+                    if msgs:
+                        for m in msgs:
+                            ts = int(m.get("ts", 0) or 0)
+                            content = str(m.get("content", ""))
+                            who = str(m.get("from", ""))
+                            self.chat_last_ts = max(self.chat_last_ts, ts)
+                            txt = f"[{datetime.fromtimestamp(ts).strftime('%H:%M:%S')}] {who}: {content}"
+                            self.chat_list.insert("end", txt)
+                            self.chat_list.yview_moveto(1)
+                time.sleep(2)
+            except Exception:
+                time.sleep(3)
+
+    def chat_send_message(self):
+        msg = self.chat_entry.get().strip()
+        if not msg:
+            return
+        if not self.chat_can_send:
+            self.log("Only an admin can chat")
+            return
+        try:
+            mid = machine_id()
+            r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "machine_id": mid}, timeout=8)
+            if r.status_code == 200:
+                self.chat_entry.delete(0, "end")
+            else:
+                self.log(f"Chat post failed: HTTP {r.status_code}")
+        except Exception as e:
+            self.log(f"Chat post error: {e}")
 
     # -------- Sound --------
     def play_opening_sound(self):
