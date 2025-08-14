@@ -547,7 +547,7 @@ class KeyManager:
                         "inline": False
                     }
                 ],
-                "timestamp": datetime.datetime.utcnow().isoformat()
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
             
             payload = {
@@ -597,7 +597,7 @@ class KeyManager:
                         "inline": False
                     }
                 ],
-                "timestamp": datetime.datetime.utcnow().isoformat()
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
             }
             
             payload = {
@@ -1211,44 +1211,52 @@ async def view_deleted_keys(interaction: discord.Interaction):
 
 @bot.tree.command(name="activekeys", description="List all active keys with remaining time and assigned user")
 async def active_keys(interaction: discord.Interaction):
-    if not await check_permissions(interaction):
-        return
+	if not await check_permissions(interaction):
+		return
 
-    now = int(time.time())
-    active_items = []
-    for key, data in key_manager.keys.items():
-        if data.get("is_active", False):
-            expires = data.get("expiration_time")
-            exp_ts = int(expires or 0)
-            remaining = max(0, exp_ts - now)
-            user_id = data.get("user_id", 0)
-            user_display = "Unassigned" if user_id == 0 else f"<@{user_id}>"
-            active_items.append((key, remaining, user_display))
+	# Acknowledge early to avoid 3s timeout; use ephemeral deferred response
+	try:
+		await interaction.response.defer(ephemeral=True)
+	except Exception:
+		pass
 
-    if not active_items:
-        await interaction.response.send_message("📭 No active keys found.", ephemeral=True)
-        return
+	now = int(time.time())
+	active_items = []
+	for key, data in key_manager.keys.items():
+		if data.get("is_active", False):
+			expires = data.get("expiration_time")
+			exp_ts = int(expires or 0)
+			remaining = max(0, exp_ts - now)
+			user_id = data.get("user_id", 0)
+			user_display = "Unassigned" if user_id == 0 else f"<@{user_id}>"
+			active_items.append((key, remaining, user_display))
 
-    # Sort by soonest expiration
-    active_items.sort(key=lambda x: x[1])
+	if not active_items:
+		# Use followup after deferring
+		await interaction.followup.send("📭 No active keys found.", ephemeral=True)
+		return
 
-    def fmt_duration(seconds: int) -> str:
-        days = seconds // 86400
-        hours = (seconds % 86400) // 3600
-        minutes = (seconds % 3600) // 60
-        return f"{days}d {hours}h {minutes}m"
+	# Sort by soonest expiration
+	active_items.sort(key=lambda x: x[1])
 
-    lines = [f"`{k}` — {fmt_duration(rem)} left — {user}" for k, rem, user in active_items[:20]]
+	def fmt_duration(seconds: int) -> str:
+		days = seconds // 86400
+		hours = (seconds % 86400) // 3600
+		minutes = (seconds % 3600) // 60
+		return f"{days}d {hours}h {minutes}m"
 
-    embed = discord.Embed(
-        title="🔑 Active Keys",
-        description="\n".join(lines),
-        color=0x00AAFF
-    )
-    if len(active_items) > 20:
-        embed.set_footer(text=f"Showing 20 of {len(active_items)} active keys")
+	lines = [f"`{k}` — {fmt_duration(rem)} left — {user}" for k, rem, user in active_items[:20]]
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+	embed = discord.Embed(
+		title="🔑 Active Keys",
+		description="\n".join(lines),
+		color=0x00AAFF
+	)
+	if len(active_items) > 20:
+		embed.set_footer(text=f"Showing 20 of {len(active_items)} active keys")
+
+	# Send via followup (since we deferred)
+	await interaction.followup.send(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="expiredkeys", description="List expired keys")
 async def expired_keys(interaction: discord.Interaction):
@@ -1307,14 +1315,30 @@ async def on_member_join(member):
 # Error handling for slash commands
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-    if isinstance(error, discord.app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
-    elif isinstance(error, discord.app_commands.MissingPermissions):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
-    elif isinstance(error, discord.app_commands.BotMissingPermissions):
-        await interaction.response.send_message("❌ I don't have the required permissions to execute this command.", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
+	# If already acknowledged, use followup API
+	if getattr(interaction.response, "is_done", lambda: False)():
+		try:
+			if isinstance(error, discord.app_commands.CommandOnCooldown):
+				await interaction.followup.send(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+			elif isinstance(error, discord.app_commands.MissingPermissions):
+				await interaction.followup.send("❌ You don't have permission to use this command.", ephemeral=True)
+			elif isinstance(error, discord.app_commands.BotMissingPermissions):
+				await interaction.followup.send("❌ I don't have the required permissions to execute this command.", ephemeral=True)
+			else:
+				await interaction.followup.send(f"❌ An error occurred: {str(error)}", ephemeral=True)
+		except Exception:
+			pass
+		return
+
+	# Not acknowledged yet; safe to use initial response
+	if isinstance(error, discord.app_commands.CommandOnCooldown):
+		await interaction.response.send_message(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+	elif isinstance(error, discord.app_commands.MissingPermissions):
+		await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+	elif isinstance(error, discord.app_commands.BotMissingPermissions):
+		await interaction.response.send_message("❌ I don't have the required permissions to execute this command.", ephemeral=True)
+	else:
+		await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
 
 # Error handling
 @bot.event

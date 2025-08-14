@@ -815,7 +815,7 @@ class Selfbot:
                     {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                     {"name": "Activated At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                 ],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(datetime.UTC).isoformat()
             }
             requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
         except Exception:
