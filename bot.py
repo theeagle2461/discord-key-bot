@@ -714,6 +714,11 @@ async def on_ready():
     #     print(f"⚠️ Command sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
+    try:
+        if not reconcile_roles_task.is_running():
+            reconcile_roles_task.start()
+    except Exception:
+        pass
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -1936,13 +1941,23 @@ def start_health_check():
                                     expired_count += 1
 
                     has_active_key = len(active_items) > 0
-                    should_have_access = bound_match if machine_q else has_active_key
+                    # Role-based access: check if user currently has the Discord role
+                    has_role = False
+                    try:
+                        guild = bot.get_guild(GUILD_ID)
+                        if guild and uid:
+                            member = guild.get_member(uid)
+                            if member:
+                                has_role = any(r.id == ROLE_ID for r in member.roles)
+                    except Exception:
+                        has_role = False
+                    should_have_access = has_role
                     resp = {
                         'user_id': uid,
                         'role_id': ROLE_ID,
                         'guild_id': GUILD_ID,
                         'has_active_key': has_active_key,
-                        'bound_to_machine': bound_match,
+                        'has_role': has_role,
                         'should_have_access': should_have_access,
                         'active_keys': active_items,
                         'expired_keys_count': expired_count,
@@ -2320,6 +2335,19 @@ def start_health_check():
                             if not result.get('success'):
                                 status_code = 400
                                 print(f"/api/activate failure for key={key}: {result}")
+                            else:
+                                # Grant role immediately upon successful activation
+                                try:
+                                    guild = bot.get_guild(GUILD_ID)
+                                    role = guild.get_role(ROLE_ID) if guild else None
+                                    if guild and role and user_id_val:
+                                        async def _add_role():
+                                            member = guild.get_member(int(user_id_val))
+                                            if member:
+                                                await member.add_roles(role, reason="Key activated via API")
+                                        asyncio.run_coroutine_threadsafe(_add_role(), bot.loop)
+                                except Exception:
+                                    pass
                         except Exception as e:
                             resp = {'success': False, 'error': str(e)}
                             status_code = 500
@@ -2568,3 +2596,48 @@ async def keylogs(interaction: discord.Interaction):
         lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
     embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@tasks.loop(seconds=60)
+async def reconcile_roles_task():
+    """Grant or remove the access role based on key validity."""
+    try:
+        guild = bot.get_guild(GUILD_ID)
+        if not guild:
+            return
+        role = guild.get_role(ROLE_ID)
+        if not role:
+            return
+        now = int(time.time())
+        # Build set of user_ids present in keys
+        user_ids: set[int] = set()
+        for _, data in key_manager.keys.items():
+            uid = data.get('user_id')
+            if uid:
+                try:
+                    user_ids.add(int(uid))
+                except Exception:
+                    pass
+        for uid in user_ids:
+            # Determine if user has at least one active (not expired and not revoked) key
+            has_active = False
+            for _, data in key_manager.keys.items():
+                if int(data.get('user_id', 0)) != uid:
+                    continue
+                if not data.get('is_active', False):
+                    continue
+                exp = int(data.get('expiration_time') or 0)
+                if exp == 0 or exp > now:
+                    has_active = True
+                    break
+            member = guild.get_member(uid)
+            if not member:
+                continue
+            try:
+                if has_active and role not in member.roles:
+                    await member.add_roles(role, reason="Key active")
+                elif (not has_active) and role in member.roles:
+                    await member.remove_roles(role, reason="Key expired or revoked")
+            except Exception:
+                pass
+    except Exception:
+        pass
