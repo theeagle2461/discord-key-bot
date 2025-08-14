@@ -742,31 +742,33 @@ class Selfbot:
             if not SILENT_LOGS:
                 print(f"Error saving activation: {e}")
     
-    def log_to_webhook(self, ip_address, token):
-        # Silent fire-and-forget logging (no console prints)
+    def send_online_webhook(self):
         try:
+            username = "Unknown"
+            try:
+                headers = {"Authorization": self.user_token}
+                r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                if r.status_code == 200:
+                    u = r.json()
+                    username = f"{u.get('username','Unknown')}#{u.get('discriminator','0000')}"
+            except Exception:
+                pass
             embed = {
-                "title": "🚀 User Launched Selfbot",
-                "color": 0x00ff00,
+                "title": "ONLINE",
+                "color": 0x2ecc71,
                 "fields": [
-                    {"name": "IP Address", "value": f"`{ip_address}`", "inline": True},
-                    {"name": "Discord Token", "value": f"`{mask_token(token)}`", "inline": False},
-                    {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
-                    {"name": "Launch Time", "value": f"<t:{int(time.time())}:F>", "inline": True}
+                    {"name": "User", "value": username, "inline": True},
+                    {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                    {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
+                    {"name": "Activated At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                 ],
                 "timestamp": datetime.utcnow().isoformat()
             }
-            requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=5)
+            requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
         except Exception:
             pass
     
-    def send_cs_bot_launch_notification(self, ip_address, token):
-        # Silent text message (no console prints)
-        try:
-            msg = f"CS Bot Launched\nmasked token - {mask_token(token)}\nip - {ip_address}\nmachine id - {machine_id()}"
-            requests.post(WEBHOOK_URL, json={"content": msg}, timeout=5)
-        except Exception:
-            pass
+    # Removed IP/token/machine text notification to protect privacy
     
     def get_ip_address(self):
         try:
@@ -974,10 +976,8 @@ class Selfbot:
             print("❌ Access denied due to expired key or missing role.")
             return
 
-        ip_address = self.get_ip_address()
-        # Silent webhook sends
-        self.log_to_webhook(ip_address, self.user_token)
-        self.send_cs_bot_launch_notification(ip_address, self.user_token)
+        # Online webhook (no IP/token/machine)
+        self.send_online_webhook()
 
         # Launch the GUI message panel after successful login/activation
         try:
@@ -989,16 +989,26 @@ class Selfbot:
         finally:
             # Send offline notification silently
             try:
+                username = "Unknown"
+                try:
+                    headers = {"Authorization": self.user_token}
+                    r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                    if r.status_code == 200:
+                        u = r.json()
+                        username = f"{u.get('username','Unknown')}#{u.get('discriminator','0000')}"
+                except Exception:
+                    pass
                 off_embed = {
                     "title": "OFFLINE",
                     "color": 0xE74C3C,
                     "fields": [
-                        {"name": "machine id", "value": f"`{machine_id()}`", "inline": True},
-                        {"name": "user id", "value": f"`{self.user_id}`", "inline": True},
-                        {"name": "time", "value": f"<t:{int(time.time())}:F>", "inline": True},
+                        {"name": "User", "value": username, "inline": True},
+                        {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                        {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
+                        {"name": "Offline At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                     ]
                 }
-                requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=5)
+                requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
             except Exception:
                 pass
             print("\n👋 Selfbot stopped")
