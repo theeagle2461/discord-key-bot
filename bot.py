@@ -2801,3 +2801,4 @@ async def restore_from_pinned_backup_pointer():
     except Exception as e:
         print(f"Restore pointer scan failed: {e}")
     return False
+
