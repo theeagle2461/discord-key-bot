@@ -3,7 +3,7 @@ import requests
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import platform
 import hashlib
 import threading
@@ -285,6 +285,16 @@ class DiscordBotGUI:
         self.log_text = tk.Text(left, height=8, width=65, state=tk.DISABLED, yscrollcommand=self.log_scrollbar.set)
         self.log_text.grid(row=8, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         self.log_scrollbar.config(command=self.log_text.yview)
+
+        # User info (avatar + username)
+        self.user_info_frame = tk.Frame(left, bg="#1e1b29")
+        self.user_info_frame.grid(row=9, column=1, columnspan=3, sticky="w", pady=(10, 0))
+
+        self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
+        self.avatar_label.pack(side="left", padx=(0, 10))
+
+        self.username_label = tk.Label(self.user_info_frame, text="", font=self.title_font, bg="#1e1b29", fg="#e0d7ff")
+        self.username_label.pack(side="left")
 
         # Right: Admin broadcast chat (read for all, write only for admin)
         tk.Label(right, text="Broadcast Chat (Only an admin can chat)").pack(anchor="w", padx=6, pady=(4, 2))
@@ -815,7 +825,7 @@ class Selfbot:
                     {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                     {"name": "Activated At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                 ],
-                "timestamp": datetime.now(datetime.UTC).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
         except Exception:
