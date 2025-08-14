@@ -23,6 +23,7 @@ import threading
 import requests
 import urllib.parse
 import html
+import io
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -38,6 +39,13 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 GUILD_ID = 1402622761246916628
 ROLE_ID = 1404221578782183556
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
+# Backup to Discord channel and auto-restore settings
+BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
+AUTO_RESTORE_ON_START = (os.getenv('AUTO_RESTORE_ON_START', 'false').lower() in ('1','true','yes'))
+try:
+	BACKUP_INTERVAL_MIN = int(os.getenv('BACKUP_INTERVAL_MIN', '60') or 60)
+except Exception:
+	BACKUP_INTERVAL_MIN = 60
 
 # Special admin user IDs for key generation and management
 SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734]  # Admin user IDs
@@ -351,6 +359,34 @@ class KeyManager:
         
         return BACKUP_FILE
     
+    def build_backup_payload(self) -> dict:
+        """Return a JSON-serializable payload of all state for upload/restore."""
+        return {
+            "timestamp": int(time.time()),
+            "keys": self.keys,
+            "usage": self.key_usage,
+            "deleted": self.deleted_keys,
+            "logs": getattr(self, 'key_logs', []),
+        }
+    
+    def restore_from_payload(self, payload: dict) -> bool:
+        """Restore state from a payload dict (like one retrieved from backup)."""
+        try:
+            keys = payload.get("keys") or {}
+            usage = payload.get("usage") or {}
+            deleted = payload.get("deleted") or {}
+            logs = payload.get("logs") or []
+            if not isinstance(keys, dict) or not isinstance(usage, dict):
+                return False
+            self.keys = keys
+            self.key_usage = usage
+            self.deleted_keys = deleted if isinstance(deleted, dict) else {}
+            self.key_logs = logs if isinstance(logs, list) else []
+            self.save_data()
+            return True
+        except Exception:
+            return False
+    
     def restore_from_backup(self, backup_file: str) -> bool:
         """Restore keys from a backup file"""
         try:
@@ -359,10 +395,11 @@ class KeyManager:
             
             self.keys = backup_data["keys"]
             self.key_usage = backup_data["usage"]
+            
             self.save_data()
             return True
         except Exception as e:
-            print(f"Error restoring backup: {e}")
+            print(f"Error restoring from backup: {e}")
             return False
     
     def generate_bulk_keys(self, daily_count: int, weekly_count: int, monthly_count: int, lifetime_count: int) -> Dict:
@@ -719,6 +756,32 @@ async def on_ready():
             reconcile_roles_task.start()
     except Exception:
         pass
+    try:
+        if BACKUP_CHANNEL_ID > 0 and not periodic_backup_task.is_running():
+            periodic_backup_task.start()
+    except Exception:
+        pass
+    # Auto-restore from the most recent JSON attachment in backup channel
+    if AUTO_RESTORE_ON_START and BACKUP_CHANNEL_ID > 0:
+        try:
+            channel = bot.get_channel(BACKUP_CHANNEL_ID)
+            if channel:
+                async for msg in channel.history(limit=50):
+                    if msg.attachments:
+                        for att in msg.attachments:
+                            if att.filename.lower().endswith('.json'):
+                                try:
+                                    b = await att.read()
+                                    payload = json.loads(b.decode('utf-8'))
+                                    if isinstance(payload, dict) and key_manager.restore_from_payload(payload):
+                                        print("♻️ Restored keys from channel backup")
+                                        raise StopAsyncIteration
+                                except Exception:
+                                    pass
+        except StopAsyncIteration:
+            pass
+        except Exception:
+            pass
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -2639,5 +2702,21 @@ async def reconcile_roles_task():
                     await member.remove_roles(role, reason="Key expired or revoked")
             except Exception:
                 pass
+    except Exception:
+        pass
+
+@tasks.loop(minutes=BACKUP_INTERVAL_MIN)
+async def periodic_backup_task():
+    """Periodically upload a JSON backup to the configured Discord channel."""
+    if BACKUP_CHANNEL_ID <= 0:
+        return
+    try:
+        channel = bot.get_channel(BACKUP_CHANNEL_ID)
+        if not channel:
+            return
+        payload = key_manager.build_backup_payload()
+        data = json.dumps(payload, indent=2).encode()
+        file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+        await channel.send(content="Automated backup", file=file)
     except Exception:
         pass
