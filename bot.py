@@ -2679,7 +2679,13 @@ async def upload_latest_backup_to_channel():
         guild = bot.get_guild(GUILD_ID)
         channel = None
         if guild:
-            channel = guild.get_channel(chan_id) or await bot.fetch_channel(chan_id)
+            channel = guild.get_channel(chan_id)
+        if not channel:
+            # Fallback: try global lookup
+            try:
+                channel = bot.get_channel(chan_id) or await bot.fetch_channel(chan_id)
+            except Exception:
+                channel = None
         if not channel:
             print(f"Backup upload skipped: channel {chan_id} not found")
             return
@@ -2693,10 +2699,13 @@ async def upload_latest_backup_to_channel():
         file = discord.File(fp=io.BytesIO(data), filename='keys_backup.json')
         msg = await channel.send(content='Keys backup snapshot', file=file)
         # Update or create pinned pointer message
-        pins = await channel.pins()
+        try:
+            pins = await channel.pins()
+        except Exception:
+            pins = []
         pointer = None
         for m in pins:
-            if m.author.id == bot.user.id and m.content.startswith('BACKUP_POINTER:'):
+            if getattr(m, 'author', None) and m.author.id == bot.user.id and isinstance(m.content, str) and m.content.startswith('BACKUP_POINTER:'):
                 pointer = m
                 break
         url = msg.attachments[0].url if msg.attachments else None
@@ -2709,7 +2718,10 @@ async def upload_latest_backup_to_channel():
         else:
             try:
                 pmsg = await channel.send(pointer_text)
-                await pmsg.pin()
+                try:
+                    await pmsg.pin()
+                except Exception:
+                    pass
             except Exception:
                 pass
         _last_backup_upload_ts = int(time.time())
