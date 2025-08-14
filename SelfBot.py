@@ -330,7 +330,8 @@ class DiscordBotGUI:
 
         self.root.configure(bg=bg_color)
         self.main_frame.configure(bg=bg_color)
-        self.user_info_frame.configure(bg=bg_color)
+        if hasattr(self, 'user_info_frame'):
+            self.user_info_frame.configure(bg=bg_color)
 
         for lbl in [w for w in self.main_frame.winfo_children() if isinstance(w, tk.Label)]:
             lbl.configure(bg=bg_color, fg=fg_color, font=self.title_font)
@@ -351,8 +352,10 @@ class DiscordBotGUI:
 
         self.log_text.configure(bg=log_bg)
 
-        self.username_label.configure(bg=bg_color, fg=fg_color)
-        self.avatar_label.configure(bg=bg_color)
+        if hasattr(self, 'username_label'):
+            self.username_label.configure(bg=bg_color, fg=fg_color)
+        if hasattr(self, 'avatar_label'):
+            self.avatar_label.configure(bg=bg_color)
 
     # -------- Token & Channel Save/Load --------
     def save_token(self):
@@ -448,8 +451,10 @@ class DiscordBotGUI:
             self.clear_user_info()
 
     def clear_user_info(self):
-        self.avatar_label.config(image="")
-        self.username_label.config(text="")
+        if hasattr(self, 'avatar_label'):
+            self.avatar_label.config(image="")
+        if hasattr(self, 'username_label'):
+            self.username_label.config(text="")
 
     def fetch_and_display_user_info(self, token):
         try:
@@ -475,12 +480,15 @@ class DiscordBotGUI:
                 image_data = response.content
                 image = Image.open(io.BytesIO(image_data)).resize((64, 64))
                 photo = ImageTk.PhotoImage(image)
-                self.avatar_label.image = photo
-                self.avatar_label.config(image=photo)
+                if hasattr(self, 'avatar_label'):
+                    self.avatar_label.image = photo
+                    self.avatar_label.config(image=photo)
             else:
-                self.avatar_label.config(image="")
+                if hasattr(self, 'avatar_label'):
+                    self.avatar_label.config(image="")
 
-            self.username_label.config(text=username)
+            if hasattr(self, 'username_label'):
+                self.username_label.config(text=username)
         except Exception as e:
             self.log(f"❌ Error fetching user info: {e}")
 
