@@ -40,6 +40,11 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Configuration
 GUILD_ID = 1402622761246916628
+# Allow overriding GUILD_ID via environment
+try:
+    GUILD_ID = int(os.getenv('GUILD_ID', str(GUILD_ID)))
+except Exception:
+    pass
 ROLE_ID = 1404221578782183556
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
 
@@ -830,48 +835,43 @@ async def activate_key(interaction: discord.Interaction, key: str):
         user_id = interaction.user.id
         
         # Attempt to activate the key
-        result = key_manager.activate_key(key, machine_id, user_id)
+        # Try to capture client IP from X-Forwarded-For if present in the environment
+        client_ip = None
+        try:
+            # discord interactions do not expose raw request headers; leave None
+            client_ip = None
+        except Exception:
+            client_ip = None
+        result = key_manager.activate_key(key, machine_id, user_id, client_ip)
         
         if result["success"]:
             # Give the user the role
             role = interaction.guild.get_role(ROLE_ID)
-            if role and role not in interaction.user.roles:
-                await interaction.user.add_roles(role)
-                role_message = f"✅ Role **{role.name}** has been assigned to you!"
-            else:
-                role_message = f"✅ You already have the **{role.name}** role!"
-            
-            # Get key duration info
-            key_data = key_manager.get_key_info(key)
-            duration_days = key_data.get("duration_days", 30)
-            
-            # Send success message
+            if role:
+                try:
+                    await interaction.user.add_roles(role)
+                except Exception:
+                    pass
+            # Construct success message
+            expiration_time = result.get("expiration_time")
+            channel_id = result.get("channel_id")
+            channel_display = f"<#${channel_id}>" if channel_id else "N/A"
             embed = discord.Embed(
-                title="🔑 Key Activated Successfully!",
-                description=f"Your key has been activated and you now have access to the selfbot.",
+                title="🔑 Activation Successful",
+                description=f"Key activated for <@{user_id}>",
                 color=0x00ff00
             )
-            embed.add_field(name="Role Assigned", value=role_message, inline=False)
-            embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
-            embed.add_field(name="Expires", value=f"<t:{result['expiration_time']}:R>", inline=True)
-            
-            if result.get('channel_id'):
-                embed.add_field(name="Channel Locked", value=f"<#{result['channel_id']}>", inline=True)
-            
-            # Add SelfBot instructions
-            embed.add_field(name="📱 SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {duration_days} days duration!", inline=False)
-            
+            if expiration_time:
+                embed.add_field(name="Expiration", value=f"<t:{expiration_time}:F>", inline=True)
+            embed.add_field(name="Assigned Role", value=role.name if role else "N/A", inline=True)
+            embed.add_field(name="Channel", value=channel_display, inline=True)
+            embed.add_field(name="Machine ID", value=f"`{machine_id}`", inline=False)
             await interaction.response.send_message(embed=embed)
-            
             # Send webhook notification (with IP if available)
-            user_ip = None
             try:
-                import os
-                user_ip = os.getenv('SELF_IP')
+                await key_manager.send_activation_to_webhook(key, user_id, machine_id)
             except Exception:
-                user_ip = None
-            await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
-            
+                pass
         else:
             await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
             
