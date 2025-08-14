@@ -266,7 +266,7 @@ class KeyManager:
         """Check if a key has been deleted"""
         return key in self.deleted_keys
     
-    def activate_key(self, key: str, machine_id: str, user_id: int) -> Dict:
+    def activate_key(self, key: str, machine_id: str, user_id: int, client_ip: str | None = None) -> Dict:
         """Activate a key for a specific machine"""
         key = normalize_key(key)
         # Check if key is deleted first
@@ -281,7 +281,7 @@ class KeyManager:
         if not key_data["is_active"]:
             return {"success": False, "error": "Access revoked"}
         
-        if key_data["machine_id"] and key_data["machine_id"] != machine_id:
+        if key_data.get("machine_id") and key_data["machine_id"] != machine_id:
             return {"success": False, "error": "Key is already activated on another machine"}
         
         # If already has expiration_time and it's expired, block
@@ -291,6 +291,8 @@ class KeyManager:
         # Activate the key (first-time activation sets activation/expiration)
         now_ts = int(time.time())
         key_data["machine_id"] = machine_id
+        if client_ip:
+            key_data["ip_address"] = str(client_ip)
         key_data["activated_by"] = user_id
         key_data["user_id"] = user_id
         if not key_data.get("activation_time"):
@@ -308,7 +310,7 @@ class KeyManager:
         self.save_data()
         # Log activation
         try:
-            self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'expires': key_data.get('expiration_time')})
+            self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'ip_address': key_data.get('ip_address'), 'expires': key_data.get('expiration_time')})
         except Exception:
             pass
         
@@ -639,7 +641,7 @@ class KeyManager:
                 return {"success": False, "error": "Key has been revoked"}
         return {"success": False, "error": "Key not found"}
 
-    def rebind_key(self, key: str, user_id: int, new_machine_id: str) -> Dict:
+    def rebind_key(self, key: str, user_id: int, new_machine_id: str, client_ip: str | None = None) -> Dict:
         """Rebind a key to a new machine if requested by the same user who activated it.
         Conditions:
         - key exists, not deleted, is_active True
@@ -660,13 +662,15 @@ class KeyManager:
         owner = data.get("activated_by") or data.get("user_id")
         if not owner or int(owner) != int(user_id):
             return {"success": False, "error": "Key is owned by a different user"}
-        # Update machine binding
+        # Update machine binding and optional IP
         data["machine_id"] = str(new_machine_id)
+        if client_ip:
+            data["ip_address"] = str(client_ip)
         # Touch usage
         if key in self.key_usage:
             self.key_usage[key]["last_used"] = now_ts
         self.save_data()
-        return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id)}
+        return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id), "ip_address": data.get("ip_address")}
 
     def add_log(self, event: str, key: str, user_id: int | None = None, details: dict | None = None):
         try:
@@ -1211,52 +1215,52 @@ async def view_deleted_keys(interaction: discord.Interaction):
 
 @bot.tree.command(name="activekeys", description="List all active keys with remaining time and assigned user")
 async def active_keys(interaction: discord.Interaction):
-	if not await check_permissions(interaction):
-		return
+    if not await check_permissions(interaction):
+        return
 
-	# Acknowledge early to avoid 3s timeout; use ephemeral deferred response
-	try:
-		await interaction.response.defer(ephemeral=True)
-	except Exception:
-		pass
+    # Acknowledge early to avoid 3s timeout; use ephemeral deferred response
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass
 
-	now = int(time.time())
-	active_items = []
-	for key, data in key_manager.keys.items():
-		if data.get("is_active", False):
-			expires = data.get("expiration_time")
-			exp_ts = int(expires or 0)
-			remaining = max(0, exp_ts - now)
-			user_id = data.get("user_id", 0)
-			user_display = "Unassigned" if user_id == 0 else f"<@{user_id}>"
-			active_items.append((key, remaining, user_display))
+    now = int(time.time())
+    active_items = []
+    for key, data in key_manager.keys.items():
+        if data.get("is_active", False):
+            expires = data.get("expiration_time")
+            exp_ts = int(expires or 0)
+            remaining = max(0, exp_ts - now)
+            user_id = data.get("user_id", 0)
+            user_display = "Unassigned" if user_id == 0 else f"<@{user_id}>"
+            active_items.append((key, remaining, user_display))
 
-	if not active_items:
-		# Use followup after deferring
-		await interaction.followup.send("📭 No active keys found.", ephemeral=True)
-		return
+    if not active_items:
+        # Use followup after deferring
+        await interaction.followup.send("📭 No active keys found.", ephemeral=True)
+        return
 
-	# Sort by soonest expiration
-	active_items.sort(key=lambda x: x[1])
+    # Sort by soonest expiration
+    active_items.sort(key=lambda x: x[1])
 
-	def fmt_duration(seconds: int) -> str:
-		days = seconds // 86400
-		hours = (seconds % 86400) // 3600
-		minutes = (seconds % 3600) // 60
-		return f"{days}d {hours}h {minutes}m"
+    def fmt_duration(seconds: int) -> str:
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        minutes = (seconds % 3600) // 60
+        return f"{days}d {hours}h {minutes}m"
 
-	lines = [f"`{k}` — {fmt_duration(rem)} left — {user}" for k, rem, user in active_items[:20]]
+    lines = [f"`{k}` — {fmt_duration(rem)} left — {user}" for k, rem, user in active_items[:20]]
 
-	embed = discord.Embed(
-		title="🔑 Active Keys",
-		description="\n".join(lines),
-		color=0x00AAFF
-	)
-	if len(active_items) > 20:
-		embed.set_footer(text=f"Showing 20 of {len(active_items)} active keys")
+    embed = discord.Embed(
+        title="🔑 Active Keys",
+        description="\n".join(lines),
+        color=0x00AAFF
+    )
+    if len(active_items) > 20:
+        embed.set_footer(text=f"Showing 20 of {len(active_items)} active keys")
 
-	# Send via followup (since we deferred)
-	await interaction.followup.send(embed=embed, ephemeral=True)
+    # Send via followup (since we deferred)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="expiredkeys", description="List expired keys")
 async def expired_keys(interaction: discord.Interaction):
@@ -1927,6 +1931,7 @@ def start_health_check():
                     q = urllib.parse.parse_qs(parsed.query or '')
                     user_q = q.get('user_id', [None])[0]
                     machine_q = q.get('machine_id', [None])[0]
+                    client_ip = self.headers.get('X-Forwarded-For') or self.client_address[0]
                     try:
                         uid = int(user_q) if user_q is not None else None
                     except Exception:
@@ -1936,6 +1941,7 @@ def start_health_check():
                     active_items = []
                     expired_count = 0
                     bound_match = False
+                    ip_match = False
                     if uid is not None:
                         for key, data in key_manager.keys.items():
                             if data.get('user_id', 0) != uid:
@@ -1947,7 +1953,8 @@ def start_health_check():
                                     'expires_at': expires,
                                     'time_remaining': (expires - now_ts) if expires else 0,
                                     'type': data.get('key_type', 'general'),
-                                    'machine_id': data.get('machine_id')
+                                    'machine_id': data.get('machine_id'),
+                                    'ip_address': data.get('ip_address')
                                 }
                                 active_items.append(item)
                                 if machine_q:
@@ -1955,18 +1962,24 @@ def start_health_check():
                                     # Accept exact machine binding OR legacy slash-activation binding (machine_id == user_id)
                                     if (mid and str(machine_q) == mid) or (mid and str(uid) == mid):
                                         bound_match = True
+                                # IP match regardless of query
+                                ip_saved = str(data.get('ip_address') or '').strip()
+                                if ip_saved and client_ip and ip_saved == str(client_ip).strip():
+                                    ip_match = True
                             else:
                                 if expires and expires <= now_ts:
                                     expired_count += 1
 
                     has_active_key = len(active_items) > 0
-                    should_have_access = bound_match if machine_q else has_active_key
+                    # Strict access: require either exact machine match (when provided) OR IP match
+                    should_have_access = (bound_match if machine_q else False) or ip_match
                     resp = {
                         'user_id': uid,
                         'role_id': ROLE_ID,
                         'guild_id': GUILD_ID,
                         'has_active_key': has_active_key,
                         'bound_to_machine': bound_match,
+                        'ip_match': ip_match,
                         'should_have_access': should_have_access,
                         'active_keys': active_items,
                         'expired_keys_count': expired_count,
@@ -2339,7 +2352,8 @@ def start_health_check():
                         try:
                             if not machine:
                                 machine = str(user_id_val)
-                            result = key_manager.activate_key(key, str(machine), int(user_id_val))
+                            client_ip = self.headers.get('X-Forwarded-For') or self.client_address[0]
+                            result = key_manager.activate_key(key, str(machine), int(user_id_val), client_ip)
                             resp = result
                             if not result.get('success'):
                                 status_code = 400
@@ -2373,7 +2387,8 @@ def start_health_check():
                         status_code = 400
                     else:
                         try:
-                            result = key_manager.rebind_key(key, int(user_id_val), str(new_machine))
+                            client_ip = self.headers.get('X-Forwarded-For') or self.client_address[0]
+                            result = key_manager.rebind_key(key, int(user_id_val), str(new_machine), client_ip)
                             resp = result
                             if not result.get('success'):
                                 status_code = 400
