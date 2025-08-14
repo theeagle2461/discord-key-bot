@@ -23,6 +23,10 @@ import threading
 import requests
 import urllib.parse
 import html
+import random
+import string
+import base64
+import io
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -45,6 +49,12 @@ SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734
 # Webhook configuration for key notifications and selfbot launches
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
+
+# Optional backup channel and automation flags
+BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
+AUTO_RESTORE_ON_STARTUP = os.getenv('AUTO_RESTORE_ON_STARTUP', '1') != '0'
+AUTO_UPLOAD_BACKUPS = os.getenv('AUTO_UPLOAD_BACKUPS', '1') != '0'
+BACKUP_UPLOAD_INTERVAL_SECS = int(os.getenv('BACKUP_UPLOAD_INTERVAL_SECS', '300'))
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -185,6 +195,12 @@ class KeyManager:
                 }, f, indent=2)
         except Exception as e:
             print(f"Error saving data: {e}")
+        # Schedule async upload to Discord channel (throttled)
+        try:
+            if AUTO_UPLOAD_BACKUPS:
+                schedule_backup_upload()
+        except Exception as e:
+            print(f"Backup upload scheduling failed: {e}")
     
     def generate_key(self, user_id: int, channel_id: Optional[int] = None, duration_days: int = 30) -> str:
         """Generate a new key for general use"""
@@ -718,6 +734,14 @@ async def on_ready():
     #     print(f"⚠️ Command sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
+    # Auto-restore on startup if keys storage is empty
+    try:
+        if AUTO_RESTORE_ON_STARTUP and (not os.path.exists(KEYS_FILE) or not key_manager.keys):
+            ok = await restore_from_pinned_backup_pointer()
+            if not ok:
+                print('ℹ️ No backup pointer found or restore failed')
+    except Exception as e:
+        print(f"Auto-restore failed: {e}")
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -2641,3 +2665,107 @@ async def keylogs(interaction: discord.Interaction):
         lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
     embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+_last_backup_upload_ts = 0
+_backup_upload_pending = False
+
+def _effective_backup_channel_id() -> int:
+    return BACKUP_CHANNEL_ID or CHANNEL_ID
+
+async def upload_latest_backup_to_channel():
+    global _last_backup_upload_ts, _backup_upload_pending
+    try:
+        chan_id = _effective_backup_channel_id()
+        guild = bot.get_guild(GUILD_ID)
+        channel = None
+        if guild:
+            channel = guild.get_channel(chan_id) or await bot.fetch_channel(chan_id)
+        if not channel:
+            print(f"Backup upload skipped: channel {chan_id} not found")
+            return
+        payload = {
+            'ts': int(time.time()),
+            'keys': key_manager.keys,
+            'usage': key_manager.key_usage,
+            'deleted': key_manager.deleted_keys,
+        }
+        data = json.dumps(payload, indent=2).encode()
+        file = discord.File(fp=io.BytesIO(data), filename='keys_backup.json')
+        msg = await channel.send(content='Keys backup snapshot', file=file)
+        # Update or create pinned pointer message
+        pins = await channel.pins()
+        pointer = None
+        for m in pins:
+            if m.author.id == bot.user.id and m.content.startswith('BACKUP_POINTER:'):
+                pointer = m
+                break
+        url = msg.attachments[0].url if msg.attachments else None
+        pointer_text = f"BACKUP_POINTER: {url} ts={payload['ts']}"
+        if pointer:
+            try:
+                await pointer.edit(content=pointer_text)
+            except Exception:
+                pass
+        else:
+            try:
+                pmsg = await channel.send(pointer_text)
+                await pmsg.pin()
+            except Exception:
+                pass
+        _last_backup_upload_ts = int(time.time())
+    finally:
+        _backup_upload_pending = False
+
+def schedule_backup_upload():
+    global _last_backup_upload_ts, _backup_upload_pending
+    if _backup_upload_pending:
+        return
+    now = int(time.time())
+    if now - _last_backup_upload_ts < BACKUP_UPLOAD_INTERVAL_SECS:
+        return
+    _backup_upload_pending = True
+    try:
+        bot.loop.create_task(upload_latest_backup_to_channel())
+    except Exception:
+        try:
+            asyncio.run_coroutine_threadsafe(upload_latest_backup_to_channel(), bot.loop)
+        except Exception as e:
+            _backup_upload_pending = False
+            print(f"Failed to schedule backup upload: {e}")
+
+async def restore_from_pinned_backup_pointer():
+    chan_id = _effective_backup_channel_id()
+    guild = bot.get_guild(GUILD_ID)
+    channel = None
+    if guild:
+        try:
+            channel = guild.get_channel(chan_id) or await bot.fetch_channel(chan_id)
+        except Exception:
+            channel = None
+    if not channel:
+        return False
+    try:
+        pins = await channel.pins()
+        for m in pins:
+            if m.author.id == bot.user.id and m.content.startswith('BACKUP_POINTER:'):
+                # Extract URL
+                match = re.search(r'(https?://\S+)', m.content)
+                if not match:
+                    continue
+                url = match.group(1)
+                try:
+                    resp = requests.get(url, timeout=10)
+                    if resp.status_code == 200:
+                        payload = resp.json()
+                        if isinstance(payload, dict) and 'keys' in payload and 'usage' in payload:
+                            key_manager.keys = payload.get('keys', {})
+                            key_manager.key_usage = payload.get('usage', {})
+                            key_manager.deleted_keys = payload.get('deleted', {})
+                            key_manager.save_data()
+                            print('✅ Restored keys from pinned backup pointer')
+                            return True
+                except Exception as e:
+                    print(f"Restore fetch failed: {e}")
+    except Exception as e:
+        print(f"Restore pointer scan failed: {e}")
+    return False
