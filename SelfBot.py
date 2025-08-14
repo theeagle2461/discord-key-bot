@@ -296,6 +296,16 @@ class DiscordBotGUI:
         self.chat_send_btn.pack(anchor="e", padx=6, pady=(0, 6))
         # Start polling
         threading.Thread(target=self.chat_poll_loop, daemon=True).start()
+        # Cache who we are to tell server who is polling
+        self._me_user_id = None
+        try:
+            headers = {"Authorization": self.user_token}
+            r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+            if r.status_code == 200:
+                u = r.json()
+                self._me_user_id = u.get('id')
+        except Exception:
+            self._me_user_id = None
 
     # -------- Theme/Colors --------
     def apply_theme(self):
@@ -692,7 +702,8 @@ class DiscordBotGUI:
         while True:
             try:
                 mid = machine_id()
-                r = requests.get(f"{SERVICE_URL}/api/chat-poll", params={"since": str(self.chat_last_ts), "machine_id": mid}, timeout=8)
+                uid = self._me_user_id or ''
+                r = requests.get(f"{SERVICE_URL}/api/chat-poll", params={"since": str(self.chat_last_ts), "user_id": uid}, timeout=8)
                 if r.status_code == 200:
                     j = r.json()
                     self.chat_can_send = bool(j.get("can_send"))
@@ -718,8 +729,8 @@ class DiscordBotGUI:
             self.log("Only an admin can chat")
             return
         try:
-            mid = machine_id()
-            r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "machine_id": mid}, timeout=8)
+            uid = self._me_user_id or ''
+            r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
                 self.chat_entry.delete(0, "end")
             else:

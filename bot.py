@@ -109,6 +109,11 @@ LOGS_FILE = os.path.join(DATA_DIR, "key_logs.json")
 # Simple site-wide chat storage
 CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
 ADMIN_MACHINE_ID = os.getenv('ADMIN_MACHINE_ID', '').strip()
+# Role allowed to chat in broadcast (falls back to ADMIN_ROLE_ID if not set)
+try:
+	ADMIN_CHAT_ROLE_ID = int(os.getenv('ADMIN_CHAT_ROLE_ID', '0') or 0)
+except Exception:
+	ADMIN_CHAT_ROLE_ID = 0
 
 # Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
 ONLINE_USERS: dict[int, int] = {}
@@ -1955,11 +1960,15 @@ def start_health_check():
                     parsed = urllib.parse.urlparse(self.path)
                     q = urllib.parse.parse_qs(parsed.query or '')
                     since_raw = q.get('since', ['0'])[0]
-                    m_q = (q.get('machine_id', [''])[0] or '').strip()
+                    user_q = q.get('user_id', ['0'])[0]
                     try:
                         since_ts = int(since_raw)
                     except Exception:
                         since_ts = 0
+                    try:
+                        uid = int(user_q)
+                    except Exception:
+                        uid = 0
                     now_ts = int(time.time())
                     # Load messages
                     try:
@@ -1972,7 +1981,17 @@ def start_health_check():
                     except Exception:
                         msgs = []
                     new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
-                    can_send = bool(ADMIN_MACHINE_ID and m_q and ADMIN_MACHINE_ID == m_q)
+                    # Determine if user can send based on role
+                    can_send = False
+                    try:
+                        guild = bot.get_guild(GUILD_ID)
+                        if guild and uid:
+                            member = guild.get_member(uid)
+                            if member:
+                                allowed_role_id = ADMIN_CHAT_ROLE_ID or ADMIN_ROLE_ID
+                                can_send = any(r.id == allowed_role_id for r in member.roles)
+                    except Exception:
+                        can_send = False
                     payload = {
                         'messages': new_msgs[-100:],
                         'server_time': now_ts,
@@ -2351,19 +2370,33 @@ def start_health_check():
                     return
 
                 if self.path == '/api/chat-post':
-                    # Only admin machine can post broadcast messages
+                    # Only members with ADMIN_CHAT_ROLE_ID (or ADMIN_ROLE_ID) can post broadcast messages
                     content_length = int(self.headers.get('Content-Length', 0))
                     body = self.rfile.read(content_length).decode()
                     data = urllib.parse.parse_qs(body)
                     content = (data.get('content', [''])[0] or '').strip()
-                    m_q = (data.get('machine_id', [''])[0] or '').strip()
+                    user_q = (data.get('user_id', [''])[0] or '').strip()
                     if not content:
                         self.send_response(400)
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
                         self.wfile.write(b'{"success":false,"error":"empty content"}')
                         return
-                    if not ADMIN_MACHINE_ID or m_q != ADMIN_MACHINE_ID:
+                    try:
+                        uid = int(user_q)
+                    except Exception:
+                        uid = 0
+                    allowed = False
+                    try:
+                        guild = bot.get_guild(GUILD_ID)
+                        if guild and uid:
+                            member = guild.get_member(uid)
+                            if member:
+                                allowed_role_id = ADMIN_CHAT_ROLE_ID or ADMIN_ROLE_ID
+                                allowed = any(r.id == allowed_role_id for r in member.roles)
+                    except Exception:
+                        allowed = False
+                    if not allowed:
                         self.send_response(403)
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
