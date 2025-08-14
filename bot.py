@@ -2010,6 +2010,18 @@ def start_health_check():
                         guild = bot.get_guild(GUILD_ID)
                         if guild and uid:
                             member = guild.get_member(uid)
+                            if member is None:
+                                # Fallback to fetching the member if not in cache
+                                async def _fetch_member():
+                                    try:
+                                        return await guild.fetch_member(uid)
+                                    except Exception:
+                                        return None
+                                fut = asyncio.run_coroutine_threadsafe(_fetch_member(), bot.loop)
+                                try:
+                                    member = fut.result(timeout=5)
+                                except Exception:
+                                    member = None
                             if member:
                                 has_role = any(r.id == ROLE_ID for r in member.roles)
                     except Exception:
