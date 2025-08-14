@@ -1503,7 +1503,6 @@ def start_health_check():
                     self.wfile.write(page.encode())
                     return
 
-                # Simple HTML form for generating keys
                 if self.path == '/generate-form':
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
@@ -2310,6 +2309,41 @@ def start_health_check():
                     self.send_response(303)
                     self.send_header('Location','/generate-form')
                     self.end_headers()
+                    return
+
+                if self.path == '/api/restore':
+                    # Accept JSON backup payload and restore
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    try:
+                        payload = json.loads(body)
+                    except Exception as e:
+                        self.send_response(400)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': False, 'error': f'invalid JSON: {e}'}).encode())
+                        return
+                    try:
+                        keys = payload.get('keys')
+                        usage = payload.get('usage', {})
+                        deleted = payload.get('deleted', {})
+                        if not isinstance(keys, dict):
+                            raise ValueError('keys must be a JSON object')
+                        if not isinstance(usage, dict) or not isinstance(deleted, dict):
+                            raise ValueError('usage/deleted must be JSON objects')
+                        key_manager.keys = keys
+                        key_manager.key_usage = usage
+                        key_manager.deleted_keys = deleted
+                        key_manager.save_data()
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': True}).encode())
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode())
                     return
 
                 if self.path in ('/revoke','/delete'):
