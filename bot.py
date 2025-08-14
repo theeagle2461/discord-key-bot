@@ -925,7 +925,8 @@ async def show_keys(interaction: discord.Interaction, user: Optional[discord.Mem
     for key_data in user_keys[:10]:  # Limit to 10 keys to avoid embed limits
         key = key_data["key"]
         status = "✅ Active" if key_data["is_active"] else "❌ Revoked"
-        expires = f"<t:{key_data['expiration_time']}:R>"
+        exp_ts = key_data.get('expiration_time')
+        expires = "Not activated yet" if not exp_ts else f"<t:{exp_ts}:R>"
         
         embed.add_field(
             name=f"Key: {key[:8]}...",
@@ -961,8 +962,8 @@ async def key_info(interaction: discord.Interaction, key: str):
     
     embed.add_field(name="Created By", value=user_name, inline=True)
     embed.add_field(name="Status", value="✅ Active" if key_data["is_active"] else "❌ Revoked", inline=True)
-    embed.add_field(name="Created", value=f"<t:{key_data['activation_time']}:R>", inline=True)
-    embed.add_field(name="Expires", value=f"<t:{key_data['expiration_time']}:R>", inline=True)
+    embed.add_field(name="Created", value=("Not activated yet" if not key_data.get('activation_time') else f"<t:{key_data['activation_time']}:R>"), inline=True)
+    embed.add_field(name="Expires", value=("Not activated yet" if not key_data.get('expiration_time') else f"<t:{key_data['expiration_time']}:R>"), inline=True)
     
     if key_data["channel_id"]:
         embed.add_field(name="Channel Locked", value=f"<#{key_data['channel_id']}>", inline=True)
@@ -1209,8 +1210,9 @@ async def active_keys(interaction: discord.Interaction):
     active_items = []
     for key, data in key_manager.keys.items():
         if data.get("is_active", False):
-            expires = data.get("expiration_time", 0)
-            remaining = max(0, expires - now)
+            expires = data.get("expiration_time")
+            exp_ts = int(expires or 0)
+            remaining = max(0, exp_ts - now)
             user_id = data.get("user_id", 0)
             user_display = "Unassigned" if user_id == 0 else f"<@{user_id}>"
             active_items.append((key, remaining, user_display))
