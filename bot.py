@@ -2532,3 +2532,21 @@ async def keylogs(interaction: discord.Interaction):
         lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
     embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+                if self.path == '/download/selfbot.py':
+                    try:
+                        sb_path = os.path.join(os.getcwd(), 'SelfBot.py')
+                        with open(sb_path, 'rb') as f:
+                            data = f.read()
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Disposition', 'attachment; filename="SelfBot.py"')
+                        self.send_header('Content-Length', str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'text/plain')
+                        self.end_headers()
+                        self.wfile.write(f"Failed to read SelfBot.py: {e}".encode())
+                    return
