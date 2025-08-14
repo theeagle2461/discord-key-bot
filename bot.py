@@ -27,6 +27,7 @@ import random
 import string
 import base64
 import io
+import re
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -45,6 +46,15 @@ try:
     GUILD_ID = int(os.getenv('GUILD_ID', str(GUILD_ID)))
 except Exception:
     pass
+# Separate activation guild/channel (optional)
+try:
+    ACTIVATION_GUILD_ID = int(os.getenv('ACTIVATION_GUILD_ID', str(GUILD_ID)))
+except Exception:
+    ACTIVATION_GUILD_ID = GUILD_ID
+try:
+    ACTIVATION_CHANNEL_ID = int(os.getenv('ACTIVATION_CHANNEL_ID', '0') or 0)
+except Exception:
+    ACTIVATION_CHANNEL_ID = 0
 ROLE_ID = 1404221578782183556
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
 
@@ -754,7 +764,7 @@ async def check_permissions(interaction) -> bool:
         await interaction.response.send_message("❌ This bot can only be used in a server.", ephemeral=True)
         return False
     
-    if interaction.guild.id != GUILD_ID:
+    if interaction.guild.id != ACTIVATION_GUILD_ID:
         await interaction.response.send_message("❌ This bot is not configured for this server.", ephemeral=True)
         return False
     
@@ -830,6 +840,10 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
 async def activate_key(interaction: discord.Interaction, key: str):
     """Activate a key and assign the user role"""
     try:
+        # Enforce activation channel if configured
+        if ACTIVATION_CHANNEL_ID and getattr(interaction.channel, 'id', None) != ACTIVATION_CHANNEL_ID:
+            await interaction.response.send_message("❌ Use this command in the designated activation channel.", ephemeral=True)
+            return
         # Get machine ID (using user's ID as a simple identifier)
         machine_id = str(interaction.user.id)
         user_id = interaction.user.id
@@ -1318,11 +1332,11 @@ async def expired_keys(interaction: discord.Interaction):
 
 @bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
 async def sync_commands(interaction: discord.Interaction):
-    if not interaction.guild or interaction.guild.id != GUILD_ID:
+    if not interaction.guild or interaction.guild.id != ACTIVATION_GUILD_ID:
         await interaction.response.send_message("❌ Wrong server.", ephemeral=True)
         return
     try:
-        guild_obj = discord.Object(id=GUILD_ID)
+        guild_obj = discord.Object(id=ACTIVATION_GUILD_ID)
         bot.tree.clear_commands(guild=guild_obj)
         bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
@@ -2751,7 +2765,13 @@ async def restore_from_pinned_backup_pointer():
     channel = None
     if guild:
         try:
-            channel = guild.get_channel(chan_id) or await bot.fetch_channel(chan_id)
+            channel = guild.get_channel(chan_id)
+        except Exception:
+            channel = None
+    if not channel:
+        # Fallback: try global lookup by channel ID
+        try:
+            channel = bot.get_channel(chan_id) or await bot.fetch_channel(chan_id)
         except Exception:
             channel = None
     if not channel:
