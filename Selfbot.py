@@ -439,6 +439,8 @@ class DiscordBotGUI:
         # Rich chat rendering state
         self._chat_items: list[dict] = []
         self._chat_scroll_y = 0
+        self._avatar_cache: dict[str, object] = {}
+        self._avatar_missing: set[str] = set()
         self._chat_canvas.bind('<Configure>', self._redraw_chat_bg)
         self._chat_canvas.bind_all('<MouseWheel>', lambda e: self._on_chat_scroll(e))
         # Initial draw
@@ -1166,9 +1168,18 @@ class DiscordBotGUI:
                 username = str(m.get('username') or m.get('from') or '')
                 avatar_url = str(m.get('avatar_url') or '')
                 time_txt = datetime.fromtimestamp(ts).strftime('%H:%M:%S') if ts else ''
-                # Avatar circle placeholder
+                # Avatar: draw cached image if available, else placeholder and trigger fetch
                 r = 14
-                self._chat_fg_items.append(c.create_oval(x_pad, y, x_pad+2*r, y+2*r, outline='#5a3e99', fill='#2c2750'))
+                if avatar_url and avatar_url in self._avatar_cache:
+                    img = self._avatar_cache.get(avatar_url)
+                    if img:
+                        self._chat_fg_items.append(c.create_image(x_pad+r, y+r, image=img))
+                    else:
+                        self._chat_fg_items.append(c.create_oval(x_pad, y, x_pad+2*r, y+2*r, outline='#5a3e99', fill='#2c2750'))
+                else:
+                    self._chat_fg_items.append(c.create_oval(x_pad, y, x_pad+2*r, y+2*r, outline='#5a3e99', fill='#2c2750'))
+                    if avatar_url and (avatar_url not in self._avatar_missing):
+                        threading.Thread(target=self._fetch_avatar, args=(avatar_url,), daemon=True).start()
                 # Username and time
                 self._chat_fg_items.append(c.create_text(x_pad+2*r+8, y+6, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10, 'bold'), text=username))
                 self._chat_fg_items.append(c.create_text(w-20, y+6, anchor='ne', fill='#7d5fff', font=('Consolas', 9), text=time_txt))
@@ -1194,6 +1205,30 @@ class DiscordBotGUI:
                 continue
         # Ensure min height
         c.configure(scrollregion=(0,0,w,max(y, c.winfo_height())))
+
+    def _fetch_avatar(self, url: str):
+        try:
+            rr = requests.get(url, timeout=8)
+            if rr.status_code == 200:
+                from PIL import Image, ImageTk
+                import io as _io
+                img = Image.open(_io.BytesIO(rr.content)).resize((28, 28))
+                # Make circular mask
+                mask = Image.new('L', (28,28), 0)
+                from PIL import ImageDraw as _ImageDraw
+                _ImageDraw.Draw(mask).ellipse((0,0,28,28), fill=255)
+                img.putalpha(mask)
+                tk_img = ImageTk.PhotoImage(img)
+                self._avatar_cache[url] = tk_img
+                # Redraw on UI thread
+                try:
+                    self.root.after(0, self._draw_chat_items)
+                except Exception:
+                    pass
+            else:
+                self._avatar_missing.add(url)
+        except Exception:
+            self._avatar_missing.add(url)
 
     def chat_send_message(self):
         msg = self.chat_entry.get().strip()
