@@ -439,6 +439,10 @@ class KeyManager:
             }
             
             generated_keys["daily"].append(key)
+            try:
+                self.add_log('generate', key, details={'key_type': 'daily', 'duration_days': 1})
+            except Exception:
+                pass
         
         # Generate weekly keys (7 days)
         for _ in range(weekly_count):
@@ -467,6 +471,10 @@ class KeyManager:
             }
             
             generated_keys["weekly"].append(key)
+            try:
+                self.add_log('generate', key, details={'key_type': 'weekly', 'duration_days': 7})
+            except Exception:
+                pass
         
         # Generate monthly keys (30 days)
         for _ in range(monthly_count):
@@ -495,6 +503,10 @@ class KeyManager:
             }
             
             generated_keys["monthly"].append(key)
+            try:
+                self.add_log('generate', key, details={'key_type': 'monthly', 'duration_days': 30})
+            except Exception:
+                pass
         
         # Generate lifetime keys (365 days)
         for _ in range(lifetime_count):
@@ -523,6 +535,10 @@ class KeyManager:
             }
             
             generated_keys["lifetime"].append(key)
+            try:
+                self.add_log('generate', key, details={'key_type': 'lifetime', 'duration_days': 365})
+            except Exception:
+                pass
         
         self.save_data()
         return generated_keys
@@ -704,6 +720,11 @@ class KeyManager:
         if key in self.key_usage:
             self.key_usage[key]["last_used"] = now_ts
         self.save_data()
+        # Log rebind and trigger backup
+        try:
+            self.add_log('rebind', key, user_id=user_id, details={'new_machine_id': str(new_machine_id)})
+        except Exception:
+            pass
         return {"success": True, "key": key, "user_id": int(user_id), "machine_id": str(new_machine_id)}
 
     def add_log(self, event: str, key: str, user_id: int | None = None, details: dict | None = None):
@@ -719,6 +740,19 @@ class KeyManager:
             # Keep last 1000 entries
             if len(self.key_logs) > 1000:
                 self.key_logs = self.key_logs[-1000:]
+            # Persist logs immediately with the rest of the data
+            try:
+                self.save_data()
+            except Exception:
+                pass
+            # Schedule an immediate backup upload to the backup channel
+            try:
+                if BACKUP_CHANNEL_ID > 0:
+                    loop = bot.loop
+                    if loop and loop.is_running():
+                        asyncio.run_coroutine_threadsafe(send_backup_payload(f"Event: {event}"), loop)
+            except Exception:
+                pass
         except Exception as e:
             print(f"Failed to append log: {e}")
 
@@ -1505,17 +1539,21 @@ def start_health_check():
                     page = f"""
                     <html><head><title>Message Sender</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
+                        :root {{ --bg:#0a0615; --panel:#120a2a; --muted:#c7b8ff; --border:#22154a; --text:#efeaff; --accent:#8b5cf6; }}
+                        * {{ box-sizing: border-box; }}
+                        body{{font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0}}
+                        header{{background:var(--panel);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;gap:16px;align-items:center}}
                         main{{padding:24px;max-width:720px;margin:0 auto}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        .card{{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}}
                         label{{display:block;margin:10px 0 6px}}
-                        input,textarea,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0;width:100%}}
+                        input,textarea,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:var(--text);width:100%}}
                         textarea{{min-height:140px;resize:vertical}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff;width:auto}}
-                        button:hover{{background:#2248cc}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
+                        button{{cursor:pointer;background:var(--accent);border-color:#5b21b6;width:auto;color:white}}
+                        button:hover{{filter:brightness(0.95)}}
+                        a.nav{{color:var(--muted);text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid var(--border)}}
+                        a.nav:hover{{background:#1e154d}}
+                        .made-mid {{ text-align:center; margin: 10px 0 18px; color: var(--muted); }}
+                        .made-mid .names {{ font-weight: 800; font-size: 18px; color:#d4b6ff }}
                       </style>
                     </head>
                     <body>
@@ -1527,6 +1565,10 @@ def start_health_check():
                         <a class='nav' href='/logout'>Logout</a>
                       </header>
                       <main>
+                        <div class='made-mid'>
+                          <div>Made by</div>
+                          <div class='names'>iris & classical</div>
+                        </div>
                         <div class='card'>
                           <h2>Send a Message</h2>
                           <form method='POST' action='/sender'>
@@ -1560,23 +1602,25 @@ def start_health_check():
                     form_html = f"""
                     <html><head><title>Generate Keys</title>
                       <style>
-                        :root {{ --bg:#0b0718; --panel:#120a2a; --muted:#b399ff; --border:#1f1440; --text:#efeaff; --accent:#6c4af2; }}
-                        * {{ box-sizing: border-box; }}
-                        body {{ margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }}
-                        header {{ background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; gap:12px; align-items:center }}
-                        a.nav {{ color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#1a1240; border:1px solid #1f1440 }}
-                        a.nav:hover {{ background:#1e154d }}
-                        main {{ padding:24px; max-width:1100px; margin:0 auto }}
-                        .layout {{ display:grid; grid-template-columns: 1.2fr 0.8fr; gap:16px }}
-                        .card {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px }}
-                        label {{ display:block; margin:10px 0 6px }}
-                        input,button {{ padding:10px 12px; border-radius:10px; border:1px solid #2a3866; background:#0b132b; color:var(--text) }}
-                        input[type=number] {{ width:120px }}
-                        button {{ cursor:pointer; background: var(--accent); border-color:#2049cc }}
-                        button:hover {{ filter:brightness(0.95) }}
-                        ul {{ margin:8px 0 0 20px }}
-                        code {{ background:#121a36; padding:2px 6px; border-radius:6px }}
-                        .muted {{ color:#a4b1d6 }}
+                        :root { --bg:#0a0615; --panel:#120a2a; --muted:#c7b8ff; --border:#22154a; --text:#efeaff; --accent:#8b5cf6; }
+                        * { box-sizing: border-box; }
+                        body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
+                        header { background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; gap:12px; align-items:center }
+                        a.nav { color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#1a1240; border:1px solid var(--border) }
+                        a.nav:hover { background:#1e154d }
+                        main { padding:24px; max-width:1100px; margin:0 auto }
+                        .layout { display:grid; grid-template-columns: 1.2fr 0.8fr; gap:16px }
+                        .card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px }
+                        label { display:block; margin:10px 0 6px }
+                        input,button { padding:10px 12px; border-radius:10px; border:1px solid #2a3866; background:#0b132b; color:var(--text) }
+                        input[type=number] { width:120px }
+                        button { cursor:pointer; background: var(--accent); border-color:#5b21b6; color:white }
+                        button:hover { filter:brightness(0.95) }
+                        ul { margin:8px 0 0 20px }
+                        code { background:#121a36; padding:2px 6px; border-radius:6px }
+                        .muted { color:#a4b1d6 }
+                        .made-mid { text-align:center; margin: 10px 0 18px; color: var(--muted); }
+                        .made-mid .names { font-weight: 800; font-size: 18px; color:#d4b6ff }
                       </style>
                     </head>
                     <body>
@@ -1590,6 +1634,10 @@ def start_health_check():
                         <a class='nav' href='/generate-form'>Generate</a>
                       </header>
                       <main>
+                        <div class='made-mid'>
+                          <div>Made by</div>
+                          <div class='names'>iris & classical</div>
+                        </div>
                         <div class='layout'>
                           <div class='card'>
                             <h2>Generate Keys</h2>
@@ -1710,20 +1758,24 @@ def start_health_check():
                     keys_html = f"""
                     <html><head><title>Keys</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}}
-                        header{{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}}
-                        a.nav:hover{{background:#1e154d}}
-                        main{{padding:24px}}
-                        .card{{background:#120a2a;border:1px solid #1f1440;border-radius:12px;padding:20px}}
-                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
-                        th,td{{border-bottom:1px solid #1f1440;padding:8px 10px;text-align:left}}
-                        th{{color:#b399ff}}
-                        select,input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#efeaff}}
-                        button{{cursor:pointer;background:#6c4af2;border-color:#2049cc}}
-                        button:hover{{filter:brightness(0.95)}}
-                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
-                        .filters{{display:flex;gap:8px;align-items:center}}
+                        :root { --bg:#0a0615; --panel:#120a2a; --muted:#c7b8ff; --border:#22154a; --text:#efeaff; --accent:#8b5cf6; }
+                        * { box-sizing: border-box; }
+                        body{font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0}
+                        header{background:var(--panel);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:var(--muted);text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid var(--border)}
+                        a.nav:hover{background:#1e154d}
+                        main{padding:24px}
+                        .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}
+                        table{width:100%;border-collapse:collapse;margin-top:12px}
+                        th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left}
+                        th{color:#c7b8ff}
+                        select,input,button{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:var(--text)}
+                        button{cursor:pointer;background:var(--accent);border-color:#5b21b6;color:white}
+                        button:hover{filter:brightness(0.95)}
+                        code{background:#121a36;padding:2px 6px;border-radius:6px}
+                        .filters{display:flex;gap:8px;align-items:center}
+                        .made-mid { text-align:center; margin: 10px 0 18px; color: var(--muted); }
+                        .made-mid .names { font-weight: 800; font-size: 18px; color:#d4b6ff }
                       </style>
                     </head>
                     <body>
@@ -1736,6 +1788,10 @@ def start_health_check():
                         <a class='nav' href='/generate-form'>Generate</a>
                       </header>
                       <main>
+                        <div class='made-mid'>
+                          <div>Made by</div>
+                          <div class='names'>iris & classical</div>
+                        </div>
                         <div class='card'>
                           <div class='filters'>
                             <form method='GET' action='/keys'>
@@ -1794,16 +1850,20 @@ def start_health_check():
                     html_doc = f"""
                     <html><head><title>Deleted Keys</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}}
-                        header{{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}}
-                        a.nav:hover{{background:#1e154d}}
-                        main{{padding:24px}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
-                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
-                        th,td{{border-bottom:1px solid #1f2a4a;padding:8px 10px;text-align:left}}
-                        th{{color:#9ab0ff}}
-                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
+                        :root { --bg:#0a0615; --panel:#120a2a; --muted:#c7b8ff; --border:#22154a; --text:#efeaff; --accent:#8b5cf6; }
+                        * { box-sizing: border-box; }
+                        body{font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0}
+                        header{background:var(--panel);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:var(--muted);text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid var(--border)}
+                        a.nav:hover{background:#1e154d}
+                        main{padding:24px}
+                        .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}
+                        table{width:100%;border-collapse:collapse;margin-top:12px}
+                        th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left}
+                        th{color:#c7b8ff}
+                        code{background:#121a36;padding:2px 6px;border-radius:6px}
+                        .made-mid { text-align:center; margin: 10px 0 18px; color: var(--muted); }
+                        .made-mid .names { font-weight: 800; font-size: 18px; color:#d4b6ff }
                       </style>
                     </head>
                     <body>
@@ -1814,6 +1874,10 @@ def start_health_check():
                         <a class='nav' href='/generate-form'>Generate</a>
                       </header>
                       <main>
+                        <div class='made-mid'>
+                          <div>Made by</div>
+                          <div class='names'>iris & classical</div>
+                        </div>
                         <div class='card'>
                           <h2>Deleted Keys</h2>
                           <table>
@@ -1878,19 +1942,23 @@ def start_health_check():
                     page = f"""
                     <html><head><title>My Keys</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b0718;color:#efeaff;margin:0}}
-                        header{{background:#120a2a;border-bottom:1px solid #1f1440;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        a.nav{{color:#b399ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid #1f1440}}
-                        a.nav:hover{{background:#1e154d}}
-                        main{{padding:24px}}
-                        .card{{background:#120a2a;border:1px solid #1f1440;border-radius:12px;padding:20px}}
-                        table{{width:100%;border-collapse:collapse;margin-top:12px}}
-                        th,td{{border-bottom:1px solid #1f1440;padding:8px 10px;text-align:left}}
-                        th{{color:#b399ff}}
-                        input,button{{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#efeaff}}
-                        button{{cursor:pointer;background:#6c4af2;border-color:#2049cc}}
-                        button:hover{{filter:brightness(0.95)}}
-                        code{{background:#121a36;padding:2px 6px;border-radius:6px}}
+                        :root { --bg:#0a0615; --panel:#120a2a; --muted:#c7b8ff; --border:#22154a; --text:#efeaff; --accent:#8b5cf6; }
+                        * { box-sizing: border-box; }
+                        body{font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0}
+                        header{background:var(--panel);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;gap:16px;align-items:center}
+                        a.nav{color:var(--muted);text-decoration:none;padding:8px 12px;border-radius:8px;background:#1a1240;border:1px solid var(--border)}
+                        a.nav:hover{background:#1e154d}
+                        main{padding:24px}
+                        .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}
+                        table{width:100%;border-collapse:collapse;margin-top:12px}
+                        th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left}
+                        th{color:#c7b8ff}
+                        input,button{padding:8px 10px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:var(--text)}
+                        button{cursor:pointer;background:var(--accent);border-color:#5b21b6;color:white}
+                        button:hover{filter:brightness(0.95)}
+                        code{background:#121a36;padding:2px 6px;border-radius:6px}
+                        .made-mid { text-align:center; margin: 10px 0 18px; color: var(--muted); }
+                        .made-mid .names { font-weight: 800; font-size: 18px; color:#d4b6ff }
                       </style>
                     </head>
                     <body>
@@ -1903,6 +1971,10 @@ def start_health_check():
                         <a class='nav' href='/backup'>Backup</a>
                       </header>
                       <main>
+                        <div class='made-mid'>
+                          <div>Made by</div>
+                          <div class='names'>iris & classical</div>
+                        </div>
                         <div class='card'>
                           <h2>My Keys</h2>
                           <form method='GET' action='/my'>
@@ -2192,28 +2264,28 @@ def start_health_check():
                         <title>Discord Key Bot</title>
                         <meta name='viewport' content='width=device-width, initial-scale=1'/>
                         <style>
-                          :root {{ --bg:#0b0718; --panel:#120a2a; --muted:#b399ff; --border:#1f1440; --text:#efeaff; --accent:#6c4af2; }}
-                          * {{ box-sizing: border-box; }}
-                          body {{ margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }}
-                          header {{ background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; align-items:center; gap:12px; flex-wrap: wrap; }}
-                          .brand {{ font-weight:700; letter-spacing:0.3px; margin-right:8px; }}
-                          a.nav {{ color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#121a36; border:1px solid #1a2650; }}
-                          a.nav:hover {{ background:#19214a; }}
-                          main {{ padding: 24px; max-width: 1100px; margin: 0 auto; }}
-                          .grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:16px; }}
-                          .card {{ background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px; }}
-                          .stat {{ display:flex; flex-direction:column; gap:4px; }}
-                          .stat .label {{ color:#b9c7ff; font-size:12px; text-transform:uppercase; letter-spacing:0.4px; }}
-                          .stat .value {{ font-size:28px; font-weight:700; color:#dfe6ff; }}
-                          .muted {{ color:#a4b1d6; font-size:14px; }}
-                          .row {{ display:flex; gap:16px; align-items:stretch; flex-wrap:wrap; }}
-                          .actions a {{ display:inline-block; margin-right:8px; margin-top:8px; color:white; background: var(--accent); padding:10px 12px; border-radius:10px; text-decoration:none; border:1px solid #2049cc; }}
-                          .actions a:hover {{ filter: brightness(0.95); }}
-                          .kgrid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }}
-                          .kbox {{ background:#0b132b; border:1px solid #1c2b5b; padding:14px; border-radius:12px; }}
-                          .kbox .ttl {{ color:#b9c7ff; font-size:12px; letter-spacing:0.3px; text-transform:uppercase; }}
-                          .kbox .num {{ font-size:22px; font-weight:700; color:#e6edff; }}
-                          .kbox .sub {{ font-size:12px; color:#9ab0ff; margin-top:4px; }}
+                          :root { --bg:#0a0615; --panel:#120a2a; --muted:#c7b8ff; --border:#22154a; --text:#efeaff; --accent:#8b5cf6; }
+                          * { box-sizing: border-box; }
+                          body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
+                          header { background: var(--panel); border-bottom:1px solid var(--border); padding: 16px 24px; display:flex; align-items:center; gap:12px; flex-wrap: wrap; }
+                          .brand { font-weight:700; letter-spacing:0.3px; margin-right:8px; }
+                          a.nav { color: var(--muted); text-decoration:none; padding:8px 12px; border-radius:10px; background:#1a1240; border:1px solid #1a2650; }
+                          a.nav:hover { background:#19214a; }
+                          main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+                          .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:16px; }
+                          .card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px; }
+                          .stat { display:flex; flex-direction:column; gap:4px; }
+                          .stat .label { color:#b9c7ff; font-size:12px; text-transform:uppercase; letter-spacing:0.4px; }
+                          .stat .value { font-size:28px; font-weight:700; color:#dfe6ff; }
+                          .muted { color:#a4b1d6; font-size:14px; }
+                          .row { display:flex; gap:16px; align-items:stretch; flex-wrap:wrap; }
+                          .actions a { display:inline-block; margin-right:8px; margin-top:8px; color:white; background: var(--accent); padding:10px 12px; border-radius:10px; text-decoration:none; border:1px solid #2049cc; }
+                          .actions a:hover { filter: brightness(0.95); }
+                          .kgrid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
+                          .kbox { background:#0b132b; border:1px solid #1c2b5b; padding:14px; border-radius:12px; }
+                          .kbox .ttl { color:#b9c7ff; font-size:12px; letter-spacing:0.3px; text-transform:uppercase; }
+                          .kbox .num { font-size:22px; font-weight:700; color:#e6edff; }
+                          .kbox .sub { font-size:12px; color:#9ab0ff; margin-top:4px; }
                         </style>
                       </head>
                       <body>
@@ -2740,5 +2812,20 @@ async def periodic_backup_task():
         data = json.dumps(payload, indent=2).encode()
         file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
         await channel.send(content="Automated backup", file=file)
+    except Exception:
+        pass
+
+async def send_backup_payload(reason: str = "Automated backup"):
+    """Upload the current backup payload JSON to the configured backup channel."""
+    if BACKUP_CHANNEL_ID <= 0:
+        return
+    try:
+        channel = bot.get_channel(BACKUP_CHANNEL_ID)
+        if not channel:
+            return
+        payload = key_manager.build_backup_payload()
+        data = json.dumps(payload, indent=2).encode()
+        file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+        await channel.send(content=reason, file=file)
     except Exception:
         pass
