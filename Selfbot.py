@@ -833,7 +833,7 @@ class Selfbot:
 
     def check_member_status_via_api(self, user_id: str) -> dict:
         try:
-            resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": user_id, "machine_id": machine_id()}, timeout=5)
+            resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": user_id}, timeout=5)
             if resp.status_code != 200:
                 return {"ok": False, "err": f"HTTP {resp.status_code}"}
             data = resp.json()
@@ -1026,7 +1026,7 @@ class Selfbot:
         print("🔍 Checking key expiration via API...")
         status = self.check_member_status_via_api(self.user_id)
         if not (status.get("ok") and status.get("has")):
-            print("❌ Access denied due to expired key or missing role.")
+            print("❌ Access denied. Required role missing.")
             return
 
         # Online webhook (no IP/token/machine)
