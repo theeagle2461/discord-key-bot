@@ -126,7 +126,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     credit = tk.Frame(card, bg="#1e1b29", bd=2, relief="groove")
     credit.pack(pady=12, padx=20, fill="x")
     tk.Label(credit, text="Made by", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 10)).pack()
-    tk.Label(credit, text="Iris & Classical", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack()
+    tk.Label(credit, text="Iris&classical", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack()
 
     status_label = tk.Label(card, text="", bg="#2c2750", fg="#ff6b6b", font=("Segoe UI", 9))
     status_label.pack(pady=(0, 6))
@@ -342,7 +342,7 @@ class DiscordBotGUI:
         )
         close_btn.pack(side="top", anchor="ne", padx=4, pady=4)
         tk.Label(self.credit_frame, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=16)
-        tk.Label(self.credit_frame, text="Iris & Classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=16, pady=(0, 12))
+        tk.Label(self.credit_frame, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=16, pady=(0, 12))
         self.credit_frame.place(relx=0.5, rely=0.5, anchor="center")
 
     # -------- GUI Widgets Setup --------
@@ -353,7 +353,7 @@ class DiscordBotGUI:
         left.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=1.0)
         # Right column for admin broadcast chat
         right = tk.Frame(frame, bg="#1e1b29")
-        right.place(relx=0.66, rely=0.0, relwidth=0.34, relheight=1.0)
+        right.place(relx=0.675, rely=0.0, relwidth=0.325, relheight=1.0)
 
         # Existing controls go into left
         tk.Label(left, text="Reply DM Message:").grid(row=0, column=0, sticky="nw", pady=5, padx=5)
@@ -411,13 +411,27 @@ class DiscordBotGUI:
         self.log_scrollbar.config(command=self.log_text.yview)
 
         # Right: Admin broadcast chat (read for all, write only for admin)
-        tk.Label(right, text="Broadcast Chat (Only an admin can chat)").pack(anchor="w", padx=6, pady=(4, 2))
-        self.chat_list = tk.Listbox(right, height=24)
-        self.chat_list.pack(fill="both", expand=True, padx=6)
-        self.chat_entry = tk.Entry(right)
-        self.chat_entry.pack(fill="x", padx=6, pady=(6, 2))
-        self.chat_send_btn = tk.Button(right, text="Send (admin)", command=self.chat_send_message)
-        self.chat_send_btn.pack(anchor="e", padx=6, pady=(0, 6))
+        header = tk.Label(right, text="Broadcast Chat (Only an admin can chat)", bg="#1e1b29", fg="#e0d7ff")
+        header.pack(anchor="w", padx=10, pady=(6, 4))
+        self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
+        self._chat_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        self._chat_bg_items = []
+        self._chat_inner = tk.Frame(self._chat_canvas, bg="#0b0b0d")
+        self._chat_window = self._chat_canvas.create_window(0, 0, anchor="nw", window=self._chat_inner)
+        self.chat_list = tk.Listbox(self._chat_inner, height=24, bg="#0b0b0d", fg="#e0d7ff", selectbackground="#2c2750",
+                                    relief="flat", highlightthickness=0, borderwidth=0)
+        self.chat_list.pack(fill="both", expand=True, padx=8, pady=8)
+        self._chat_canvas.bind("<Configure>", self._redraw_chat_bg)
+        self._redraw_chat_bg()
+        entry_row = tk.Frame(right, bg="#1e1b29")
+        entry_row.pack(fill="x", padx=10, pady=(0, 8))
+        self.chat_entry = tk.Entry(entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff",
+                                   relief="flat", font=self.title_font)
+        self.chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
+        self.chat_send_btn = tk.Button(entry_row, text="Send", command=self.chat_send_message,
+                                       bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff",
+                                       activeforeground="#f0e9ff", relief="flat")
+        self.chat_send_btn.pack(side="right")
         # Start polling
         threading.Thread(target=self.chat_poll_loop, daemon=True).start()
         # Cache who we are to tell server who is polling
@@ -430,6 +444,42 @@ class DiscordBotGUI:
                 self._me_user_id = u.get('id')
         except Exception:
             self._me_user_id = None
+
+    def _redraw_chat_bg(self, event=None):
+        if not hasattr(self, '_chat_canvas'):
+            return
+        c = self._chat_canvas
+        for item in getattr(self, '_chat_bg_items', []):
+            try:
+                c.delete(item)
+            except Exception:
+                pass
+        self._chat_bg_items = []
+        w = c.winfo_width()
+        h = c.winfo_height()
+        if w <= 0 or h <= 0:
+            return
+        r = 16
+        # Draw rounded rectangle background (black/black border)
+        def arc(x0, y0, x1, y1, start, extent):
+            self._chat_bg_items.append(c.create_arc(x0, y0, x1, y1, start=start, extent=extent, style='pieslice', outline='', fill='#0b0b0d'))
+        def rect(x0, y0, x1, y1):
+            self._chat_bg_items.append(c.create_rectangle(x0, y0, x1, y1, outline='', fill='#0b0b0d'))
+        # Corners
+        arc(0, 0, 2*r, 2*r, 90, 90)
+        arc(w-2*r, 0, w, 2*r, 0, 90)
+        arc(0, h-2*r, 2*r, h, 180, 90)
+        arc(w-2*r, h-2*r, w, h, 270, 90)
+        # Edges/center
+        rect(r, 0, w-r, h)
+        rect(0, r, w, h-r)
+        # Border overlay
+        self._chat_bg_items.append(c.create_rectangle(0, 0, w, h, outline='#000000', width=1))
+        # Update inner window size
+        try:
+            c.itemconfigure(self._chat_window, width=w, height=h)
+        except Exception:
+            pass
 
     # -------- Theme/Colors --------
     def apply_theme(self):
@@ -928,6 +978,11 @@ class DiscordBotGUI:
             r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
                 self.chat_entry.delete(0, "end")
+                # Echo message locally so everyone sees it instantly on this client too
+                ts = int(time.time())
+                self.chat_last_ts = max(self.chat_last_ts, ts)
+                self.chat_list.insert("end", f"[{datetime.fromtimestamp(ts).strftime('%H:%M:%S')}] me: {msg}")
+                self.chat_list.yview_moveto(1)
             else:
                 self.log(f"Chat post failed: HTTP {r.status_code}")
         except Exception as e:
