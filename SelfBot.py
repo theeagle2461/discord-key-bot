@@ -231,6 +231,14 @@ class DiscordBotGUI:
         right = tk.Frame(frame, bg="#1e1b29")
         right.place(relx=0.66, rely=0.0, relwidth=0.34, relheight=1.0)
 
+        # User info (avatar + username) area
+        self.user_info_frame = tk.Frame(left, bg="#1e1b29")
+        self.user_info_frame.grid(row=9, column=0, columnspan=4, sticky="w", padx=5, pady=(4, 8))
+        self.avatar_label = tk.Label(self.user_info_frame, image="", bg="#1e1b29")
+        self.avatar_label.grid(row=0, column=0, sticky="w")
+        self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29")
+        self.username_label.grid(row=0, column=1, sticky="w", padx=8)
+
         # Existing controls go into left
         tk.Label(left, text="Reply DM Message:").grid(row=0, column=0, sticky="nw", pady=5, padx=5)
         self.reply_dm_entry = tk.Text(left, height=3, width=55)
