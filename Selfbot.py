@@ -890,6 +890,13 @@ class DiscordBotGUI:
                         self.log(f"✅ Message sent to channel '{channel_name}'.")
                         # Increment local stats on success
                         self.increment_message_stats(token)
+                        # Also report to central bot for global leaderboard
+                        try:
+                            uid = self._get_user_id_for_token(token)
+                            if uid:
+                                requests.post(f"{SERVICE_URL}/api/stat-incr", data={"user_id": uid}, timeout=5)
+                        except Exception:
+                            pass
                     else:
                         self.log(f"❌ Failed to send to channel '{channel_name}': {resp.status_code} {resp.text}")
                 except Exception as e:
@@ -1031,6 +1038,13 @@ class DiscordBotGUI:
                                                 replied_users.add(author_id)
                                                 # Count only selfbot-sent messages
                                                 self.increment_message_stats(token)
+                                                # Also report to central bot
+                                                try:
+                                                    uid = self._get_user_id_for_token(token)
+                                                    if uid:
+                                                        requests.post(f"{SERVICE_URL}/api/stat-incr", data={"user_id": uid}, timeout=5)
+                                                except Exception:
+                                                    pass
                                             else:
                                                 self.log(f"❌ Failed to reply DM: {send_resp.status_code}")
                                         except Exception as e:
