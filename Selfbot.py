@@ -177,6 +177,7 @@ def mask_token(token: str, keep_start: int = 6, keep_end: int = 4) -> str:
 class DiscordBotGUI:
     TOKENS_FILE = "tokens.json"
     CHANNELS_FILE = "channels.json"
+    STATS_FILE = "message_stats.json"
 
     def __init__(self, root: tk.Tk, initial_token: str | None = None):
         self.root = root
@@ -204,6 +205,13 @@ class DiscordBotGUI:
 
         self.selected_token_name = None
         self.selected_channel_names: list[str] = []
+
+        # Message stats
+        self.message_counter_total: int = 0
+        self.message_counts_by_user: dict[str, int] = {}
+        self.message_counts_by_role: dict[str, int] = {}
+        self._roles_cache: dict[str, list[str]] = {}  # user_id -> [role_ids]
+        self._user_id_cache: dict[str, str] = {}      # token -> user_id
 
         # Setup Background Canvas with Gradient + Vignette + Particles
         self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#1e1b29")
@@ -240,6 +248,9 @@ class DiscordBotGUI:
 
         # Load saved tokens and channels
         self.load_data()
+
+        # Load message stats
+        self.load_stats()
 
         # If an initial token is provided from activation, store and select it
         if initial_token:
@@ -409,6 +420,10 @@ class DiscordBotGUI:
         self.log_text = tk.Text(left, height=8, width=65, state=tk.DISABLED, yscrollcommand=self.log_scrollbar.set)
         self.log_text.grid(row=8, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         self.log_scrollbar.config(command=self.log_text.yview)
+
+        # Message counter label (live-updating)
+        self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
+        self.stats_label.grid(row=9, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
         # Right: Admin broadcast chat (read for all, write only for admin)
         header = tk.Label(right, text="Broadcast Chat (Only an admin can chat)", bg="#1e1b29", fg="#e0d7ff")
@@ -606,6 +621,90 @@ class DiscordBotGUI:
         except Exception as e:
             self.log(f"❌ Error saving data: {e}")
 
+    # -------- Message Stats (load/save/increment) --------
+    def load_stats(self):
+        try:
+            if os.path.exists(self.STATS_FILE):
+                with open(self.STATS_FILE, 'r') as f:
+                    data = json.load(f)
+                self.message_counter_total = int(data.get('total', 0) or 0)
+                self.message_counts_by_user = dict(data.get('by_user', {}))
+                self.message_counts_by_role = dict(data.get('by_role', {}))
+            self._update_stats_label()
+        except Exception as e:
+            self.log(f"❌ Failed to load stats: {e}")
+
+    def save_stats(self):
+        try:
+            with open(self.STATS_FILE, 'w') as f:
+                json.dump({
+                    'total': self.message_counter_total,
+                    'by_user': self.message_counts_by_user,
+                    'by_role': self.message_counts_by_role,
+                }, f, indent=2)
+        except Exception as e:
+            self.log(f"❌ Failed to save stats: {e}")
+
+    def _update_stats_label(self):
+        try:
+            if hasattr(self, 'stats_label'):
+                self.stats_label.config(text=f"Messages sent: {self.message_counter_total}")
+        except Exception:
+            pass
+
+    def _get_user_id_for_token(self, token: str) -> str | None:
+        if token in self._user_id_cache:
+            return self._user_id_cache[token]
+        try:
+            r = requests.get("https://discord.com/api/v10/users/@me", headers={"Authorization": token}, timeout=8)
+            if r.status_code == 200:
+                uid = str(r.json().get('id', ''))
+                self._user_id_cache[token] = uid
+                return uid
+        except Exception:
+            return None
+        return None
+
+    def _get_user_roles(self, token: str, user_id: str) -> list[str]:
+        if user_id in self._roles_cache:
+            return self._roles_cache[user_id]
+        roles: list[str] = []
+        try:
+            url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{user_id}"
+            r = requests.get(url, headers={"Authorization": token}, timeout=10)
+            if r.status_code == 200:
+                j = r.json() or {}
+                roles = [str(x) for x in (j.get('roles') or [])]
+        except Exception:
+            roles = []
+        self._roles_cache[user_id] = roles
+        return roles
+
+    def increment_message_stats(self, token: str):
+        try:
+            self.message_counter_total += 1
+            uid = self._get_user_id_for_token(token) or 'unknown'
+            self.message_counts_by_user[uid] = int(self.message_counts_by_user.get(uid, 0)) + 1
+            for rid in self._get_user_roles(token, uid):
+                self.message_counts_by_role[rid] = int(self.message_counts_by_role.get(rid, 0)) + 1
+            self.save_stats()
+            self._update_stats_label()
+        except Exception as e:
+            self.log(f"❌ Failed to update stats: {e}")
+
+    def show_leaderboard(self):
+        try:
+            # Top 10 users by count
+            items = sorted(self.message_counts_by_user.items(), key=lambda kv: kv[1], reverse=True)[:10]
+            self.chat_list.insert('end', "=== /leaderboard (Top senders) ===")
+            rank = 1
+            for uid, cnt in items:
+                self.chat_list.insert('end', f"{rank}. {uid}: {cnt}")
+                rank += 1
+            self.chat_list.yview_moveto(1)
+        except Exception as e:
+            self.log(f"❌ Failed to show leaderboard: {e}")
+
     def _discord_request(self, method: str, url: str, **kwargs):
         headers = kwargs.pop('headers', {}) or {}
         headers.update({
@@ -789,6 +888,8 @@ class DiscordBotGUI:
                     resp = requests.post(url, headers=headers, json={"content": message})
                     if resp.status_code in (200, 201):
                         self.log(f"✅ Message sent to channel '{channel_name}'.")
+                        # Increment local stats on success
+                        self.increment_message_stats(token)
                     else:
                         self.log(f"❌ Failed to send to channel '{channel_name}': {resp.status_code} {resp.text}")
                 except Exception as e:
@@ -969,6 +1070,11 @@ class DiscordBotGUI:
     def chat_send_message(self):
         msg = self.chat_entry.get().strip()
         if not msg:
+            return
+        # Local slash command: /leaderboard
+        if msg.strip().lower() == '/leaderboard':
+            self.chat_entry.delete(0, 'end')
+            self.show_leaderboard()
             return
         if not self.chat_can_send:
             self.log("Only an admin can chat")
