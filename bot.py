@@ -805,6 +805,8 @@ async def on_ready():
             pass
         except Exception:
             pass
+    # Always upload a startup backup so every redeploy leaves a snapshot in the channel
+    trigger_backup_upload("Startup backup after redeploy")
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -883,6 +885,8 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
     
     # Send to channel
     await interaction.response.send_message(embed=embed)
+    # Backup to Discord channel
+    trigger_backup_upload("Backup after /generate")
 
 @bot.tree.command(name="activate", description="Activate a key and get the user role")
 async def activate_key(interaction: discord.Interaction, key: str):
@@ -898,31 +902,30 @@ async def activate_key(interaction: discord.Interaction, key: str):
         if result["success"]:
             # Give the user the role
             role = interaction.guild.get_role(ROLE_ID)
-            if role and role not in interaction.user.roles:
-                await interaction.user.add_roles(role)
-                role_message = f"✅ Role **{role.name}** has been assigned to you!"
-            else:
-                role_message = f"✅ You already have the **{role.name}** role!"
+            if not role:
+                role = discord.utils.get(interaction.guild.roles, name=ROLE_NAME)
+            if role:
+                try:
+                    await interaction.user.add_roles(role, reason="Key activated via command")
+                except Exception:
+                    pass
+            # Backup after activation
+            trigger_backup_upload("Backup after /activate")
             
-            # Get key duration info
-            key_data = key_manager.get_key_info(key)
-            duration_days = key_data.get("duration_days", 30)
-            
-            # Send success message
             embed = discord.Embed(
-                title="🔑 Key Activated Successfully!",
-                description=f"Your key has been activated and you now have access to the selfbot.",
+                title="✅ Key Activated",
+                description=f"Your key has been activated successfully!",
                 color=0x00ff00
             )
-            embed.add_field(name="Role Assigned", value=role_message, inline=False)
-            embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
+            embed.add_field(name="Role Assigned", value=f"✅ Role **{role.name}** has been assigned to you!", inline=False)
+            embed.add_field(name="Duration", value=f"{result['duration_days']} days", inline=True)
             embed.add_field(name="Expires", value=f"<t:{result['expiration_time']}:R>", inline=True)
             
             if result.get('channel_id'):
                 embed.add_field(name="Channel Locked", value=f"<#{result['channel_id']}>", inline=True)
             
             # Add SelfBot instructions
-            embed.add_field(name="📱 SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {duration_days} days duration!", inline=False)
+            embed.add_field(name="📱 SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {result['duration_days']} days duration!", inline=False)
             
             await interaction.response.send_message(embed=embed)
             
@@ -1181,6 +1184,8 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
     embed.add_field(name="📱 Website", value="Keys are now available on your website!", inline=False)
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+    # Backup to Discord channel
+    trigger_backup_upload("Backup after /generatekeys")
 
 # New command to view available keys by type
 @bot.tree.command(name="viewkeys", description="View all available keys by type (Special Admin Only)")
@@ -2383,6 +2388,9 @@ def start_health_check():
                     result = key_manager.generate_bulk_keys(daily, weekly, monthly, lifetime)
                     key_manager.last_generated = result
 
+                    # Backup to Discord channel
+                    trigger_backup_upload("Backup after web /generate")
+
                     self.send_response(303)
                     self.send_header('Location','/generate-form')
                     self.end_headers()
@@ -2446,6 +2454,8 @@ def start_health_check():
                                             member = guild.get_member(int(user_id_val))
                                             if member:
                                                 await member.add_roles(role, reason="Key activated via API")
+                                                # Trigger backup after successful role grant
+                                                trigger_backup_upload("Backup after /api/activate")
                                         asyncio.run_coroutine_threadsafe(_add_role(), bot.loop)
                                 except Exception:
                                     pass
