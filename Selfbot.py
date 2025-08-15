@@ -436,11 +436,13 @@ class DiscordBotGUI:
         self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
         self._chat_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         self._chat_bg_items = []
-        self._chat_inner = tk.Frame(self._chat_canvas, bg="#0b0b0d")
-        self._chat_window = self._chat_canvas.create_window(0, 0, anchor="nw", window=self._chat_inner)
-        self.chat_list = tk.Listbox(self._chat_inner, height=24, bg="#0b0b0d", fg="#e0d7ff", selectbackground="#2c2750",
-                                    relief="flat", highlightthickness=0, borderwidth=0)
-        self.chat_list.pack(fill="both", expand=True, padx=8, pady=8)
+        # Rich chat rendering state
+        self._chat_items: list[dict] = []
+        self._chat_scroll_y = 0
+        self._chat_canvas.bind('<Configure>', self._redraw_chat_bg)
+        self._chat_canvas.bind_all('<MouseWheel>', lambda e: self._on_chat_scroll(e))
+        # Initial draw
+        self._draw_chat_items()
         self._chat_canvas.bind("<Configure>", self._redraw_chat_bg)
         self._redraw_chat_bg()
         entry_row = tk.Frame(right, bg="#1e1b29")
@@ -1123,15 +1125,75 @@ class DiscordBotGUI:
                     if msgs:
                         for m in msgs:
                             ts = int(m.get("ts", 0) or 0)
-                            content = str(m.get("content", ""))
-                            who = str(m.get("from", ""))
                             self.chat_last_ts = max(self.chat_last_ts, ts)
-                            txt = f"[{datetime.fromtimestamp(ts).strftime('%H:%M:%S')}] {who}: {content}"
-                            self.chat_list.insert("end", txt)
-                            self.chat_list.yview_moveto(1)
+                            self._chat_items.append(m)
+                        # Redraw after batching
+                        try:
+                            self._draw_chat_items()
+                        except Exception:
+                            pass
                 time.sleep(2)
             except Exception:
                 time.sleep(3)
+
+    def _on_chat_scroll(self, event):
+        try:
+            delta = -1 * int(event.delta/120)
+        except Exception:
+            delta = 1
+        self._chat_scroll_y = max(0, self._chat_scroll_y + delta*24)
+        self._draw_chat_items()
+
+    def _draw_chat_items(self):
+        if not hasattr(self, '_chat_canvas'):
+            return
+        c = self._chat_canvas
+        # Clear previous chat drawings but keep background glow items
+        for item in getattr(self, '_chat_fg_items', []):
+            try:
+                c.delete(item)
+            except Exception:
+                pass
+        self._chat_fg_items = []
+        x_pad = 16
+        y_pad = 16
+        w = c.winfo_width() or 300
+        y = y_pad - self._chat_scroll_y
+        for m in self._chat_items[-200:]:
+            try:
+                ts = int(m.get('ts', 0) or 0)
+                content = str(m.get('content', ''))
+                username = str(m.get('username') or m.get('from') or '')
+                avatar_url = str(m.get('avatar_url') or '')
+                time_txt = datetime.fromtimestamp(ts).strftime('%H:%M:%S') if ts else ''
+                # Avatar circle placeholder
+                r = 14
+                self._chat_fg_items.append(c.create_oval(x_pad, y, x_pad+2*r, y+2*r, outline='#5a3e99', fill='#2c2750'))
+                # Username and time
+                self._chat_fg_items.append(c.create_text(x_pad+2*r+8, y+6, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10, 'bold'), text=username))
+                self._chat_fg_items.append(c.create_text(w-20, y+6, anchor='ne', fill='#7d5fff', font=('Consolas', 9), text=time_txt))
+                # Message content (wrap at width)
+                maxw = w - (x_pad+2*r+8) - 20
+                wrapped = []
+                line = ''
+                for word in content.split(' '):
+                    test = (line + ' ' + word).strip()
+                    if len(test) > 48:  # rough wrap
+                        wrapped.append(line)
+                        line = word
+                    else:
+                        line = test
+                if line:
+                    wrapped.append(line)
+                yy = y + 2*r + 6
+                for ln in wrapped:
+                    self._chat_fg_items.append(c.create_text(x_pad+2*r+8, yy, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10), text=ln))
+                    yy += 16
+                y = yy + 10
+            except Exception:
+                continue
+        # Ensure min height
+        c.configure(scrollregion=(0,0,w,max(y, c.winfo_height())))
 
     def chat_send_message(self):
         msg = self.chat_entry.get().strip()
@@ -1150,11 +1212,11 @@ class DiscordBotGUI:
             r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
                 self.chat_entry.delete(0, "end")
-                # Echo message locally so everyone sees it instantly on this client too
+                # Echo locally as a rich item with our username and placeholder avatar
                 ts = int(time.time())
                 self.chat_last_ts = max(self.chat_last_ts, ts)
-                self.chat_list.insert("end", f"[{datetime.fromtimestamp(ts).strftime('%H:%M:%S')}] me: {msg}")
-                self.chat_list.yview_moveto(1)
+                self._chat_items.append({'ts': ts, 'username': 'me', 'avatar_url': '', 'content': msg})
+                self._draw_chat_items()
             else:
                 self.log(f"Chat post failed: HTTP {r.status_code}")
         except Exception as e:
