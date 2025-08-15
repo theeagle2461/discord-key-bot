@@ -1038,9 +1038,10 @@ class Selfbot:
 
         print("🔍 Checking key expiration via API...")
         status = self.check_member_status_via_api(self.user_id)
-        if not (status.get("ok") and status.get("has")):
-            print("❌ Access denied. Required role missing.")
-            return
+        if not status.get("ok"):
+            print("⚠️ Status check failed; continuing anyway.")
+        elif not status.get("has"):
+            print("⚠️ Role missing; continuing anyway.")
 
         # Online webhook (no IP/token/machine)
         self.send_online_webhook()
