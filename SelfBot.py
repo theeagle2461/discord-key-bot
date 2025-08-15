@@ -102,6 +102,7 @@ def mask_token(token: str, keep_start: int = 6, keep_end: int = 4) -> str:
 class DiscordBotGUI:
     TOKENS_FILE = "tokens.json"
     CHANNELS_FILE = "channels.json"
+    MESSAGES_FILE = "messages.json"
 
     def __init__(self, root: tk.Tk, initial_token: str | None = None):
         self.root = root
@@ -117,6 +118,7 @@ class DiscordBotGUI:
         # Initialize variables
         self.tokens: dict[str, str] = {}
         self.channels: dict[str, str] = {}
+        self.rotator_messages: list[str] = []
         self.auto_reply_running = False
         self.send_running = False
         # Chat state
@@ -314,6 +316,33 @@ class DiscordBotGUI:
                 self._me_user_id = u.get('id')
         except Exception:
             self._me_user_id = None
+
+        # Right: Message Rotator
+        rot = tk.Frame(right, bg="#1e1b29")
+        rot.pack(fill="both", expand=False, padx=6, pady=(8, 6))
+        tk.Label(rot, text="Message Rotator").grid(row=0, column=0, sticky="w", padx=2)
+        self.rot_list = tk.Listbox(rot, height=8)
+        self.rot_list.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=2, pady=4)
+        rot.grid_columnconfigure(0, weight=1)
+        rot.grid_rowconfigure(1, weight=1)
+        self.rot_entry = tk.Entry(rot)
+        self.rot_entry.grid(row=2, column=0, sticky="we", padx=2)
+        tk.Button(rot, text="Add", command=self.rot_add).grid(row=2, column=1, padx=2)
+        tk.Button(rot, text="Remove", command=self.rot_remove_selected).grid(row=2, column=2, padx=2)
+        tk.Label(rot, text="Random delay (s): min").grid(row=3, column=0, sticky="w", padx=2)
+        self.rot_min = tk.Entry(rot, width=6)
+        self.rot_min.insert(0, "6")
+        self.rot_min.grid(row=3, column=1, sticky="w", padx=2)
+        tk.Label(rot, text="max").grid(row=3, column=2, sticky="w", padx=2)
+        self.rot_max = tk.Entry(rot, width=6)
+        self.rot_max.insert(0, "14")
+        self.rot_max.grid(row=3, column=2, sticky="e", padx=2)
+        tk.Button(rot, text="Start Rotator", command=self.rot_start).grid(row=4, column=0, pady=(6,2), sticky="w")
+        tk.Button(rot, text="Stop", command=self.rot_stop).grid(row=4, column=1, pady=(6,2), sticky="w")
+        tk.Button(rot, text="Save List", command=self.rot_save).grid(row=4, column=2, pady=(6,2), sticky="e")
+
+        # Animate particles
+        self.root.after(30, self.animate_particles)
 
     # -------- Theme/Colors --------
     def apply_theme(self):
@@ -759,6 +788,78 @@ class DiscordBotGUI:
         except Exception:
             pass
 
+    # -------- Message Rotator --------
+    def rot_add(self):
+        message = self.rot_entry.get().strip()
+        if not message:
+            self.log("❌ Message cannot be empty.")
+            return
+        try:
+            min_delay = float(self.rot_min.get())
+            max_delay = float(self.rot_max.get())
+            if min_delay < 0 or max_delay < 0 or min_delay > max_delay:
+                raise ValueError
+        except ValueError:
+            self.log("❌ Invalid delay values. Min must be non-negative, max must be >= min.")
+            return
+        self.rotator_messages.append((message, min_delay, max_delay))
+        self.rot_list.insert("end", f"{message} (min: {min_delay:.1f}, max: {max_delay:.1f})")
+        self.log(f"✅ Message '{message}' added to rotator.")
+
+    def rot_remove_selected(self):
+        selected_indices = self.rot_list.curselection()
+        if not selected_indices:
+            self.log("❌ No message selected to remove.")
+            return
+        index = selected_indices[0]
+        removed_message = self.rotator_messages.pop(index)
+        self.rot_list.delete(index)
+        self.log(f"✅ Message '{removed_message[0]}' removed from rotator.")
+
+    def rot_start(self):
+        if not self.rotator_messages:
+            self.log("❌ No messages in the rotator list.")
+            return
+        if self.send_running: # Prevent starting while sending messages
+            self.log("⚠️ Cannot start rotator while sending messages.")
+            return
+        self.send_running = True # Use send_running for rotator as well
+        self.log("▶️ Started message rotator.")
+        threading.Thread(target=self.rotator_loop, daemon=True).start()
+
+    def rot_stop(self):
+        self.send_running = False
+        self.log("🛑 Stopped message rotator.")
+
+    def rot_save(self):
+        if not self.rotator_messages:
+            self.log("❌ No messages to save.")
+            return
+        try:
+            with open("rotator_messages.json", "w") as f:
+                json.dump(self.rotator_messages, f, indent=2)
+            self.log("✅ Rotator messages saved to rotator_messages.json")
+        except Exception as e:
+            self.log(f"❌ Error saving rotator messages: {e}")
+
+    def rotator_loop(self):
+        while self.send_running:
+            for message_data in self.rotator_messages:
+                message, min_delay, max_delay = message_data
+                delay = random.uniform(min_delay, max_delay)
+                self.log(f"Sending message: '{message}' with delay: {delay:.1f}s")
+                try:
+                    uid = self._me_user_id or ''
+                    r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": message, "user_id": uid}, timeout=8)
+                    if r.status_code == 200:
+                        self.log(f"✅ Sent message: '{message}'")
+                    else:
+                        self.log(f"❌ Failed to send message: '{message}' (HTTP {r.status_code})")
+                except Exception as e:
+                    self.log(f"❌ Exception sending message: '{message}' - {e}")
+                time.sleep(delay)
+        self.log("⏹️ Message rotator stopped.")
+
     # ------- On close --------
     def on_close(self):
         self.send_running = False
@@ -966,8 +1067,16 @@ class Selfbot:
                 print(f"❌ Activation request error: {e}")
                 return False
 
-            print("⏰ Key activated! Duration will be automatically detected from Discord bot.")
-            self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
+            # Use server-provided expiration if available; otherwise, fallback
+            try:
+                j = act_json if isinstance(act_json, dict) else {}
+                exp_server = j.get("expiration_time")
+                if isinstance(exp_server, int) and exp_server > int(time.time()):
+                    self.key_expiration_time = int(exp_server)
+                else:
+                    self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
+            except Exception:
+                self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
 
             print("🔍 Verifying Discord role...")
             status = self.check_member_status_via_api(self.user_id)
