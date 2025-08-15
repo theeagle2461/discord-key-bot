@@ -56,15 +56,53 @@ def has_role(token, user_id, guild_id, role_id):
 # --- Activation prompt ---
 def prompt_for_token():
     root = tk.Tk()
-    root.title("Activation Required")
-    root.geometry("350x150")
+    root.title("CS Bot Activation")
+    root.configure(bg="#1e1b29")
+    root.geometry("520x260")
     root.resizable(False, False)
 
-    tk.Label(root, text="Enter your Discord User Token:", font=("Segoe UI", 12)).pack(pady=10)
-    token_entry = tk.Entry(root, show="*", width=50)
-    token_entry.pack(pady=5)
-    status_label = tk.Label(root, text="", fg="red")
-    status_label.pack()
+    try:
+        root.update_idletasks()
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        ww, wh = 520, 260
+        x = int((sw - ww) / 2)
+        y = int((sh - wh) / 3)
+        root.geometry(f"{ww}x{wh}+{x}+{y}")
+    except Exception:
+        pass
+
+    card = tk.Frame(root, bg="#2c2750", bd=2, relief="ridge")
+    card.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.88, relheight=0.86)
+
+    title = tk.Label(card, text="Enter Your Discord User Token", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold"))
+    title.pack(pady=(12, 6))
+
+    inner = tk.Frame(card, bg="#2c2750")
+    inner.pack(fill="x", padx=20)
+
+    tk.Label(inner, text="Discord User Token", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    token_row = tk.Frame(inner, bg="#2c2750")
+    token_row.pack(fill="x", pady=6)
+    token_entry = tk.Entry(token_row, show="*", width=50, bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+    token_entry.pack(side="left", fill="x", expand=True)
+
+    def toggle_token():
+        current = token_entry.cget("show")
+        token_entry.config(show="" if current == "*" else "*")
+        show_btn.config(text="Hide" if current == "*" else "Show")
+
+    show_btn = tk.Button(token_row, text="Show", command=toggle_token, bg="#5a3e99", fg="#f0e9ff",
+                         activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2")
+    show_btn.pack(side="left", padx=(8, 0))
+
+    credit = tk.Frame(card, bg="#1e1b29", bd=2, relief="groove")
+    credit.pack(pady=10, padx=20, fill="x")
+    tk.Label(credit, text="Made by", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 10)).pack()
+    tk.Label(credit, text="Iris & Classical", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack()
+
+    status_label = tk.Label(card, text="", bg="#2c2750", fg="#ff6b6b", font=("Segoe UI", 9))
+    status_label.pack(pady=(0, 6))
 
     def try_activate():
         token = token_entry.get().strip()
@@ -84,7 +122,11 @@ def prompt_for_token():
         messagebox.showinfo("Activation", "Activation successful!")
         root.destroy()
 
-    tk.Button(root, text="Activate", command=try_activate).pack(pady=10)
+    tk.Button(card, text="Activate", command=try_activate, bg="#5a3e99", fg="#f0e9ff",
+              activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2",
+              font=("Segoe UI", 11, "bold")).pack(pady=(4, 8))
+
+    root.bind("<Return>", lambda e: try_activate())
     root.mainloop()
 
 def check_activation():
@@ -142,9 +184,13 @@ class DiscordBotGUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Niggabutt User Token")
+        self.root.title("CS Bot User Panel")
         self.root.geometry("900x700")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
+        self.is_fullscreen = True
+        self.root.attributes("-fullscreen", True)
+        self.root.bind("<F11>", self.toggle_fullscreen)
+        self.root.bind("<Escape>", self.exit_fullscreen)
 
         # Fonts
         self.title_font = font.Font(family="Segoe UI", size=11, weight="bold")
@@ -161,7 +207,7 @@ class DiscordBotGUI:
         self.selected_channel_names = []
 
         # Setup Background Canvas with Gradient + Vignette + Particles
-        self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0)
+        self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#1e1b29")
         self.bg_canvas.pack(fill="both", expand=True)
 
         self.gradient_image = self.create_gradient_image(900, 700)
@@ -194,6 +240,9 @@ class DiscordBotGUI:
 
         # Apply theme/colors/fonts to all widgets
         self.apply_theme()
+
+        # Credits box overlay in the center
+        self.create_credit_box()
 
     # -------- Background & Visuals --------
     def create_gradient_image(self, width, height):
@@ -246,6 +295,35 @@ class DiscordBotGUI:
             new_y = p['base_y'] + offset
             self.bg_canvas.coords(p['id'], p['x'], new_y, p['x'] + p['radius'] * 2, new_y + p['radius'] * 2)
         self.root.after(30, self.animate_particles)
+
+    # -------- Fullscreen helpers --------
+    def toggle_fullscreen(self, event=None):
+        self.is_fullscreen = not getattr(self, 'is_fullscreen', False)
+        self.root.attributes("-fullscreen", self.is_fullscreen)
+
+    def exit_fullscreen(self, event=None):
+        self.is_fullscreen = False
+        self.root.attributes("-fullscreen", False)
+
+    # -------- Credits Box --------
+    def create_credit_box(self):
+        self.credit_frame = tk.Frame(self.root, bg="#2c2750", bd=2, relief="ridge")
+        close_btn = tk.Button(
+            self.credit_frame,
+            text="×",
+            command=lambda: self.credit_frame.place_forget(),
+            bg="#5a3e99",
+            fg="#f0e9ff",
+            activebackground="#7d5fff",
+            activeforeground="#f0e9ff",
+            relief="flat",
+            font=("Segoe UI", 12, "bold"),
+            width=2,
+        )
+        close_btn.pack(side="top", anchor="ne", padx=4, pady=4)
+        tk.Label(self.credit_frame, text="Made by", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10)).pack(padx=16)
+        tk.Label(self.credit_frame, text="Iris & Classical", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(padx=16, pady=(0, 12))
+        self.credit_frame.place(relx=0.5, rely=0.5, anchor="center")
 
     # -------- GUI Widgets Setup --------
     def setup_gui(self):
