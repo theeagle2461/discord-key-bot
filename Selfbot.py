@@ -225,6 +225,19 @@ class DiscordBotGUI:
         # Setup GUI widgets on main_frame
         self.setup_gui()
 
+        # Init user token and backup channel
+        self.user_token = initial_token
+        self.backup_channel_id = os.getenv("SELF_BOT_BACKUP_CHANNEL_ID") or os.getenv("BACKUP_CHANNEL_ID") or ""
+        # Restore remote backup before loading local files
+        if self.backup_channel_id and self.user_token:
+            try:
+                self.restore_from_discord_backup()
+            except Exception as e:
+                try:
+                    self.log(f"Backup restore failed: {e}")
+                except Exception:
+                    pass
+
         # Load saved tokens and channels
         self.load_data()
 
@@ -534,8 +547,79 @@ class DiscordBotGUI:
                 json.dump(self.tokens, f, indent=2)
             with open(self.CHANNELS_FILE, "w") as f:
                 json.dump(self.channels, f, indent=2)
+            # Push backup to Discord channel if configured
+            if getattr(self, 'backup_channel_id', '') and getattr(self, 'user_token', ''):
+                try:
+                    self.upload_discord_backup()
+                except Exception as be:
+                    self.log(f"Backup upload failed: {be}")
         except Exception as e:
             self.log(f"❌ Error saving data: {e}")
+
+    def _discord_request(self, method: str, url: str, **kwargs):
+        headers = kwargs.pop('headers', {}) or {}
+        headers.update({
+            "Authorization": self.user_token,
+            # Minimal headers; Discord accepts user token for self endpoints
+        })
+        return requests.request(method, url, headers=headers, timeout=15, **kwargs)
+
+    def upload_discord_backup(self):
+        """Upload tokens.json and channels.json to the configured backup channel as attachments."""
+        try:
+            files = {}
+            if os.path.exists(self.TOKENS_FILE):
+                files['files[0]'] = (self.TOKENS_FILE, open(self.TOKENS_FILE, 'rb'), 'application/json')
+            if os.path.exists(self.CHANNELS_FILE):
+                files['files[1]'] = (self.CHANNELS_FILE, open(self.CHANNELS_FILE, 'rb'), 'application/json')
+            if not files:
+                return
+            payload_json = json.dumps({"content": "Selfbot backup upload", "flags": 0})
+            data = {"payload_json": payload_json}
+            url = f"https://discord.com/api/v10/channels/{self.backup_channel_id}/messages"
+            r = self._discord_request("POST", url, data=data, files=files)
+            # Ensure files are closed
+            for f in files.values():
+                try:
+                    f[1].close()
+                except Exception:
+                    pass
+            if r.status_code not in (200, 201):
+                raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            raise
+
+    def restore_from_discord_backup(self):
+        """Fetch the latest message with both tokens.json and channels.json attachments and restore locally."""
+        try:
+            url = f"https://discord.com/api/v10/channels/{self.backup_channel_id}/messages?limit=25"
+            r = self._discord_request("GET", url)
+            if r.status_code != 200:
+                raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+            msgs = r.json() if isinstance(r.json(), list) else []
+            latest = None
+            for m in msgs:
+                atts = m.get('attachments', []) or []
+                names = [a.get('filename','') for a in atts]
+                if (self.TOKENS_FILE in names) or (self.CHANNELS_FILE in names):
+                    latest = m
+                    break
+            if not latest:
+                return
+            # Download attachments we care about
+            for att in latest.get('attachments', []) or []:
+                fname = att.get('filename') or ''
+                url = att.get('url') or ''
+                if fname in (self.TOKENS_FILE, self.CHANNELS_FILE) and url:
+                    try:
+                        rr = requests.get(url, timeout=20)
+                        if rr.status_code == 200:
+                            with open(fname, 'wb') as f:
+                                f.write(rr.content)
+                    except Exception:
+                        pass
+        except Exception as e:
+            raise
 
     # -------- Token Change & User Info Fetch --------
     def on_token_change(self):
