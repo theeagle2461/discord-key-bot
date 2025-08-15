@@ -23,6 +23,7 @@ import threading
 import requests
 import urllib.parse
 import html
+import io
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -37,7 +38,15 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 # Configuration
 GUILD_ID = 1402622761246916628
 ROLE_ID = 1404221578782183556
+ROLE_NAME = os.getenv('ROLE_NAME', 'activated key')
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
+# Backup to Discord channel and auto-restore settings
+BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
+AUTO_RESTORE_ON_START = (os.getenv('AUTO_RESTORE_ON_START', 'false').lower() in ('1','true','yes'))
+try:
+	BACKUP_INTERVAL_MIN = int(os.getenv('BACKUP_INTERVAL_MIN', '60') or 60)
+except Exception:
+	BACKUP_INTERVAL_MIN = 60
 
 # Special admin user IDs for key generation and management
 SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734]  # Admin user IDs
@@ -351,6 +360,34 @@ class KeyManager:
         
         return BACKUP_FILE
     
+    def build_backup_payload(self) -> dict:
+        """Return a JSON-serializable payload of all state for upload/restore."""
+        return {
+            "timestamp": int(time.time()),
+            "keys": self.keys,
+            "usage": self.key_usage,
+            "deleted": self.deleted_keys,
+            "logs": getattr(self, 'key_logs', []),
+        }
+    
+    def restore_from_payload(self, payload: dict) -> bool:
+        """Restore state from a payload dict (like one retrieved from backup)."""
+        try:
+            keys = payload.get("keys") or {}
+            usage = payload.get("usage") or {}
+            deleted = payload.get("deleted") or {}
+            logs = payload.get("logs") or []
+            if not isinstance(keys, dict) or not isinstance(usage, dict):
+                return False
+            self.keys = keys
+            self.key_usage = usage
+            self.deleted_keys = deleted if isinstance(deleted, dict) else {}
+            self.key_logs = logs if isinstance(logs, list) else []
+            self.save_data()
+            return True
+        except Exception:
+            return False
+    
     def restore_from_backup(self, backup_file: str) -> bool:
         """Restore keys from a backup file"""
         try:
@@ -359,10 +396,11 @@ class KeyManager:
             
             self.keys = backup_data["keys"]
             self.key_usage = backup_data["usage"]
+            
             self.save_data()
             return True
         except Exception as e:
-            print(f"Error restoring backup: {e}")
+            print(f"Error restoring from backup: {e}")
             return False
     
     def generate_bulk_keys(self, daily_count: int, weekly_count: int, monthly_count: int, lifetime_count: int) -> Dict:
@@ -714,6 +752,37 @@ async def on_ready():
     #     print(f"⚠️ Command sync failed: {e}")
     
     print("🤖 Bot is now ready and online!")
+    try:
+        if not reconcile_roles_task.is_running():
+            reconcile_roles_task.start()
+    except Exception:
+        pass
+    try:
+        if BACKUP_CHANNEL_ID > 0 and not periodic_backup_task.is_running():
+            periodic_backup_task.start()
+    except Exception:
+        pass
+    # Auto-restore from the most recent JSON attachment in backup channel
+    if AUTO_RESTORE_ON_START and BACKUP_CHANNEL_ID > 0:
+        try:
+            channel = bot.get_channel(BACKUP_CHANNEL_ID)
+            if channel:
+                async for msg in channel.history(limit=50):
+                    if msg.attachments:
+                        for att in msg.attachments:
+                            if att.filename.lower().endswith('.json'):
+                                try:
+                                    b = await att.read()
+                                    payload = json.loads(b.decode('utf-8'))
+                                    if isinstance(payload, dict) and key_manager.restore_from_payload(payload):
+                                        print("♻️ Restored keys from channel backup")
+                                        raise StopAsyncIteration
+                                except Exception:
+                                    pass
+        except StopAsyncIteration:
+            pass
+        except Exception:
+            pass
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -1936,13 +2005,35 @@ def start_health_check():
                                     expired_count += 1
 
                     has_active_key = len(active_items) > 0
-                    should_have_access = bound_match if machine_q else has_active_key
+                    # Role-based access: check if user currently has the Discord role
+                    has_role = False
+                    try:
+                        guild = bot.get_guild(GUILD_ID)
+                        if guild and uid:
+                            member = guild.get_member(uid)
+                            if member is None:
+                                # Fallback to fetching the member if not in cache
+                                async def _fetch_member():
+                                    try:
+                                        return await guild.fetch_member(uid)
+                                    except Exception:
+                                        return None
+                                fut = asyncio.run_coroutine_threadsafe(_fetch_member(), bot.loop)
+                                try:
+                                    member = fut.result(timeout=5)
+                                except Exception:
+                                    member = None
+                            if member:
+                                has_role = any((r.id == ROLE_ID) or (r.name.lower() == ROLE_NAME.lower()) for r in member.roles)
+                    except Exception:
+                        has_role = False
+                    should_have_access = has_role
                     resp = {
                         'user_id': uid,
                         'role_id': ROLE_ID,
                         'guild_id': GUILD_ID,
                         'has_active_key': has_active_key,
-                        'bound_to_machine': bound_match,
+                        'has_role': has_role,
                         'should_have_access': should_have_access,
                         'active_keys': active_items,
                         'expired_keys_count': expired_count,
@@ -2320,6 +2411,22 @@ def start_health_check():
                             if not result.get('success'):
                                 status_code = 400
                                 print(f"/api/activate failure for key={key}: {result}")
+                            else:
+                                # Grant role immediately upon successful activation
+                                try:
+                                    guild = bot.get_guild(GUILD_ID)
+                                    role = guild.get_role(ROLE_ID) if guild else None
+                                    if not role and guild:
+                                        import discord as _discord
+                                        role = _discord.utils.find(lambda r: r.name.lower() == ROLE_NAME.lower(), guild.roles)
+                                    if guild and role and user_id_val:
+                                        async def _add_role():
+                                            member = guild.get_member(int(user_id_val))
+                                            if member:
+                                                await member.add_roles(role, reason="Key activated via API")
+                                        asyncio.run_coroutine_threadsafe(_add_role(), bot.loop)
+                                except Exception:
+                                    pass
                         except Exception as e:
                             resp = {'success': False, 'error': str(e)}
                             status_code = 500
@@ -2568,3 +2675,70 @@ async def keylogs(interaction: discord.Interaction):
         lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
     embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@tasks.loop(seconds=60)
+async def reconcile_roles_task():
+    """Grant or remove the access role based on key validity."""
+    try:
+        guild = bot.get_guild(GUILD_ID)
+        if not guild:
+            return
+        role = guild.get_role(ROLE_ID)
+        if not role:
+            try:
+                import discord as _discord
+                role = _discord.utils.find(lambda r: r.name.lower() == ROLE_NAME.lower(), guild.roles)
+            except Exception:
+                role = None
+        if not role:
+            return
+        now = int(time.time())
+        # Build set of user_ids present in keys
+        user_ids: set[int] = set()
+        for _, data in key_manager.keys.items():
+            uid = data.get('user_id')
+            if uid:
+                try:
+                    user_ids.add(int(uid))
+                except Exception:
+                    pass
+        for uid in user_ids:
+            # Determine if user has at least one active (not expired and not revoked) key
+            has_active = False
+            for _, data in key_manager.keys.items():
+                if int(data.get('user_id', 0)) != uid:
+                    continue
+                if not data.get('is_active', False):
+                    continue
+                exp = int(data.get('expiration_time') or 0)
+                if exp == 0 or exp > now:
+                    has_active = True
+                    break
+            member = guild.get_member(uid)
+            if not member:
+                continue
+            try:
+                if has_active and role not in member.roles:
+                    await member.add_roles(role, reason="Key active")
+                elif (not has_active) and role in member.roles:
+                    await member.remove_roles(role, reason="Key expired or revoked")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+@tasks.loop(minutes=BACKUP_INTERVAL_MIN)
+async def periodic_backup_task():
+    """Periodically upload a JSON backup to the configured Discord channel."""
+    if BACKUP_CHANNEL_ID <= 0:
+        return
+    try:
+        channel = bot.get_channel(BACKUP_CHANNEL_ID)
+        if not channel:
+            return
+        payload = key_manager.build_backup_payload()
+        data = json.dumps(payload, indent=2).encode()
+        file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+        await channel.send(content="Automated backup", file=file)
+    except Exception:
+        pass
