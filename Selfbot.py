@@ -1029,6 +1029,8 @@ class DiscordBotGUI:
                                             if send_resp.status_code in (200, 201):
                                                 self.log(f"✅ Replied to DM from {author_id}.")
                                                 replied_users.add(author_id)
+                                                # Count only selfbot-sent messages
+                                                self.increment_message_stats(token)
                                             else:
                                                 self.log(f"❌ Failed to reply DM: {send_resp.status_code}")
                                         except Exception as e:
