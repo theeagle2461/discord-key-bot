@@ -725,6 +725,28 @@ class KeyManager:
 # Initialize key manager
 key_manager = KeyManager()
 
+# Helper: asynchronous upload of a backup payload to the backup channel
+async def _upload_backup_payload_async(note: str = "Manual backup"):
+	if BACKUP_CHANNEL_ID <= 0:
+		return
+	try:
+		channel = bot.get_channel(BACKUP_CHANNEL_ID)
+		if not channel:
+			return
+		payload = key_manager.build_backup_payload()
+		data = json.dumps(payload, indent=2).encode()
+		file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+		await channel.send(content=note, file=file)
+	except Exception:
+		pass
+
+# Thread-safe trigger from non-async contexts
+def trigger_backup_upload(note: str = "Automatic backup"):
+	try:
+		asyncio.run_coroutine_threadsafe(_upload_backup_payload_async(note), bot.loop)
+	except Exception:
+		pass
+
 @bot.event
 async def on_ready():
     print(f'✅ {bot.user} has connected to Discord!')
