@@ -728,16 +728,27 @@ key_manager = KeyManager()
 # Helper: asynchronous upload of a backup payload to the backup channel
 async def _upload_backup_payload_async(note: str = "Manual backup"):
 	if BACKUP_CHANNEL_ID <= 0:
+		print("[backup] BACKUP_CHANNEL_ID not set; skipping upload")
 		return
 	try:
 		channel = bot.get_channel(BACKUP_CHANNEL_ID)
+		if channel is None:
+			try:
+				channel = await bot.fetch_channel(BACKUP_CHANNEL_ID)
+			except Exception as e:
+				print(f"[backup] fetch_channel failed: {e}")
+				channel = None
 		if not channel:
+			print(f"[backup] Channel {BACKUP_CHANNEL_ID} not found; skipping upload")
 			return
 		payload = key_manager.build_backup_payload()
 		data = json.dumps(payload, indent=2).encode()
 		file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+		print(f"[backup] Uploading backup to channel {BACKUP_CHANNEL_ID} ({getattr(channel, 'name', 'unknown')}) with note '{note}'")
 		await channel.send(content=note, file=file)
-	except Exception:
+		print("[backup] Backup upload complete")
+	except Exception as e:
+		print(f"[backup] Upload failed: {e}")
 		pass
 
 # Thread-safe trigger from non-async contexts
@@ -2765,12 +2776,6 @@ async def periodic_backup_task():
     if BACKUP_CHANNEL_ID <= 0:
         return
     try:
-        channel = bot.get_channel(BACKUP_CHANNEL_ID)
-        if not channel:
-            return
-        payload = key_manager.build_backup_payload()
-        data = json.dumps(payload, indent=2).encode()
-        file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
-        await channel.send(content="Automated backup", file=file)
+        await _upload_backup_payload_async("Automated backup")
     except Exception:
         pass
