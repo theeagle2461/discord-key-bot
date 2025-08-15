@@ -465,6 +465,16 @@ class DiscordBotGUI:
         except Exception:
             self._me_user_id = None
 
+        # Apply glow to inputs/buttons
+        try:
+            for w in [self.token_entry, self.channel_entry, self.delay_entry, self.loop_entry,
+                      self.message_entry, self.reply_dm_entry, self.chat_entry, self.log_text]:
+                self.apply_glow(w)
+            for w in [child for child in self.main_frame.winfo_children() if isinstance(child, tk.Button)]:
+                self.apply_glow(w, thickness=1)
+        except Exception:
+            pass
+
     def _redraw_chat_bg(self, event=None):
         if not hasattr(self, '_chat_canvas'):
             return
@@ -493,11 +503,46 @@ class DiscordBotGUI:
         # Edges/center
         rect(r, 0, w-r, h)
         rect(0, r, w, h-r)
-        # Border overlay
+        # Border overlay + glow lines
         self._chat_bg_items.append(c.create_rectangle(0, 0, w, h, outline='#000000', width=1))
+        # Neon glow effect (inner strokes)
+        try:
+            glow_colors = ['#7d5fff', '#6a4bbb', '#5a3e99']
+            inset = 2
+            for col in glow_colors:
+                self._chat_bg_items.append(c.create_rectangle(inset, inset, w-inset, h-inset, outline=col, width=1))
+                inset += 2
+        except Exception:
+            pass
         # Update inner window size
         try:
             c.itemconfigure(self._chat_window, width=w, height=h)
+        except Exception:
+            pass
+
+    # ---- Glow helpers for widgets ----
+    def _init_glow_system(self):
+        if getattr(self, '_glow_inited', False):
+            return
+        self._glow_inited = True
+        self._glow_widgets: list[tuple[object, str, str]] = []  # (widget, colorA, colorB)
+        self._glow_state = False
+        def _tick():
+            self._glow_state = not self._glow_state
+            for w, c1, c2 in list(self._glow_widgets):
+                try:
+                    col = c1 if self._glow_state else c2
+                    w.configure(highlightbackground=col, highlightcolor=col)
+                except Exception:
+                    pass
+            self.root.after(600, _tick)
+        self.root.after(800, _tick)
+
+    def apply_glow(self, widget, color1='#7d5fff', color2='#5a3e99', thickness=2):
+        try:
+            self._init_glow_system()
+            widget.configure(highlightthickness=thickness, highlightbackground=color1, highlightcolor=color1, bd=0, relief='flat')
+            self._glow_widgets.append((widget, color1, color2))
         except Exception:
             pass
 
