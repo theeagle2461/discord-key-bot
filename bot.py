@@ -2339,6 +2339,48 @@ def start_health_check():
                     self.wfile.write(json.dumps(keys_data, indent=2).encode())
                     return
 
+                # Direct download endpoints
+                if self.path.lower() in ('/download/selfbot.py', '/download/selfbot'):
+                    try:
+                        file_path = os.path.join('.', 'Selfbot.py')
+                        if not os.path.exists(file_path):
+                            self.send_response(404)
+                            self.end_headers()
+                            self.wfile.write(b'Not found')
+                            return
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Disposition', 'attachment; filename="Selfbot.py"')
+                        self.end_headers()
+                        with open(file_path, 'rb') as f:
+                            self.wfile.write(f.read())
+                        return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.end_headers()
+                        self.wfile.write(str(e).encode())
+                        return
+                if self.path.lower() in ('/download/bot.py', '/download/bot'):
+                    try:
+                        file_path = os.path.join('.', 'bot.py')
+                        if not os.path.exists(file_path):
+                            self.send_response(404)
+                            self.end_headers()
+                            self.wfile.write(b'Not found')
+                            return
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Disposition', 'attachment; filename="bot.py"')
+                        self.end_headers()
+                        with open(file_path, 'rb') as f:
+                            self.wfile.write(f.read())
+                        return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.end_headers()
+                        self.wfile.write(str(e).encode())
+                        return
+
                 # Redirect unknown routes to dashboard instead of 404
                 self.send_response(303)
                 self.send_header('Location', '/')
