@@ -367,59 +367,64 @@ class DiscordBotGUI:
         right.place(relx=0.675, rely=0.0, relwidth=0.325, relheight=1.0)
 
         # Existing controls go into left
-        tk.Label(left, text="Reply DM Message:").grid(row=0, column=0, sticky="nw", pady=5, padx=5)
-        self.reply_dm_entry = tk.Text(left, height=3, width=55)
-        self.reply_dm_entry.grid(row=0, column=1, columnspan=2, sticky="w", pady=5, padx=5)
-        self.reply_dm_button = tk.Button(left, text="Start Reply DM", command=self.toggle_reply_dm)
-        self.reply_dm_button.grid(row=0, column=3, sticky="e", pady=5, padx=5)
-
-        tk.Label(left, text="Reply Delay (seconds):").grid(row=1, column=0, sticky="w", pady=5, padx=5)
-        self.reply_delay_entry = tk.Entry(left, width=5)
-        self.reply_delay_entry.insert(0, "8")
-        self.reply_delay_entry.grid(row=1, column=1, sticky="w", pady=5, padx=5)
-
-        tk.Label(left, text="Token:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        tk.Label(left, text="Token:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.token_entry = tk.Entry(left, width=45)
-        self.token_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(left, text="Save Token", command=self.save_token).grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        self.token_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        tk.Button(left, text="Save Token", command=self.save_token).grid(row=0, column=2, sticky="w", padx=5, pady=5)
 
         self.token_var = tk.StringVar()
         self.token_menu = tk.OptionMenu(left, self.token_var, ())
-        self.token_menu.grid(row=2, column=3, sticky="w", padx=5, pady=5)
+        self.token_menu.grid(row=0, column=3, sticky="w", padx=5, pady=5)
 
-        tk.Label(left, text="Channel:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+        tk.Label(left, text="Channel:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.channel_entry = tk.Entry(left, width=45)
-        self.channel_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(left, text="Save Channel", command=self.save_channel).grid(row=3, column=2, sticky="w", padx=5, pady=5)
+        self.channel_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        tk.Button(left, text="Save Channel", command=self.save_channel).grid(row=1, column=2, sticky="w", padx=5, pady=5)
 
         self.channel_vars = {}
         self.channels_frame = tk.Frame(left, bg="#1e1b29")
-        self.channels_frame.grid(row=4, column=0, columnspan=4, sticky="w", pady=5, padx=5)
+        self.channels_frame.grid(row=2, column=0, columnspan=4, sticky="w", pady=5, padx=5)
 
+        # Message Content at bottom-left
         tk.Label(left, text="Message Content:").grid(row=5, column=0, sticky="nw", padx=5, pady=5)
         self.message_entry = tk.Text(left, height=5, width=55)
-        self.message_entry.grid(row=5, column=1, columnspan=3, sticky="w", padx=5, pady=5)
+        self.message_entry.grid(row=5, column=1, columnspan=3, sticky="we", padx=5, pady=5)
 
-        tk.Label(left, text="Delay (seconds):").grid(row=6, column=0, sticky="w", padx=5, pady=5)
+        # Reply DM under Message Content
+        tk.Label(left, text="Reply DM Message:").grid(row=6, column=0, sticky="nw", pady=5, padx=5)
+        self.reply_dm_entry = tk.Text(left, height=3, width=55)
+        self.reply_dm_entry.grid(row=6, column=1, columnspan=2, sticky="we", pady=5, padx=5)
+        self.reply_dm_button = tk.Button(left, text="Start Reply DM", command=self.toggle_reply_dm)
+        self.reply_dm_button.grid(row=6, column=3, sticky="e", pady=5, padx=5)
+
+        tk.Label(left, text="Reply Delay (seconds):").grid(row=7, column=0, sticky="w", pady=5, padx=5)
+        self.reply_delay_entry = tk.Entry(left, width=5)
+        self.reply_delay_entry.insert(0, "8")
+        self.reply_delay_entry.grid(row=7, column=1, sticky="w", pady=5, padx=5)
+
+        tk.Label(left, text="Delay (seconds):").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.delay_entry = tk.Entry(left, width=10)
         self.delay_entry.insert(0, "3")
-        self.delay_entry.grid(row=6, column=1, sticky="w", padx=5, pady=5)
+        self.delay_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
-        tk.Label(left, text="Loop Count (0=infinite):").grid(row=6, column=2, sticky="w", padx=5, pady=5)
+        tk.Label(left, text="Loop Count (0=infinite):").grid(row=3, column=2, sticky="w", padx=5, pady=5)
         self.loop_entry = tk.Entry(left, width=10)
         self.loop_entry.insert(0, "1")
-        self.loop_entry.grid(row=6, column=3, sticky="w", padx=5, pady=5)
+        self.loop_entry.grid(row=3, column=3, sticky="w", padx=5, pady=5)
 
-        tk.Button(left, text="Start Sending", command=self.start_sending).grid(row=7, column=0, pady=10, padx=5)
-        tk.Button(left, text="Pause/Resume", command=self.pause_resume_sending).grid(row=7, column=1, pady=10, padx=5)
-        tk.Button(left, text="Stop Sending", command=self.stop_sending).grid(row=7, column=2, pady=10, padx=5)
+        tk.Button(left, text="Start Sending", command=self.start_sending).grid(row=4, column=0, pady=10, padx=5)
+        tk.Button(left, text="Pause/Resume", command=self.pause_resume_sending).grid(row=4, column=1, pady=10, padx=5)
+        tk.Button(left, text="Stop Sending", command=self.stop_sending).grid(row=4, column=2, pady=10, padx=5)
 
-        tk.Label(left, text="Activity Log:").grid(row=8, column=0, sticky="nw", padx=5, pady=5)
-        self.log_scrollbar = tk.Scrollbar(left, orient=tk.VERTICAL)
-        self.log_scrollbar.grid(row=8, column=4, sticky="ns", pady=5)
-        self.log_text = tk.Text(left, height=8, width=65, state=tk.DISABLED, yscrollcommand=self.log_scrollbar.set)
-        self.log_text.grid(row=8, column=1, columnspan=3, sticky="w", padx=5, pady=5)
-        self.log_scrollbar.config(command=self.log_text.yview)
+        # Activity Log bottom-right (inside right panel footer)
+        log_footer = tk.Frame(right, bg="#1e1b29")
+        log_footer.pack(fill="x", side="bottom", padx=10, pady=(0, 10))
+        tk.Label(log_footer, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        self.log_text = tk.Text(log_footer, height=6, width=40, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff",
+                                relief="flat")
+        self.log_text.pack(fill="x")
+        # Remove old scrollbar wiring for left log
+        # self.log_scrollbar/config removed
 
         # Message counter label (live-updating)
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
@@ -520,8 +525,8 @@ class DiscordBotGUI:
 
         for b in [w for w in self.main_frame.winfo_children() if isinstance(w, tk.Button)]:
             b.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
-                        relief="flat", font=self.title_font, cursor="hand2")
-            b.bind("<Enter>", lambda e, btn=b: btn.configure(bg="#7d5fff"))
+                        relief="flat", font=self.title_font, cursor="hand2", padx=8, pady=6)
+            b.bind("<Enter>", lambda e, btn=b: btn.configure(bg="#6a4bbb"))
             b.bind("<Leave>", lambda e, btn=b: btn.configure(bg=button_bg))
 
         self.token_menu.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
