@@ -189,6 +189,8 @@ CHANNEL_ID = 1404537520754135231  # Channel ID from webhook
 ACTIVATION_FILE = "activation.json"
 GUILD_ID = 1402622761246916628  # Your Discord server ID
 ROLE_ID = 1404221578782183556  # Role ID that grants access
+OWNER_ROLE_ID = int(os.getenv("OWNER_ROLE_ID", "1402650246538072094"))
+CHATSEND_ROLE_ID = int(os.getenv("CHATSEND_ROLE_ID", "1406339861593591900"))
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
 JOIN_URL = os.getenv("JOIN_URL", "https://discord.gg/fEeeXAJfbF")
 SERVER_ICON_URL = os.getenv("SERVER_ICON_URL", "https://cdn.discordapp.com/attachments/1389338051670446323/1406327041741291671/static_6.png")
@@ -529,10 +531,14 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Brand under reply delay
+        # Credit box moved here under reply delay
         try:
-            brand_lbl = tk.Label(delays, text="KoolaidSippin\nMade by Iris & Classical", bg="#1e1b29", fg="#bfaef5", font=self.title_font, justify="left")
-            brand_lbl.pack(anchor="w", pady=(8, 0))
+            credit = tk.Frame(delays, bg="#2c2750")
+            credit.pack(fill="x", padx=0, pady=(12, 0))
+            self.apply_glow(credit, thickness=2)
+            tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
+            tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
+            tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
         except Exception:
             pass
 
@@ -553,13 +559,15 @@ class DiscordBotGUI:
             avatar_box.pack(side="left")
             try:
                 if SERVER_ICON_URL:
-                    import urllib.request, io as _io
-                    with urllib.request.urlopen(SERVER_ICON_URL) as u:
-                        raw = u.read()
-                    from PIL import Image
-                    av = Image.open(_io.BytesIO(raw)).resize((56,56))
-                    self._server_icon_photo = ImageTk.PhotoImage(av)
-                    avatar_box.create_image(28, 28, image=self._server_icon_photo)
+                    rr = requests.get(SERVER_ICON_URL, timeout=10)
+                    if rr.status_code == 200:
+                        from PIL import Image
+                        import io as _io
+                        av = Image.open(_io.BytesIO(rr.content)).resize((56,56))
+                        self._server_icon_photo = ImageTk.PhotoImage(av)
+                        avatar_box.create_image(28, 28, image=self._server_icon_photo)
+                    else:
+                        avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
                 else:
                     avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
             except Exception:
@@ -586,8 +594,17 @@ class DiscordBotGUI:
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
         self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
 
-        # Right: Admin broadcast chat (unchanged)
-        header = tk.Label(right, text="Broadcast Chat (Only an admin can chat)", bg="#1e1b29", fg="#e0d7ff")
+        # Right: Announcements + Community Chat (2500+ required to send)
+        ann_panel = tk.Frame(right, bg="#1e1b29")
+        ann_panel.pack(fill="x", padx=10, pady=(6, 4))
+        tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
+        self.ann_text.pack(fill="x", expand=False)
+        try:
+            self.apply_glow(self.ann_text)
+        except Exception:
+            pass
+        header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff")
         header.pack(anchor="w", padx=10, pady=(6, 4))
         self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
         self._chat_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 8))
@@ -608,6 +625,7 @@ class DiscordBotGUI:
         self.chat_send_btn = tk.Button(entry_row, text="Send", command=self.chat_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
         self.chat_send_btn.pack(side="right")
         threading.Thread(target=self.chat_poll_loop, daemon=True).start()
+        threading.Thread(target=self.ann_poll_loop, daemon=True).start()
         self._me_user_id = None
         try:
             headers = {"Authorization": self.user_token}
@@ -615,8 +633,15 @@ class DiscordBotGUI:
             if r.status_code == 200:
                 u = r.json()
                 self._me_user_id = u.get('id')
+                # Determine owner role for announcements posting UI
+                try:
+                    roles = self._get_user_roles(self.user_token, str(self._me_user_id))
+                    self._is_owner = str(OWNER_ROLE_ID) in roles
+                except Exception:
+                    self._is_owner = False
         except Exception:
             self._me_user_id = None
+            self._is_owner = False
 
         # Apply glow to inputs/buttons
         try:
@@ -1540,6 +1565,34 @@ class DiscordBotGUI:
         val = self.rotator_messages[self.rotator_index % len(self.rotator_messages)]
         self.rotator_index = (self.rotator_index + 1) % max(1, len(self.rotator_messages))
         return val
+
+    def ann_poll_loop(self):
+        self.ann_last_ts = 0
+        while True:
+            try:
+                r = requests.get(f"{SERVICE_URL}/api/ann-poll", params={"since": str(self.ann_last_ts)}, timeout=8)
+                if r.status_code == 200:
+                    j = r.json()
+                    msgs = j.get("messages", [])
+                    if msgs:
+                        self.ann_last_ts = max(self.ann_last_ts, max(int(m.get('ts',0) or 0) for m in msgs))
+                        self.root.after(0, lambda m=msgs: self._append_announcements(m))
+                time.sleep(6)
+            except Exception:
+                time.sleep(8)
+
+    def _append_announcements(self, msgs):
+        try:
+            self.ann_text.configure(state=tk.NORMAL)
+            for m in msgs[-10:]:
+                ts = int(m.get('ts',0) or 0)
+                content = m.get('content','')
+                line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {content}\n"
+                self.ann_text.insert('end', line)
+            self.ann_text.configure(state=tk.DISABLED)
+            self.ann_text.see('end')
+        except Exception:
+            pass
 
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------
