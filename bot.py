@@ -117,6 +117,7 @@ DELETED_KEYS_FILE = os.path.join(DATA_DIR, "deleted_keys.json")
 LOGS_FILE = os.path.join(DATA_DIR, "key_logs.json")
 # Simple site-wide chat storage
 CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
+ANN_FILE = os.path.join(DATA_DIR, "announcements.json")
 STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
 ADMIN_MACHINE_ID = os.getenv('ADMIN_MACHINE_ID', '').strip()
 # Role allowed to chat in broadcast (falls back to ADMIN_ROLE_ID if not set)
@@ -124,6 +125,10 @@ try:
 	ADMIN_CHAT_ROLE_ID = int(os.getenv('ADMIN_CHAT_ROLE_ID', '0') or 0)
 except Exception:
 	ADMIN_CHAT_ROLE_ID = 0
+try:
+	OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '0') or 0)
+except Exception:
+	OWNER_ROLE_ID = 0
 
 # Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
 ONLINE_USERS: dict[int, int] = {}
@@ -2056,6 +2061,33 @@ def start_health_check():
                     self.wfile.write(json.dumps(resp, indent=2).encode())
                     return
 
+                if self.path.startswith('/api/ann-poll'):
+                    # Owner-only announcements feed
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    since_raw = q.get('since', ['0'])[0]
+                    try:
+                        since_ts = int(since_raw)
+                    except Exception:
+                        since_ts = 0
+                    now_ts = int(time.time())
+                    try:
+                        msgs = []
+                        if os.path.exists(ANN_FILE):
+                            with open(ANN_FILE, 'r') as f:
+                                msgs = json.load(f)
+                        if not isinstance(msgs, list):
+                            msgs = []
+                    except Exception:
+                        msgs = []
+                    new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
+                    payload = { 'messages': new_msgs[-100:], 'server_time': now_ts }
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(payload, indent=2).encode())
+                    return
+
                 if self.path.startswith('/api/chat-poll'):
                     # Long-poll style: clients poll for new chat messages
                     parsed = urllib.parse.urlparse(self.path)
@@ -2082,15 +2114,12 @@ def start_health_check():
                     except Exception:
                         msgs = []
                     new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
-                    # Determine if user can send based on role
+                    # Determine if user can send based on message count threshold (2500)
                     can_send = False
                     try:
-                        guild = bot.get_guild(GUILD_ID)
-                        if guild and uid:
-                            member = guild.get_member(uid)
-                            if member:
-                                allowed_role_id = ADMIN_CHAT_ROLE_ID or ADMIN_ROLE_ID
-                                can_send = any(r.id == allowed_role_id for r in member.roles)
+                        uid_str = str(uid)
+                        count = int(MESSAGE_STATS.get(uid_str, 0))
+                        can_send = (count >= 2500)
                     except Exception:
                         can_send = False
                     payload = {
@@ -2563,6 +2592,65 @@ def start_health_check():
                         self.send_header('Location', f'/sender?err={msg}')
                     self.end_headers()
                     return
+
+                if self.path == '/api/ann-post':
+                    # Only members with OWNER_ROLE_ID can post announcements
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    data = urllib.parse.parse_qs(body)
+                    content = (data.get('content', [''])[0] or '').strip()
+                    user_q = (data.get('user_id', [''])[0] or '').strip()
+                    if not content:
+                        self.send_response(400)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(b'{"success":false,"error":"empty content"}')
+                        return
+                    try:
+                        uid = int(user_q)
+                    except Exception:
+                        uid = 0
+                    allowed = False
+                    try:
+                        guild = bot.get_guild(GUILD_ID)
+                        if guild and uid:
+                            member = guild.get_member(uid)
+                            if member:
+                                allowed = any(r.id == OWNER_ROLE_ID for r in member.roles)
+                    except Exception:
+                        allowed = False
+                    if not allowed:
+                        self.send_response(403)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(b'{"success":false,"error":"forbidden"}')
+                        return
+                    # Append announcement
+                    try:
+                        msgs = []
+                        if os.path.exists(ANN_FILE):
+                            with open(ANN_FILE, 'r') as f:
+                                msgs = json.load(f)
+                        if not isinstance(msgs, list):
+                            msgs = []
+                        ts = int(time.time())
+                        msgs.append({'ts': ts, 'content': content, 'user_id': uid})
+                        msgs = msgs[-200:]
+                        tmp = ANN_FILE + '.tmp'
+                        with open(tmp, 'w') as f:
+                            json.dump(msgs, f, indent=2)
+                        os.replace(tmp, ANN_FILE)
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': True, 'ts': ts}).encode())
+                        return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode())
+                        return
 
                 if self.path == '/api/chat-post':
                     # Only members with ADMIN_CHAT_ROLE_ID (or ADMIN_ROLE_ID) can post broadcast messages
