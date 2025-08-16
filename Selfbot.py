@@ -190,6 +190,7 @@ GUILD_ID = 1402622761246916628  # Your Discord server ID
 ROLE_ID = 1404221578782183556  # Role ID that grants access
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
 JOIN_URL = os.getenv("JOIN_URL", "https://discord.gg/fEeeXAJfbF")
+SERVER_ICON_URL = os.getenv("SERVER_ICON_URL", "")
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
@@ -572,9 +573,21 @@ class DiscordBotGUI:
             avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
             avatar_box.pack(side="left")
             try:
-                avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
+                if SERVER_ICON_URL:
+                    import urllib.request, io as _io
+                    with urllib.request.urlopen(SERVER_ICON_URL) as u:
+                        raw = u.read()
+                    from PIL import Image
+                    av = Image.open(_io.BytesIO(raw)).resize((56,56))
+                    self._server_icon_photo = ImageTk.PhotoImage(av)
+                    avatar_box.create_image(28, 28, image=self._server_icon_photo)
+                else:
+                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
             except Exception:
-                pass
+                try:
+                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
+                except Exception:
+                    pass
             textcol = tk.Frame(body, bg="#2c2750")
             textcol.pack(side="left", padx=10)
             tk.Label(textcol, text="KS Mart", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
