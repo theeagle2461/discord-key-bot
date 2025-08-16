@@ -375,19 +375,9 @@ class DiscordBotGUI:
     # -------- Credits Box --------
     def create_credit_box(self):
         self.credit_frame = tk.Frame(self.root, bg="#2c2750", bd=2, relief="ridge")
-        close_btn = tk.Button(
-            self.credit_frame,
-            text="×",
-            command=lambda: self.credit_frame.place_forget(),
-            bg="#5a3e99",
-            fg="#f0e9ff",
-            activebackground="#7d5fff",
-            activeforeground="#f0e9ff",
-            relief="flat",
-            font=self.title_font,
-            width=2,
-        )
-        close_btn.pack(side="top", anchor="ne", padx=4, pady=4)
+        # Non-closable credit box centered
+        title_lbl = tk.Label(self.credit_frame, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 16, "bold"))
+        title_lbl.pack(padx=16, pady=(10, 2))
         tk.Label(self.credit_frame, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=16)
         tk.Label(self.credit_frame, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=16, pady=(0, 12))
         self.credit_frame.place(relx=0.5, rely=0.5, anchor="center")
@@ -402,106 +392,104 @@ class DiscordBotGUI:
         self.avatar_label.pack(side="left", padx=(6, 8), pady=6)
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
         self.username_label.pack(side="left", pady=6)
-        # Left column for controls
+
+        # Left column for controls (below user header)
         left = tk.Frame(frame, bg="#1e1b29")
-        left.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=1.0)
-        # Right column for admin broadcast chat
+        left.place(relx=0.0, rely=0.08, relwidth=0.65, relheight=0.92)
+        left.grid_columnconfigure(0, weight=1)
+        left.grid_columnconfigure(1, weight=1)
+        left.grid_columnconfigure(2, weight=0)
+        left.grid_columnconfigure(3, weight=0)
+        left.grid_rowconfigure(4, weight=1)  # message content grows
+
+        # Right column for admin broadcast chat (unchanged)
         right = tk.Frame(frame, bg="#1e1b29")
         right.place(relx=0.675, rely=0.0, relwidth=0.325, relheight=1.0)
 
-        # Existing controls go into left
-        tk.Label(left, text="Token:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        self.token_entry = tk.Entry(left, width=45)
-        self.token_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(left, text="Save Token", command=self.save_token).grid(row=0, column=2, sticky="w", padx=5, pady=5)
-
+        # Top controls: token bar and run buttons
+        token_bar = tk.Frame(left, bg="#1e1b29")
+        token_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=6, pady=(6, 4))
+        tk.Label(token_bar, text="Token:").pack(side="left")
+        self.token_entry = tk.Entry(token_bar, width=40)
+        self.token_entry.pack(side="left", fill="x", expand=True, padx=(6, 6))
+        tk.Button(token_bar, text="Save Token", command=self.save_token).pack(side="left", padx=(0, 6))
         self.token_var = tk.StringVar()
-        self.token_menu = tk.OptionMenu(left, self.token_var, ())
-        self.token_menu.grid(row=0, column=3, sticky="w", padx=5, pady=5)
+        self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
+        self.token_menu.pack(side="left")
 
-        tk.Label(left, text="Channel:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        run = tk.Frame(left, bg="#1e1b29")
+        run.grid(row=0, column=3, sticky="ne", padx=6, pady=(6, 4))
+        tk.Button(run, text="Start", command=self.start_sending, width=10).pack(fill="x", pady=(0, 6))
+        tk.Button(run, text="Pause", command=self.pause_resume_sending, width=10).pack(fill="x", pady=(0, 6))
+        tk.Button(run, text="Restart", command=lambda: (self.stop_sending(), self.start_sending()), width=10).pack(fill="x")
+
+        # Channel save row
+        tk.Label(left, text="Channel:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
         self.channel_entry = tk.Entry(left, width=45)
-        self.channel_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
-        tk.Button(left, text="Save Channel", command=self.save_channel).grid(row=1, column=2, sticky="w", padx=5, pady=5)
+        self.channel_entry.grid(row=1, column=1, sticky="we", padx=6, pady=4)
+        tk.Button(left, text="Save Channel", command=self.save_channel).grid(row=1, column=2, sticky="w", padx=6, pady=4)
 
         self.channel_vars = {}
         self.channels_frame = tk.Frame(left, bg="#1e1b29")
-        self.channels_frame.grid(row=2, column=0, columnspan=4, sticky="w", pady=5, padx=5)
+        self.channels_frame.grid(row=2, column=0, columnspan=4, sticky="we", pady=4, padx=6)
+
+        # Reply DM above Message Content
+        tk.Label(left, text="Reply DM Message:").grid(row=3, column=0, sticky="nw", padx=6, pady=(6, 2))
+        self.reply_dm_entry = tk.Text(left, height=3, width=55)
+        self.reply_dm_entry.grid(row=3, column=1, columnspan=2, sticky="we", padx=6, pady=(6, 2))
+        self.reply_dm_button = tk.Button(left, text="Start Reply DM", command=self.toggle_reply_dm)
+        self.reply_dm_button.grid(row=3, column=3, sticky="ne", padx=6, pady=(6, 2))
 
         # Message Content at bottom-left
-        tk.Label(left, text="Message Content:").grid(row=5, column=0, sticky="nw", padx=5, pady=5)
-        self.message_entry = tk.Text(left, height=5, width=55)
-        self.message_entry.grid(row=5, column=1, columnspan=3, sticky="we", padx=5, pady=5)
+        tk.Label(left, text="Message Content:").grid(row=4, column=0, sticky="nw", padx=6, pady=(6, 2))
+        self.message_entry = tk.Text(left, height=6, width=55)
+        self.message_entry.grid(row=4, column=1, columnspan=2, sticky="nsew", padx=6, pady=(6, 6))
 
-        # Reply DM under Message Content
-        tk.Label(left, text="Reply DM Message:").grid(row=6, column=0, sticky="nw", pady=5, padx=5)
-        self.reply_dm_entry = tk.Text(left, height=3, width=55)
-        self.reply_dm_entry.grid(row=6, column=1, columnspan=2, sticky="we", pady=5, padx=5)
-        self.reply_dm_button = tk.Button(left, text="Start Reply DM", command=self.toggle_reply_dm)
-        self.reply_dm_button.grid(row=6, column=3, sticky="e", pady=5, padx=5)
-
-        tk.Label(left, text="Reply Delay (seconds):").grid(row=7, column=0, sticky="w", pady=5, padx=5)
-        self.reply_delay_entry = tk.Entry(left, width=5)
-        self.reply_delay_entry.insert(0, "8")
-        self.reply_delay_entry.grid(row=7, column=1, sticky="w", pady=5, padx=5)
-
-        tk.Label(left, text="Delay (seconds):").grid(row=3, column=0, sticky="w", padx=5, pady=5)
-        self.delay_entry = tk.Entry(left, width=10)
+        # Delays to the right of message content
+        delays = tk.Frame(left, bg="#1e1b29")
+        delays.grid(row=4, column=3, sticky="n", padx=6, pady=(6, 6))
+        tk.Label(delays, text="Delay (seconds):", anchor="w").pack(fill="x")
+        self.delay_entry = tk.Entry(delays, width=8)
         self.delay_entry.insert(0, "3")
-        self.delay_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
-
-        tk.Label(left, text="Loop Count (0=infinite):").grid(row=3, column=2, sticky="w", padx=5, pady=5)
-        self.loop_entry = tk.Entry(left, width=10)
-        self.loop_entry.insert(0, "1")
-        self.loop_entry.grid(row=3, column=3, sticky="w", padx=5, pady=5)
-
-        tk.Button(left, text="Start Sending", command=self.start_sending).grid(row=4, column=0, pady=10, padx=5)
-        tk.Button(left, text="Pause/Resume", command=self.pause_resume_sending).grid(row=4, column=1, pady=10, padx=5)
-        tk.Button(left, text="Stop Sending", command=self.stop_sending).grid(row=4, column=2, pady=10, padx=5)
+        self.delay_entry.pack(fill="x", pady=(0, 8))
+        tk.Label(delays, text="Reply Delay (seconds):", anchor="w").pack(fill="x")
+        self.reply_delay_entry = tk.Entry(delays, width=8)
+        self.reply_delay_entry.insert(0, "8")
+        self.reply_delay_entry.pack(fill="x")
 
         # Activity Log bottom-right (inside right panel footer)
         log_footer = tk.Frame(right, bg="#1e1b29")
         log_footer.pack(fill="x", side="bottom", padx=10, pady=(0, 10))
         tk.Label(log_footer, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.log_text = tk.Text(log_footer, height=6, width=40, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff",
-                                relief="flat")
+        self.log_text = tk.Text(log_footer, height=6, width=40, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="x")
-        # Remove old scrollbar wiring for left log
-        # self.log_scrollbar/config removed
 
         # Message counter label (live-updating)
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
-        self.stats_label.grid(row=9, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
+        self.stats_label.grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
-        # Right: Admin broadcast chat (read for all, write only for admin)
+        # Right: Admin broadcast chat (unchanged)
         header = tk.Label(right, text="Broadcast Chat (Only an admin can chat)", bg="#1e1b29", fg="#e0d7ff")
         header.pack(anchor="w", padx=10, pady=(6, 4))
         self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
         self._chat_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         self._chat_bg_items = []
-        # Rich chat rendering state
-        self._chat_items: list[dict] = []
+        self._chat_items = []
         self._chat_scroll_y = 0
-        self._avatar_cache: dict[str, object] = {}
-        self._avatar_missing: set[str] = set()
+        self._avatar_cache = {}
+        self._avatar_missing = set()
         self._chat_canvas.bind('<Configure>', self._redraw_chat_bg)
         self._chat_canvas.bind_all('<MouseWheel>', lambda e: self._on_chat_scroll(e))
-        # Initial draw
         self._draw_chat_items()
         self._chat_canvas.bind("<Configure>", self._redraw_chat_bg)
         self._redraw_chat_bg()
         entry_row = tk.Frame(right, bg="#1e1b29")
         entry_row.pack(fill="x", padx=10, pady=(0, 8))
-        self.chat_entry = tk.Entry(entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff",
-                                   relief="flat", font=self.title_font)
+        self.chat_entry = tk.Entry(entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.title_font)
         self.chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
-        self.chat_send_btn = tk.Button(entry_row, text="Send", command=self.chat_send_message,
-                                       bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff",
-                                       activeforeground="#f0e9ff", relief="flat")
+        self.chat_send_btn = tk.Button(entry_row, text="Send", command=self.chat_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
         self.chat_send_btn.pack(side="right")
-        # Start polling
         threading.Thread(target=self.chat_poll_loop, daemon=True).start()
-        # Cache who we are to tell server who is polling
         self._me_user_id = None
         try:
             headers = {"Authorization": self.user_token}
@@ -514,11 +502,15 @@ class DiscordBotGUI:
 
         # Apply glow to inputs/buttons
         try:
-            for w in [self.token_entry, self.channel_entry, self.delay_entry, self.loop_entry,
-                      self.message_entry, self.reply_dm_entry, self.chat_entry, self.log_text]:
+            for w in [self.token_entry, self.channel_entry, self.delay_entry, self.reply_delay_entry, self.message_entry, self.reply_dm_entry, self.chat_entry, self.log_text]:
                 self.apply_glow(w)
-            for w in [child for child in self.main_frame.winfo_children() if isinstance(child, tk.Button)]:
-                self.apply_glow(w, thickness=1)
+            # Make all buttons pretty (recursively)
+            def _walk(p):
+                for c in p.winfo_children():
+                    yield c
+                    yield from _walk(c)
+            for b in [w for w in _walk(self.main_frame) if isinstance(w, tk.Button)]:
+                b.configure(bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2")
         except Exception:
             pass
 
@@ -569,27 +561,28 @@ class DiscordBotGUI:
 
     # ---- Glow helpers for widgets ----
     def _init_glow_system(self):
-        if getattr(self, '_glow_inited', False):
+        if hasattr(self, '_glow_widgets'):
             return
-        self._glow_inited = True
-        self._glow_widgets: list[tuple[object, str, str]] = []  # (widget, colorA, colorB)
-        self._glow_state = False
+        self._glow_widgets = []
+        self._glow_state = True
         def _tick():
-            self._glow_state = not self._glow_state
+            # Keep steady glow (no visible on/off). We still refresh to apply theme changes safely.
             for w, c1, c2 in list(self._glow_widgets):
                 try:
-                    col = c1 if self._glow_state else c2
-                    w.configure(highlightbackground=col, highlightcolor=col)
+                    w.configure(highlightbackground=c1, highlightcolor=c1)
                 except Exception:
                     pass
-            self.root.after(600, _tick)
-        self.root.after(800, _tick)
+            self.root.after(1200, _tick)
+        self.root.after(1200, _tick)
 
-    def apply_glow(self, widget, color1='#7d5fff', color2='#5a3e99', thickness=2):
+    def apply_glow(self, widget, color1='#7d5fff', color2=None, thickness=3):
         try:
+            if color2 is None:
+                color2 = color1
             self._init_glow_system()
             widget.configure(highlightthickness=thickness, highlightbackground=color1, highlightcolor=color1, bd=0, relief='flat')
-            self._glow_widgets.append((widget, color1, color2))
+            # Store identical colors so any background refresher keeps a steady glow
+            self._glow_widgets.append((widget, color1, color1))
         except Exception:
             pass
 
@@ -611,7 +604,7 @@ class DiscordBotGUI:
         for lbl in [w for w in self.main_frame.winfo_children() if isinstance(w, tk.Label)]:
             lbl.configure(bg=bg_color, fg=fg_color, font=self.title_font)
 
-        for w in [self.token_entry, self.channel_entry, self.delay_entry, self.loop_entry,
+        for w in [self.token_entry, self.channel_entry, self.delay_entry, self.reply_delay_entry,
                   self.message_entry, self.log_text, self.reply_dm_entry]:
             w.configure(bg=entry_bg, fg=fg_color, insertbackground=fg_color, font=self.mono_font)
 
@@ -949,13 +942,8 @@ class DiscordBotGUI:
             self.log("❌ Invalid delay value.")
             return
 
-        try:
-            loop_count = int(self.loop_entry.get())
-            if loop_count < 0:
-                raise ValueError
-        except:
-            self.log("❌ Invalid loop count.")
-            return
+        # Loop count control removed from UI; default to sending once per channel
+        loop_count = 1
 
         self.selected_channel_names = selected_channels
         self.send_running = True
