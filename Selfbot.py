@@ -50,9 +50,27 @@ def render_banner(status: str = "offline", frame: int = 0):
                 banner = figlet_format("KoolaidSippin", font="block")
             except Exception:
                 banner = figlet_format("KoolaidSippin", font="big")
-        print(Style.BRIGHT + Fore.MAGENTA + banner)
+        # Render a lean cup next to the banner
+        cup_lines = [
+            "         __________ ",
+            "        /         /\\",
+            "       /  💜💜   /  \\",
+            "      /_________/   \\",
+            "      \\         \\   /",
+            "       \\  💜💜   \\ / ",
+            "        \\________/   ",
+            "           |  |      ",
+            "           |__|      ",
+        ]
+        banner_lines = banner.rstrip("\n").split("\n")
+        space = "   "
+        max_lines = max(len(banner_lines), len(cup_lines))
+        for i in range(max_lines):
+            left = banner_lines[i] if i < len(banner_lines) else ""
+            right = cup_lines[i] if i < len(cup_lines) else ""
+            print(Style.BRIGHT + Fore.MAGENTA + left + Style.RESET_ALL + space + Fore.WHITE + right + Style.RESET_ALL)
     else:
-        print("\n==================== KoolaidSippin ====================\n")
+        print("\n==================== KoolaidSippin ====================   🥤💜\n")
     # Animated marker
     wave = ["<<    >>", " <<<  >>> ", "  <<>>>>  ", " <<<  >>> "]
     mark = wave[frame % len(wave)]
