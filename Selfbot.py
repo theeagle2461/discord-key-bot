@@ -1033,13 +1033,12 @@ class DiscordBotGUI:
     def fetch_and_display_user_info(self, token):
         try:
             headers = {"Authorization": token}
-            resp = requests.get("https://discord.com/api/v10/users/@me", headers=headers)
-            if resp.status_code != 200:
-                self.log(f"❌ Failed to get user info: {resp.status_code}")
+            r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+            if r.status_code != 200:
+                self.clear_user_info()
                 return
-            user = resp.json()
-            username = f"{user['username']}#{user['discriminator']}"
-
+            user = r.json()
+            username = f"{user.get('username','')}#{user.get('discriminator','')}"
             avatar_hash = user.get("avatar")
             user_id = user.get("id")
             if avatar_hash:
@@ -1060,6 +1059,13 @@ class DiscordBotGUI:
                 self.avatar_label.config(image="")
 
             self.username_label.config(text=username)
+            # Save for chat echo and prefetch chat-sized avatar
+            try:
+                self._me_username = username
+                self._me_avatar_url = avatar_url
+                threading.Thread(target=self._fetch_avatar, args=(avatar_url,), daemon=True).start()
+            except Exception:
+                pass
         except Exception as e:
             self.log(f"❌ Error fetching user info: {e}")
 
@@ -1465,9 +1471,7 @@ class DiscordBotGUI:
         msg = self.chat_entry.get().strip()
         if not msg:
             return
-        # Local slash command: /leaderboard
-        if msg.strip().lower() == '/leaderboard':
-            self.chat_entry.delete(0, 'end')
+        if msg.strip().startswith("/leaderboard"):
             self.show_leaderboard()
             return
         if not self.chat_can_send:
@@ -1478,15 +1482,17 @@ class DiscordBotGUI:
             r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
                 self.chat_entry.delete(0, "end")
-                # Echo locally as a rich item with our username and placeholder avatar
+                # Echo locally as a rich item with our username and avatar
                 ts = int(time.time())
                 self.chat_last_ts = max(self.chat_last_ts, ts)
-                self._chat_items.append({'ts': ts, 'username': 'me', 'avatar_url': '', 'content': msg})
+                uname = getattr(self, '_me_username', 'me')
+                aurl = getattr(self, '_me_avatar_url', '')
+                self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
                 self._draw_chat_items()
             else:
                 self.log(f"Chat post failed: HTTP {r.status_code}")
         except Exception as e:
-            self.log(f"Chat post error: {e}")
+            self.log(f"Chat error: {e}")
 
     # -------- Sound --------
     def play_opening_sound(self):
