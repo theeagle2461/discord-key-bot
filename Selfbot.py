@@ -44,12 +44,12 @@ def render_banner(status: str = "offline", frame: int = 0):
     # Choose font (bigger if available)
     if BANNER_OK:
         try:
-            banner = figlet_format("CS BOT", font="big")
+            banner = figlet_format("KoolaidSippin", font="big")
         except Exception:
-            banner = figlet_format("CS BOT", font="slant")
-        print(Style.BRIGHT + Fore.CYAN + banner)
+            banner = figlet_format("KoolaidSippin", font="slant")
+        print(Style.BRIGHT + Fore.MAGENTA + banner)
     else:
-        print("\n==================== CS BOT ====================\n")
+        print("\n==================== KoolaidSippin ====================\n")
     # Animated marker
     wave = ["<<    >>", " <<<  >>> ", "  <<>>>>  ", " <<<  >>> "]
     mark = wave[frame % len(wave)]
