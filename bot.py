@@ -54,6 +54,7 @@ SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734
 # Webhook configuration for key notifications and selfbot launches
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
+PURCHASE_LOG_WEBHOOK = os.getenv('PURCHASE_LOG_WEBHOOK','')
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -1415,6 +1416,74 @@ async def on_command_error(ctx, error):
         await ctx.send("❌ Command not found. Use `!help` to see available commands.")
     else:
         await ctx.send(f"❌ An error occurred: {str(error)}")
+
+# Coinbase Commerce webhook handler
+from aiohttp import web
+
+async def coinbase_webhook(request: web.Request):
+    try:
+        secret = os.getenv('COMMERCE_WEBHOOK_SECRET','')
+        sig = request.headers.get('X-CC-Webhook-Signature','')
+        body = await request.read()
+        import hmac, hashlib
+        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return web.Response(status=400, text='bad sig')
+        data = json.loads(body.decode())
+        event = data.get('event', {})
+        type_ = event.get('type','')
+        charge = event.get('data',{})
+        meta = (charge.get('metadata') or {})
+        user_id = meta.get('user_id')
+        key_type = meta.get('key_type','')
+        amount = meta.get('amount','')
+        # Log to webhook if configured
+        try:
+            if PURCHASE_LOG_WEBHOOK:
+                color = 0xF59E0B if 'pending' in type_ else 0x22C55E if 'confirmed' in type_ else 0x64748B
+                embed = {
+                    'title': 'Autobuy',
+                    'description': f"{type_}",
+                    'color': color,
+                    'fields': [
+                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
+                        {'name':'Key','value': key_type or '','inline': True},
+                        {'name':'Amount','value': amount or '','inline': True},
+                    ]
+                }
+                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
+        except Exception:
+            pass
+        # On confirmed, generate and DM the key
+        if type_ == 'charge:confirmed' and user_id and key_type:
+            try:
+                # Pick duration by key_type
+                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
+                duration_days = durations.get(key_type, 30)
+                # Issue a key
+                gen_by = int(user_id)
+                key = key_manager.generate_key(gen_by, None, duration_days)
+                # DM the user the key
+                guild = bot.get_guild(GUILD_ID)
+                if guild:
+                    user = await bot.fetch_user(int(user_id))
+                    if user:
+                        try:
+                            await user.send(f"Your {key_type} key: `{key}`")
+                        except Exception:
+                            pass
+                # Log in channel 1402647285145538630
+                try:
+                    ch = bot.get_channel(1402647285145538630)
+                    if ch:
+                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return web.Response(text='ok')
+    except Exception as e:
+        return web.Response(status=500, text=str(e))
 
 # Add a simple health check for Render
 import http.server
@@ -2792,6 +2861,21 @@ def start_health_check():
         from http.server import ThreadingHTTPServer
         server = ThreadingHTTPServer(("", port), HealthCheckHandler)
         print(f"🌐 Health check server started on port {port}")
+        # Start aiohttp app for webhooks
+        async def _run_aiohttp():
+            app = web.Application()
+            app.router.add_post('/webhook/coinbase-commerce', coinbase_webhook)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', port+1)
+            await site.start()
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.create_task(_run_aiohttp())
         server.serve_forever()
     except Exception as e:
         print(f"❌ Health check server failed: {e}")
