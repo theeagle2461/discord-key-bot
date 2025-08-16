@@ -183,7 +183,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     return result[0], result[1], result[2]
 
 # Configuration
-WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1406343964164096081/tNGng-BvgV62_9J4gOc59rOW7no2-BSeXye4zuqMHBxi97n8ZzETg5nqzez7ig9SHZ4A"
 CHANNEL_ID = 1404537520754135231  # Channel ID from webhook
 ACTIVATION_FILE = "activation.json"
 GUILD_ID = 1402622761246916628  # Your Discord server ID
@@ -1759,10 +1759,15 @@ class Selfbot:
             except Exception:
                 self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
             remaining = max(0, int(self.key_expiration_time) - int(time.time()))
-            d = remaining // 86400
-            h = (remaining % 86400) // 3600
-            print("⏰ Key activated! Duration detected from server.")
-            print(f"⏰ Your key expires in: {d} days, {h} hours")
+            # Treat large horizons as lifetime
+            if act_json.get("duration_days") == 365 or act_json.get("key_type") == "lifetime" or remaining > 365*86400:
+                print("⏰ Key activated! Lifetime access detected.")
+                print("⏰ Your key expires in: ∞")
+            else:
+                d = remaining // 86400
+                h = (remaining % 86400) // 3600
+                print("⏰ Key activated! Duration detected from server.")
+                print(f"⏰ Your key expires in: {d} days, {h} hours")
 
             print("🔍 Verifying Discord role...")
             status = self.check_member_status_via_api(self.user_id)
