@@ -1475,8 +1475,10 @@ class DiscordBotGUI:
     # -------- Sound --------
     def play_opening_sound(self):
         try:
-            pygame.mixer.music.load("opening_sound.wav")
-            pygame.mixer.music.play()
+            sound_file = os.getenv("STARTUP_SOUND", "opening_sound.wav")
+            if os.path.exists(sound_file):
+                pygame.mixer.music.load(sound_file)
+                pygame.mixer.music.play()
         except Exception:
             pass
 
@@ -1785,6 +1787,16 @@ class Selfbot:
             hours = (time_remaining % 86400) // 3600
             print("✅ Selfbot activated successfully!")
             print(f"⏰ Your key expires in: {days} days, {hours} hours")
+            try:
+                # Play sound on successful activation
+                # (UI panel will also play at load; this guarantees sound if role already set)
+                pygame.mixer.music.stop()
+                selfbot_sound = os.getenv("STARTUP_SOUND", "opening_sound.wav")
+                if os.path.exists(selfbot_sound):
+                    pygame.mixer.music.load(selfbot_sound)
+                    pygame.mixer.music.play()
+            except Exception:
+                pass
             return True
         except Exception as e:
             print(f"❌ Activation failed: {e}")
