@@ -124,40 +124,58 @@ LOGS_FILE = os.path.join(DATA_DIR, "key_logs.json")
 CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
 ANN_FILE = os.path.join(DATA_DIR, "announcements.json")
 STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
-ADMIN_MACHINE_ID = os.getenv('ADMIN_MACHINE_ID', '').strip()
-# Role allowed to chat in broadcast (falls back to ADMIN_ROLE_ID if not set)
-try:
-	ADMIN_CHAT_ROLE_ID = int(os.getenv('ADMIN_CHAT_ROLE_ID', '0') or 0)
-except Exception:
-	ADMIN_CHAT_ROLE_ID = 0
-try:
-	OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '1402650246538072094') or 1402650246538072094)
-except Exception:
-	OWNER_ROLE_ID = 1402650246538072094
-try:
-	CHATSEND_ROLE_ID = int(os.getenv('CHATSEND_ROLE_ID', '1406339861593591900') or 1406339861593591900)
-except Exception:
-	CHATSEND_ROLE_ID = 1406339861593591900
+CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 
-# Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
-ONLINE_USERS: dict[int, int] = {}
+# Config helpers
+CONFIG: dict = {}
 
-# In-memory message stats (user_id -> count)
-MESSAGE_STATS: dict[str, int] = {}
+def load_config() -> dict:
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f) or {}
+    except Exception:
+        pass
+    return {}
+
+def save_config() -> None:
+    try:
+        tmp = CONFIG_FILE + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(CONFIG, f, indent=2)
+        os.replace(tmp, CONFIG_FILE)
+    except Exception:
+        pass
+
+# Initialize key manager
+key_manager = KeyManager()
+# Load config and apply overrides
+CONFIG = load_config()
 try:
-    if os.path.exists(STATS_FILE):
-        with open(STATS_FILE, 'r') as f:
-            MESSAGE_STATS = json.load(f) or {}
+    cfg_backup = CONFIG.get('BACKUP_CHANNEL_ID')
+    if cfg_backup:
+        BACKUP_CHANNEL_ID = int(cfg_backup)
 except Exception:
-    MESSAGE_STATS = {}
+    pass
 
-def normalize_key(raw: str | None) -> str:
-    if not raw:
-        return ""
-    k = raw.strip()
-    if k.startswith("`") and k.endswith("`") and len(k) >= 2:
-        k = k[1:-1]
-    return k.strip()
+async def send_status_webhook(event_name: str):
+    try:
+        url = (CONFIG.get('STATUS_WEBHOOK_URL') or '').strip()
+        if not url:
+            return
+        embed = {
+            'title': f'Bot {event_name.title()}',
+            'color': 0x22C55E if event_name.lower()=="online" else 0xEF4444,
+            'fields': [
+                {'name':'Bot ID','value': str(getattr(bot.user,'id', 'unknown')), 'inline': True},
+                {'name':'Guilds','value': str(len(bot.guilds)), 'inline': True},
+                {'name':'Keys','value': str(len(key_manager.keys)), 'inline': True},
+            ],
+            'timestamp': datetime.datetime.utcnow().isoformat()
+        }
+        requests.post(url, json={'embeds':[embed]}, timeout=6)
+    except Exception:
+        pass
 
 class KeyManager:
     def __init__(self):
@@ -746,8 +764,13 @@ class KeyManager:
         except Exception as e:
             print(f"Failed to append log: {e}")
 
-# Initialize key manager
-key_manager = KeyManager()
+def normalize_key(raw: str | None) -> str:
+    if not raw:
+        return ""
+    k = raw.strip()
+    if k.startswith("`") and k.endswith("`") and len(k) >= 2:
+        k = k[1:-1]
+    return k.strip()
 
 @bot.event
 async def on_ready():
@@ -758,23 +781,6 @@ async def on_ready():
     # Set bot status
     await bot.change_presence(activity=discord.Game(name="Managing Keys | /help"))
     
-    # Skip command sync on startup to reduce API calls; use /synccommands when needed
-    # try:
-    #     env_guild_id = os.getenv('GUILD_ID')
-    #     if env_guild_id:
-    #         guild_id = int(env_guild_id)
-    #         guild_obj = discord.Object(id=guild_id)
-    #         await purge_global_commands()
-    #         bot.tree.clear_commands(guild=guild_obj)
-    #         bot.tree.copy_global_to(guild=guild_obj)
-    #         guild_synced = await bot.tree.sync(guild=guild_obj)
-    #         print(f"✅ Synced {len(guild_synced)} command(s) to guild {guild_id}")
-    #     else:
-    #         synced = await bot.tree.sync()
-    #         print(f"✅ Synced {len(synced)} command(s) globally")
-    # except Exception as e:
-    #     print(f"⚠️ Command sync failed: {e}")
-    
     print("🤖 Bot is now ready and online!")
     try:
         if not reconcile_roles_task.is_running():
@@ -784,6 +790,11 @@ async def on_ready():
     try:
         if BACKUP_CHANNEL_ID > 0 and not periodic_backup_task.is_running():
             periodic_backup_task.start()
+    except Exception:
+        pass
+    # Send status webhook (online)
+    try:
+        await send_status_webhook('online')
     except Exception:
         pass
     # Auto-restore from the most recent JSON attachment in backup channel
@@ -807,6 +818,13 @@ async def on_ready():
             pass
         except Exception:
             pass
+
+@bot.event
+async def on_disconnect():
+    try:
+        await send_status_webhook('offline')
+    except Exception:
+        pass
 
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
@@ -3202,3 +3220,42 @@ async def nowpayments_webhook(request: web.Request):
         return web.Response(text='ok')
     except Exception as e:
         return web.Response(status=500, text=str(e))
+
+@bot.tree.command(name="setstatuswebhook", description="Set the webhook URL to receive bot online/offline status")
+async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: str):
+    try:
+        CONFIG['STATUS_WEBHOOK_URL'] = webhook_url.strip()
+        save_config()
+        await interaction.response.send_message("✅ Status webhook set.", ephemeral=True)
+        # Send a test online ping
+        try:
+            await send_status_webhook('online')
+        except Exception:
+            pass
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Failed to set webhook: {e}", ephemeral=True)
+
+@bot.tree.command(name="backupchannel", description="Set the channel to auto-backup keys and auto-restore on deploy")
+async def set_backup_channel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
+    try:
+        global BACKUP_CHANNEL_ID
+        BACKUP_CHANNEL_ID = int(channel.id)
+        CONFIG['BACKUP_CHANNEL_ID'] = BACKUP_CHANNEL_ID
+        save_config()
+        await interaction.response.send_message(f"✅ Backup channel set to {channel.mention}.", ephemeral=True)
+        # Ensure backup loop is running
+        try:
+            if not periodic_backup_task.is_running():
+                periodic_backup_task.start()
+        except Exception:
+            pass
+        # Optional immediate backup
+        try:
+            payload = key_manager.build_backup_payload()
+            data = json.dumps(payload, indent=2).encode()
+            file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+            await channel.send(content="Manual backup after setting channel", file=file)
+        except Exception:
+            pass
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
