@@ -55,6 +55,10 @@ SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
 PURCHASE_LOG_WEBHOOK = os.getenv('PURCHASE_LOG_WEBHOOK','')
+# NOWPayments credentials
+NWP_API_KEY = os.getenv('NWP_API_KEY','')
+NWP_IPN_SECRET = os.getenv('NWP_IPN_SECRET','')
+PUBLIC_URL = os.getenv('PUBLIC_URL','')  # optional; used for ipn callback if provided
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -2874,6 +2878,7 @@ def start_health_check():
         async def _run_aiohttp():
             app = web.Application()
             app.router.add_post('/webhook/coinbase-commerce', coinbase_webhook)
+            app.router.add_post('/webhook/nowpayments', nowpayments_webhook)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port+1)
@@ -3072,3 +3077,128 @@ async def leaderboard_command(interaction: discord.Interaction):
         await interaction.followup.send(embed=em)
     except Exception as e:
         await interaction.followup.send(f"Error: {e}")
+
+@bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
+async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
+    """Create a NOWPayments invoice for the chosen coin and key type inside a ticket channel."""
+    try:
+        await interaction.response.defer(ephemeral=True)
+        if not NWP_API_KEY or not NWP_IPN_SECRET:
+            await interaction.followup.send("Payment processor not configured.")
+            return
+        coin = coin.upper()
+        if coin not in ("BTC","LTC","ETH","USDC","USDT"):
+            await interaction.followup.send("Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.")
+            return
+        key_type = key_type.lower()
+        price_map = {"daily":3, "weekly":10, "monthly":20, "lifetime":50}
+        if key_type not in price_map:
+            await interaction.followup.send("Invalid key type. Choose daily, weekly, monthly or lifetime.")
+            return
+        amount = price_map[key_type]
+        order_id = f"{interaction.user.id}:{interaction.channel.id}:{key_type}:${amount}"
+        # Build invoice payload
+        payload = {
+            "price_amount": amount,
+            "price_currency": "USD",
+            "order_id": order_id,
+            "order_description": f"{key_type} key for {interaction.user.id}",
+            "pay_currency": coin,
+            "is_fixed_rate": True,
+        }
+        if PUBLIC_URL:
+            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
+        headers = {
+            "x-api-key": NWP_API_KEY,
+            "Content-Type": "application/json"
+        }
+        import requests as _req, json as _json
+        try:
+            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
+            if r.status_code not in (200,201):
+                await interaction.followup.send(f"Failed to create invoice (HTTP {r.status_code}).")
+                return
+            inv = r.json()
+        except Exception as e:
+            await interaction.followup.send(f"Error creating invoice: {e}")
+            return
+        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
+        if not url:
+            await interaction.followup.send("Invoice created but no URL returned.")
+            return
+        note = "autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
+        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
+        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
+        await interaction.followup.send(embed=em)
+    except Exception as e:
+        if interaction.response.is_done():
+            await interaction.followup.send(f"Error: {e}")
+        else:
+            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
+async def nowpayments_webhook(request: web.Request):
+    try:
+        secret = NWP_IPN_SECRET or ''
+        body_txt = await request.text()
+        sig = request.headers.get('x-nowpayments-sig','')
+        import hmac, hashlib
+        expected = hmac.new(secret.encode(), body_txt.encode() if isinstance(body_txt, str) else body_txt, hashlib.sha512).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return web.Response(status=400, text='bad sig')
+        data = json.loads(body_txt)
+        status = str(data.get('payment_status','')).lower()
+        order_id = str(data.get('order_id',''))
+        # order_id format: user:channel:key:amount
+        parts = order_id.split(':') if order_id else []
+        user_id = parts[0] if len(parts) > 0 else None
+        ticket_channel_id = parts[1] if len(parts) > 1 else None
+        key_type = parts[2] if len(parts) > 2 else ''
+        amount = parts[3] if len(parts) > 3 else ''
+        # Log pending/confirmed
+        try:
+            if PURCHASE_LOG_WEBHOOK:
+                color = 0xF59E0B if ('pending' in status or 'waiting' in status or 'confirming' in status) else 0x22C55E if ('finished' in status or 'confirmed' in status) else 0x64748B
+                embed = {
+                    'title': 'Autobuy (NOWPayments)',
+                    'description': status,
+                    'color': color,
+                    'fields': [
+                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
+                        {'name':'Key','value': key_type or '','inline': True},
+                        {'name':'Amount','value': amount or '','inline': True},
+                    ]
+                }
+                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
+        except Exception:
+            pass
+        # On finished/confirmed
+        if user_id and key_type and (('finished' in status) or ('confirmed' in status)):
+            try:
+                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
+                duration_days = durations.get(key_type, 30)
+                key = key_manager.generate_key(int(user_id), None, duration_days)
+                guild = bot.get_guild(GUILD_ID)
+                if guild and ticket_channel_id:
+                    try:
+                        chan = guild.get_channel(int(ticket_channel_id))
+                        if chan:
+                            member = guild.get_member(int(user_id))
+                            if member:
+                                try:
+                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
+                                except Exception:
+                                    pass
+                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
+                    except Exception:
+                        pass
+                try:
+                    ch = bot.get_channel(1402647285145538630)
+                    if ch:
+                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return web.Response(text='ok')
+    except Exception as e:
+        return web.Response(status=500, text=str(e))
