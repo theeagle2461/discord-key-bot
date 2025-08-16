@@ -117,7 +117,7 @@ DELETED_KEYS_FILE = os.path.join(DATA_DIR, "deleted_keys.json")
 LOGS_FILE = os.path.join(DATA_DIR, "key_logs.json")
 # Simple site-wide chat storage
 CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
-+STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
+STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
 ADMIN_MACHINE_ID = os.getenv('ADMIN_MACHINE_ID', '').strip()
 # Role allowed to chat in broadcast (falls back to ADMIN_ROLE_ID if not set)
 try:
