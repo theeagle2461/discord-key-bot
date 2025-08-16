@@ -189,7 +189,7 @@ ACTIVATION_FILE = "activation.json"
 GUILD_ID = 1402622761246916628  # Your Discord server ID
 ROLE_ID = 1404221578782183556  # Role ID that grants access
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
-JOIN_URL = os.getenv("JOIN_URL", SERVICE_URL)
+JOIN_URL = os.getenv("JOIN_URL", "https://discord.gg/fEeeXAJfbF")
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
