@@ -8,6 +8,8 @@ import platform
 import hashlib
 import threading
 import sys
+import re
+import webbrowser
 
 # Added GUI-related imports
 import tkinter as tk
@@ -1309,22 +1311,43 @@ class DiscordBotGUI:
                 # Username and time
                 self._chat_fg_items.append(c.create_text(x_pad+2*r+8, y+6, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10, 'bold'), text=username))
                 self._chat_fg_items.append(c.create_text(w-20, y+6, anchor='ne', fill='#7d5fff', font=('Consolas', 9), text=time_txt))
-                # Message content (wrap at width)
+                # Message content (wrap at width) with clickable URLs
                 maxw = w - (x_pad+2*r+8) - 20
-                wrapped = []
+                yy = y + 2*r + 6
+                url_re = re.compile(r"https?://\S+")
+                def _open(url: str):
+                    try:
+                        webbrowser.open(url)
+                    except Exception:
+                        pass
+                # Render with simple wrap
+                words = content.split(' ')
                 line = ''
-                for word in content.split(' '):
+                for word in words:
                     test = (line + ' ' + word).strip()
-                    if len(test) > 48:  # rough wrap
-                        wrapped.append(line)
+                    if len(test) > 48:
+                        self._chat_fg_items.append(c.create_text(x_pad+2*r+8, yy, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10), text=line))
+                        yy += 16
                         line = word
                     else:
                         line = test
                 if line:
-                    wrapped.append(line)
-                yy = y + 2*r + 6
-                for ln in wrapped:
-                    self._chat_fg_items.append(c.create_text(x_pad+2*r+8, yy, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10), text=ln))
+                    x_cursor = x_pad+2*r+8
+                    idx = 0
+                    for murl in url_re.finditer(line):
+                        pre = line[idx:murl.start()]
+                        if pre:
+                            self._chat_fg_items.append(c.create_text(x_cursor, yy, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10), text=pre))
+                            x_cursor += int(len(pre) * 7.0)
+                        urltxt = murl.group(0)
+                        item = c.create_text(x_cursor, yy, anchor='nw', fill='#7d5fff', font=('Segoe UI', 10, 'underline'), text=urltxt)
+                        self._chat_fg_items.append(item)
+                        c.tag_bind(item, '<Button-1>', lambda e, u=urltxt: _open(u))
+                        x_cursor += int(len(urltxt) * 7.0)
+                        idx = murl.end()
+                    tail = line[idx:]
+                    if tail:
+                        self._chat_fg_items.append(c.create_text(x_cursor, yy, anchor='nw', fill='#e0d7ff', font=('Segoe UI', 10), text=tail))
                     yy += 16
                 y = yy + 10
             except Exception:
