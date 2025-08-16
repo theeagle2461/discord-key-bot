@@ -190,7 +190,7 @@ GUILD_ID = 1402622761246916628  # Your Discord server ID
 ROLE_ID = 1404221578782183556  # Role ID that grants access
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
 JOIN_URL = os.getenv("JOIN_URL", "https://discord.gg/fEeeXAJfbF")
-SERVER_ICON_URL = os.getenv("SERVER_ICON_URL", "")
+SERVER_ICON_URL = os.getenv("SERVER_ICON_URL", "https://cdn.discordapp.com/attachments/1389338051670446323/1406327041741291671/static_6.png")
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
