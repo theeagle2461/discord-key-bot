@@ -3,7 +3,7 @@ import requests
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import platform
 import hashlib
 import threading
@@ -169,9 +169,10 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
         result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
-    tk.Button(card, text="Continue", command=submit, bg="#5a3e99", fg="#f0e9ff",
+    # Bottom login button
+    tk.Button(card, text="Login", command=submit, bg="#5a3e99", fg="#f0e9ff",
               activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2",
-              font=("Segoe UI", 11, "bold")).pack(pady=(4, 10))
+              font=("Segoe UI", 11, "bold")).pack(side="bottom", pady=(6, 10))
 
     root.bind("<Return>", lambda e: submit())
     root.mainloop()
@@ -205,7 +206,7 @@ class DiscordBotGUI:
     CHANNELS_FILE = "channels.json"
     STATS_FILE = "message_stats.json"
 
-    def __init__(self, root: tk.Tk, initial_token: str | None = None):
+    def __init__(self, root: tk.Tk, initial_token: str | None = None, initial_user_id: str | None = None):
         self.root = root
         self.root.title("CS Bot User Panel")
         self.root.geometry("900x700")
@@ -214,6 +215,8 @@ class DiscordBotGUI:
         self.root.attributes("-fullscreen", True)
         self.root.bind("<F11>", self.toggle_fullscreen)
         self.root.bind("<Escape>", self.exit_fullscreen)
+        # Store user id for expiry watchdog
+        self._login_user_id = initial_user_id
 
         # Fonts
         self.title_font = font.Font(family="Segoe UI", size=11, weight="bold")
@@ -301,6 +304,13 @@ class DiscordBotGUI:
         # Credits box overlay in the center
         self.create_credit_box()
 
+        # Start expiry watchdog if we know who we are
+        try:
+            if self._login_user_id:
+                self._start_expiry_watchdog()
+        except Exception:
+            pass
+
     # -------- Background & Visuals --------
     def create_gradient_image(self, width, height):
         base = Image.new('RGB', (width, height), "#1e1b29")
@@ -385,6 +395,13 @@ class DiscordBotGUI:
     # -------- GUI Widgets Setup --------
     def setup_gui(self):
         frame = self.main_frame
+        # User info header (avatar + username)
+        self.user_info_frame = tk.Frame(frame, bg="#1e1b29")
+        self.user_info_frame.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=0.08)
+        self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
+        self.avatar_label.pack(side="left", padx=(6, 8), pady=6)
+        self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
+        self.username_label.pack(side="left", pady=6)
         # Left column for controls
         left = tk.Frame(frame, bg="#1e1b29")
         left.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=1.0)
@@ -1297,6 +1314,25 @@ class DiscordBotGUI:
         self.auto_reply_running = False
         self.root.destroy()
 
+    def _start_expiry_watchdog(self):
+        def _tick():
+            try:
+                uid = str(self._login_user_id)
+                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid}, timeout=5)
+                ok = (resp.status_code == 200)
+                j = resp.json() if ok else {}
+                should = bool(j.get("should_have_access", False))
+                if not should:
+                    # Close the app when access is gone
+                    self.root.after(0, self.root.destroy)
+                    return
+            except Exception:
+                pass
+            # Re-run in 30 seconds
+            self.root.after(30000, _tick)
+        # kick off
+        self.root.after(30000, _tick)
+
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------
 class Selfbot:
@@ -1360,7 +1396,7 @@ class Selfbot:
                     {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                     {"name": "Activated At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                 ],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
         except Exception:
@@ -1498,8 +1534,21 @@ class Selfbot:
                 print(f"❌ Activation request error: {e}")
                 return False
 
-            print("⏰ Key activated! Duration will be automatically detected from Discord bot.")
-            self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
+            # Determine actual expiration from server if provided; otherwise fallback to duration_days
+            try:
+                if act_json.get("expiration_time"):
+                    self.key_expiration_time = int(act_json["expiration_time"])  # epoch seconds
+                else:
+                    # Fallback: use duration_days from /activate if present, else 30
+                    duration_days = int(act_json.get("duration_days", 30))
+                    self.key_expiration_time = int(time.time()) + (duration_days * 24 * 60 * 60)
+            except Exception:
+                self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
+            remaining = max(0, int(self.key_expiration_time) - int(time.time()))
+            d = remaining // 86400
+            h = (remaining % 86400) // 3600
+            print("⏰ Key activated! Duration detected from server.")
+            print(f"⏰ Your key expires in: {d} days, {h} hours")
 
             print("🔍 Verifying Discord role...")
             status = self.check_member_status_via_api(self.user_id)
@@ -1580,7 +1629,7 @@ class Selfbot:
         # Launch the GUI message panel after successful login/activation
         try:
             root = tk.Tk()
-            app = DiscordBotGUI(root, initial_token=self.user_token)
+            app = DiscordBotGUI(root, initial_token=self.user_token, initial_user_id=self.user_id)
             root.mainloop()
         except KeyboardInterrupt:
             pass
