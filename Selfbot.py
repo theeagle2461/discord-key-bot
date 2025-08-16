@@ -18,6 +18,8 @@ from PIL import Image, ImageTk, ImageDraw
 import pygame
 import math, random, io
 
+SB_VERSION = "2025-08-16.7"
+
 # Optional banner dependencies (fallback to plain text if not installed)
 try:
     from colorama import init as colorama_init, Fore, Style
@@ -437,6 +439,9 @@ class DiscordBotGUI:
         self.btn_pause.pack(fill="x", pady=(0, 6))
         self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
         self.btn_restart.pack(fill="x")
+        # Mark as stateful
+        self._stateful_buttons = getattr(self, '_stateful_buttons', set())
+        self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
 
         # Channel integrated bar with saved-channels selector next to it
         chan_bar = tk.Frame(left, bg="#2c2750")
@@ -678,10 +683,12 @@ class DiscordBotGUI:
             w.configure(bg=entry_bg, fg=fg_color, insertbackground=fg_color, font=self.mono_font)
 
         for b in [w for w in self.main_frame.winfo_children() if isinstance(w, tk.Button)]:
-            b.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
+            b.configure(fg=button_fg, activeforeground=button_fg,
                         relief="flat", font=self.title_font, cursor="hand2", padx=8, pady=6)
-            b.bind("<Enter>", lambda e, btn=b: btn.configure(bg="#6a4bbb"))
-            b.bind("<Leave>", lambda e, btn=b: btn.configure(bg=button_bg))
+            if b not in getattr(self, '_stateful_buttons', set()):
+                b.configure(bg=button_bg, activebackground="#7d5fff")
+                b.bind("<Enter>", lambda e, btn=b: btn.configure(bg="#6a4bbb"))
+                b.bind("<Leave>", lambda e, btn=b: btn.configure(bg=button_bg))
 
         self.token_menu.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
                                   font=self.title_font)
@@ -1813,6 +1820,7 @@ class Selfbot:
 if __name__ == "__main__":
     print("🚀 Starting Selfbot...")
     print("=" * 40)
+    print(f"Version: {SB_VERSION}")
     
     selfbot = Selfbot()
     selfbot.run()
