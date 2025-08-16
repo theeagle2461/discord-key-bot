@@ -147,8 +147,7 @@ def save_config() -> None:
     except Exception:
         pass
 
-# Initialize key manager
-key_manager = KeyManager()
+# Initialize key manager (moved below after class definition)
 # Load config and apply overrides
 CONFIG = load_config()
 try:
@@ -185,7 +184,7 @@ class KeyManager:
         self.key_logs: list[dict] = []
         self.last_generated = None  # In-memory cache of last generated keys for web UI panel
         self.load_data()
-    
+
     def load_data(self):
         """Load keys and usage data from files"""
         try:
@@ -763,6 +762,9 @@ class KeyManager:
                 self.key_logs = self.key_logs[-1000:]
         except Exception as e:
             print(f"Failed to append log: {e}")
+
+# Instantiate the key manager now that the class is defined
+key_manager = KeyManager()
 
 def normalize_key(raw: str | None) -> str:
     if not raw:
