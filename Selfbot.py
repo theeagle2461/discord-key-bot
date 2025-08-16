@@ -412,10 +412,10 @@ class DiscordBotGUI:
 
         # Top controls: token integrated bar and run buttons
         token_bar = tk.Frame(left, bg="#2c2750")
-        token_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(8, 6))
+        token_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 6))
         tk.Label(token_bar, text="Token", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(token_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
-        self.token_entry = tk.Entry(token_bar, width=48, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.token_entry = tk.Entry(token_bar, width=56, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.token_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(token_bar, text="Save", command=self.save_token).pack(side="left", padx=(0, 6))
         self.token_var = tk.StringVar()
@@ -428,17 +428,20 @@ class DiscordBotGUI:
             pass
 
         run = tk.Frame(left, bg="#1e1b29")
-        run.grid(row=0, column=3, sticky="ne", padx=6, pady=(6, 4))
-        tk.Button(run, text="Start", command=self.start_sending, width=10).pack(fill="x", pady=(0, 6))
-        tk.Button(run, text="Pause", command=self.pause_resume_sending, width=10).pack(fill="x", pady=(0, 6))
-        tk.Button(run, text="Restart", command=lambda: (self.stop_sending(), self.start_sending()), width=10).pack(fill="x")
+        run.grid(row=0, column=3, sticky="ne", padx=6, pady=(2, 4))
+        self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
+        self.btn_start.pack(fill="x", pady=(0, 6))
+        self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
+        self.btn_pause.pack(fill="x", pady=(0, 6))
+        self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
+        self.btn_restart.pack(fill="x")
 
         # Channel integrated bar with saved-channels selector next to it
         chan_bar = tk.Frame(left, bg="#2c2750")
-        chan_bar.grid(row=1, column=0, columnspan=2, sticky="we", padx=10, pady=4)
+        chan_bar.grid(row=1, column=0, columnspan=2, sticky="we", padx=10, pady=2)
         tk.Label(chan_bar, text="Channel ID", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(chan_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
-        self.channel_entry = tk.Entry(chan_bar, width=32, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.channel_entry = tk.Entry(chan_bar, width=42, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.channel_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(chan_bar, text="Save", command=self.save_channel).pack(side="left", padx=(0, 6))
         try:
@@ -450,7 +453,7 @@ class DiscordBotGUI:
         # Saved channels checklist to the right of the channel bar
         self.channel_vars = {}
         self.channels_frame = tk.Frame(left, bg="#1e1b29")
-        self.channels_frame.grid(row=1, column=2, columnspan=2, sticky="nwe", padx=6, pady=4)
+        self.channels_frame.grid(row=1, column=2, columnspan=2, sticky="nwe", padx=6, pady=2)
 
         # Reply DM message integrated bar (multi-line)
         reply_bar = tk.Frame(left, bg="#2c2750")
@@ -469,15 +472,18 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Message Rotator (add/remove messages)
+        # Message Rotator (wider, matches token bar width)
         rot = tk.Frame(left, bg="#1e1b29")
         rot.grid(row=3, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 2))
         tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(side="left")
-        self.rotator_input = tk.Entry(rot, width=40, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.rotator_input = tk.Entry(rot, width=56, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.rotator_input.pack(side="left", fill="x", expand=True, padx=(8, 6))
-        tk.Button(rot, text="Add", command=self._rotator_add).pack(side="left")
-        tk.Button(rot, text="Remove", command=self._rotator_remove).pack(side="left", padx=(6, 0))
-        tk.Button(rot, text="Clear", command=self._rotator_clear).pack(side="left", padx=(6, 0))
+        self.btn_add = tk.Button(rot, text="Add", command=self._rotator_add, width=12)
+        self.btn_add.pack(side="left")
+        self.btn_remove = tk.Button(rot, text="Remove", command=self._rotator_remove, width=12)
+        self.btn_remove.pack(side="left", padx=(6, 0))
+        self.btn_clear = tk.Button(rot, text="Clear", command=self._rotator_clear, width=12)
+        self.btn_clear.pack(side="left", padx=(6, 0))
         try:
             self.apply_glow(self.rotator_input)
         except Exception:
@@ -485,43 +491,43 @@ class DiscordBotGUI:
         self.rotator_list = tk.Listbox(left, height=4, bg="#120f1f", fg="#e0d7ff", selectbackground="#5a3e99")
         self.rotator_list.grid(row=3, column=3, sticky="nwe", padx=6, pady=(0, 2))
 
-        # Bottom row: Message Content (smaller, left corner)
+        # Bottom row: Message Content
         tk.Label(left, text="Message Content:").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
-        self.message_entry = tk.Text(left, height=4, width=40, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry = tk.Text(left, height=6, width=44, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.message_entry.grid(row=4, column=0, sticky="nwe", padx=10, pady=(2, 6))
         try:
             self.apply_glow(self.message_entry)
         except Exception:
             pass
 
-        # Delays stacked to the right of message content
+        # Delays bigger, stacked
         delays = tk.Frame(left, bg="#1e1b29")
-        delays.grid(row=4, column=1, sticky="n", padx=6, pady=(6, 6))
+        delays.grid(row=4, column=1, sticky="n", padx=6, pady=(6, 0))
         tk.Label(delays, text="Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.delay_entry = tk.Entry(delays, width=10, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.delay_entry = tk.Entry(delays, width=16, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.delay_entry.insert(0, "3")
-        self.delay_entry.pack(fill="x", pady=(0, 8))
+        self.delay_entry.pack(fill="x", pady=(0, 12))
         tk.Label(delays, text="Reply Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.reply_delay_entry = tk.Entry(delays, width=10, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_delay_entry = tk.Entry(delays, width=16, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
-        self.reply_delay_entry.pack(fill="x")
+        self.reply_delay_entry.pack(fill="x", pady=(0, 12))
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
         except Exception:
             pass
 
-        # Activity Log next to message content (bottom-right of left area)
+        # Activity Log next to message content (bottom-right of left area), taller
         log_panel = tk.Frame(left, bg="#1e1b29")
         log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
         tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.log_text = tk.Text(log_panel, height=8, width=40, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
+        self.log_text = tk.Text(log_panel, height=12, width=44, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
-        # Brand in empty space
+        # Brand moved under Reply Delay
         try:
-            brand = tk.Label(left, text="KoolaidSippin\nMade by\nIris & Classical", bg="#1e1b29", fg="#bfaef5", font=self.title_font, justify="right")
-            brand.grid(row=3, column=2, columnspan=2, sticky="ne", padx=10, pady=(2, 2))
+            brand = tk.Label(left, text="KoolaidSippin\nMade by Iris & Classical\n\nJOIN US! - ", bg="#1e1b29", fg="#bfaef5", font=self.title_font, justify="left")
+            brand.grid(row=4, column=1, sticky="s", padx=10, pady=(0, 6))
         except Exception:
             pass
 
@@ -1013,6 +1019,14 @@ class DiscordBotGUI:
         self.selected_channel_names = selected_channels
         self.send_running = True
 
+        # Button color states
+        try:
+            self.btn_start.configure(bg="#22c55e")  # green
+            self.btn_pause.configure(bg="#5a3e99")
+            self.btn_restart.configure(bg="#5a3e99")
+        except Exception:
+            pass
+        
         threading.Thread(target=self.send_messages_loop,
                          args=(self.tokens[token_name], self.selected_channel_names, message, delay, loop_count),
                          daemon=True).start()
@@ -1066,6 +1080,14 @@ class DiscordBotGUI:
         self.send_running = not self.send_running
         status = "Resumed" if self.send_running else "Paused"
         self.log(f"ℹ️ {status} sending messages.")
+        try:
+            if self.send_running:
+                self.btn_start.configure(bg="#22c55e")
+                self.btn_pause.configure(bg="#5a3e99")
+            else:
+                self.btn_pause.configure(bg="#eab308")  # yellow
+        except Exception:
+            pass
 
     def stop_sending(self):
         if not self.send_running:
@@ -1073,6 +1095,17 @@ class DiscordBotGUI:
             return
         self.send_running = False
         self.log("🛑 Stopped sending messages.")
+        try:
+            self.btn_restart.configure(bg="#ef4444")  # red
+            self.btn_start.configure(bg="#5a3e99")
+            self.btn_pause.configure(bg="#5a3e99")
+        except Exception:
+            pass
+
+    def _restart_sending(self):
+        self.stop_sending()
+        # brief tick to allow UI to update
+        self.root.after(150, self.start_sending)
 
     # -------- DM Reply Logic --------
     def toggle_reply_dm(self):
