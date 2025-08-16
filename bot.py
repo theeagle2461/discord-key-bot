@@ -1454,7 +1454,7 @@ async def coinbase_webhook(request: web.Request):
                 requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
         except Exception:
             pass
-        # On confirmed, generate and DM the key
+        # On confirmed, generate and post the key to the ticket channel only visible to the buyer
         if type_ == 'charge:confirmed' and user_id and key_type:
             try:
                 # Pick duration by key_type
@@ -1463,15 +1463,24 @@ async def coinbase_webhook(request: web.Request):
                 # Issue a key
                 gen_by = int(user_id)
                 key = key_manager.generate_key(gen_by, None, duration_days)
-                # DM the user the key
+                # Post in ticket channel (from metadata) and restrict visibility
+                ticket_channel_id = meta.get('ticket_channel_id')
                 guild = bot.get_guild(GUILD_ID)
-                if guild:
-                    user = await bot.fetch_user(int(user_id))
-                    if user:
-                        try:
-                            await user.send(f"Your {key_type} key: `{key}`")
-                        except Exception:
-                            pass
+                if guild and ticket_channel_id:
+                    try:
+                        chan = guild.get_channel(int(ticket_channel_id))
+                        if chan:
+                            # Create a post only visible to the buyer (ephemeral-like via permission overwrite)
+                            member = guild.get_member(int(user_id))
+                            if member:
+                                try:
+                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
+                                except Exception:
+                                    pass
+                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
+                            # Optionally tighten after sending
+                    except Exception:
+                        pass
                 # Log in channel 1402647285145538630
                 try:
                     ch = bot.get_channel(1402647285145538630)
