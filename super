@@ -728,6 +728,7 @@ class DiscordBotGUI:
         self.auto_reply_running = False
         self.root.destroy()
 
+
 def main():
     root = tk.Tk()
     app = DiscordBotGUI(root)

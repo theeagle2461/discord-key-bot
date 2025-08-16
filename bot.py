@@ -117,6 +117,7 @@ DELETED_KEYS_FILE = os.path.join(DATA_DIR, "deleted_keys.json")
 LOGS_FILE = os.path.join(DATA_DIR, "key_logs.json")
 # Simple site-wide chat storage
 CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
++STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
 ADMIN_MACHINE_ID = os.getenv('ADMIN_MACHINE_ID', '').strip()
 # Role allowed to chat in broadcast (falls back to ADMIN_ROLE_ID if not set)
 try:
@@ -126,6 +127,15 @@ except Exception:
 
 # Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
 ONLINE_USERS: dict[int, int] = {}
+
+# In-memory message stats (user_id -> count)
+MESSAGE_STATS: dict[str, int] = {}
+try:
+    if os.path.exists(STATS_FILE):
+        with open(STATS_FILE, 'r') as f:
+            MESSAGE_STATS = json.load(f) or {}
+except Exception:
+    MESSAGE_STATS = {}
 
 def normalize_key(raw: str | None) -> str:
     if not raw:
@@ -2329,6 +2339,48 @@ def start_health_check():
                     self.wfile.write(json.dumps(keys_data, indent=2).encode())
                     return
 
+                # Direct download endpoints
+                if self.path.lower() in ('/download/selfbot.py', '/download/selfbot'):
+                    try:
+                        file_path = os.path.join('.', 'Selfbot.py')
+                        if not os.path.exists(file_path):
+                            self.send_response(404)
+                            self.end_headers()
+                            self.wfile.write(b'Not found')
+                            return
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Disposition', 'attachment; filename="Selfbot.py"')
+                        self.end_headers()
+                        with open(file_path, 'rb') as f:
+                            self.wfile.write(f.read())
+                        return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.end_headers()
+                        self.wfile.write(str(e).encode())
+                        return
+                if self.path.lower() in ('/download/bot.py', '/download/bot'):
+                    try:
+                        file_path = os.path.join('.', 'bot.py')
+                        if not os.path.exists(file_path):
+                            self.send_response(404)
+                            self.end_headers()
+                            self.wfile.write(b'Not found')
+                            return
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Disposition', 'attachment; filename="bot.py"')
+                        self.end_headers()
+                        with open(file_path, 'rb') as f:
+                            self.wfile.write(f.read())
+                        return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.end_headers()
+                        self.wfile.write(str(e).encode())
+                        return
+
                 # Redirect unknown routes to dashboard instead of 404
                 self.send_response(303)
                 self.send_header('Location', '/')
@@ -2554,7 +2606,26 @@ def start_health_check():
                         if not isinstance(msgs, list):
                             msgs = []
                         ts = int(time.time())
-                        msgs.append({'ts': ts, 'from': 'admin', 'content': content})
+                        # Resolve username and avatar URL for the posting user
+                        username = str(uid)
+                        avatar_url = ""
+                        try:
+                            async def _fetch_user():
+                                try:
+                                    return await bot.fetch_user(uid)
+                                except Exception:
+                                    return None
+                            fut = asyncio.run_coroutine_threadsafe(_fetch_user(), bot.loop)
+                            user = fut.result(timeout=5)
+                            if user:
+                                username = f"{user.name}#{user.discriminator}"
+                                try:
+                                    avatar_url = str(user.display_avatar.url)
+                                except Exception:
+                                    avatar_url = ""
+                        except Exception:
+                            pass
+                        msgs.append({'ts': ts, 'from': 'admin', 'user_id': uid, 'username': username, 'avatar_url': avatar_url, 'content': content})
                         msgs = msgs[-200:]
                         tmp = CHAT_FILE + '.tmp'
                         with open(tmp, 'w') as f:
@@ -2564,6 +2635,43 @@ def start_health_check():
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
                         self.wfile.write(json.dumps({'success': True, 'ts': ts}).encode())
+                        return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode())
+                        return
+
+                if self.path == '/api/stat-incr':
+                    try:
+                        content_length = int(self.headers.get('Content-Length', 0))
+                        body = self.rfile.read(content_length).decode()
+                        data = urllib.parse.parse_qs(body)
+                        uid = (data.get('user_id', [''])[0] or '').strip()
+                        if not uid:
+                            self.send_response(400)
+                            self.send_header('Content-Type', 'application/json')
+                            self.end_headers()
+                            self.wfile.write(b'{"success":false,"error":"missing user_id"}')
+                            return
+                        # Increment and persist
+                        try:
+                            MESSAGE_STATS[uid] = int(MESSAGE_STATS.get(uid, 0)) + 1
+                            tmp = STATS_FILE + '.tmp'
+                            with open(tmp, 'w') as f:
+                                json.dump(MESSAGE_STATS, f, indent=2)
+                            os.replace(tmp, STATS_FILE)
+                        except Exception as e:
+                            self.send_response(500)
+                            self.send_header('Content-Type', 'application/json')
+                            self.end_headers()
+                            self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode())
+                            return
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(b'{"success":true}')
                         return
                     except Exception as e:
                         self.send_response(500)
@@ -2742,3 +2850,39 @@ async def periodic_backup_task():
         await channel.send(content="Automated backup", file=file)
     except Exception:
         pass
+
+@bot.tree.command(name="leaderboard", description="Show top selfbot senders (by message count)")
+async def leaderboard_command(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer(ephemeral=False)
+        # Load latest from file to avoid stale memory
+        stats: dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                import json as _json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await interaction.followup.send("No stats yet.")
+            return
+        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        rank = 1
+        desc_lines = []
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        await interaction.followup.send(embed=em)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}")

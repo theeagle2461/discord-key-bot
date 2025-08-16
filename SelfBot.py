@@ -171,6 +171,8 @@ class DiscordBotGUI:
         # Apply theme/colors/fonts to all widgets
         self.apply_theme()
 
+
+
     # -------- Background & Visuals --------
     def create_gradient_image(self, width, height):
         base = Image.new('RGB', (width, height), "#1e1b29")
