@@ -8,6 +8,7 @@ import platform
 import hashlib
 import threading
 import sys
+import subprocess
 import re
 import webbrowser
 
@@ -1885,6 +1886,19 @@ if __name__ == "__main__":
     print("=" * 40)
     print(f"Version: {SB_VERSION}")
     
+    # Optional: play a startup MP4 if present (non-blocking)
+    try:
+        video_path = os.getenv('STARTUP_MP4', 'startup.mp4')
+        if os.path.exists(video_path):
+            if sys.platform.startswith('win'):
+                os.startfile(video_path)  # opens default player
+            elif sys.platform.startswith('darwin'):
+                subprocess.Popen(['open', video_path])
+            else:
+                subprocess.Popen(['xdg-open', video_path])
+    except Exception:
+        pass
+
     selfbot = Selfbot()
     selfbot.run()
 
