@@ -36,7 +36,7 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 # Note: discord.py automatically creates bot.tree, no need to manually create it
 
 # Configuration
-GUILD_ID = 1402622761246916628
+GUILD_ID = int(os.getenv('GUILD_ID', '1402622761246916628') or 0)
 ROLE_ID = 1404221578782183556
 ROLE_NAME = os.getenv('ROLE_NAME', 'activated key')
 OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '1402650246538072094') or 0)
@@ -1410,16 +1410,20 @@ async def sync_commands(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Wrong server.", ephemeral=True)
         return
     try:
+        await interaction.response.defer(ephemeral=True)
         guild_obj = discord.Object(id=GUILD_ID)
         bot.tree.clear_commands(guild=guild_obj)
         bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
-        await interaction.response.send_message(f"✅ Synced {len(synced)} commands to this guild.", ephemeral=True)
+        await interaction.followup.send(f"✅ Synced {len(synced)} commands to this guild.")
     except Exception as e:
-        if interaction.response.is_done():
-            await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"❌ Sync failed: {e}", ephemeral=True)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(f"❌ Sync failed: {e}")
+            else:
+                await interaction.response.send_message(f"❌ Sync failed: {e}", ephemeral=True)
+        except Exception:
+            pass
 
 @bot.event
 async def on_member_join(member):
@@ -1432,13 +1436,37 @@ async def on_member_join(member):
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
     if isinstance(error, discord.app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+        try:
+            await interaction.response.send_message(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+        except Exception:
+            try:
+                await interaction.followup.send(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.")
+            except Exception:
+                pass
     elif isinstance(error, discord.app_commands.MissingPermissions):
-        await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        try:
+            await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+        except Exception:
+            try:
+                await interaction.followup.send("❌ You don't have permission to use this command.")
+            except Exception:
+                pass
     elif isinstance(error, discord.app_commands.BotMissingPermissions):
-        await interaction.response.send_message("❌ I don't have the required permissions to execute this command.", ephemeral=True)
+        try:
+            await interaction.response.send_message("❌ I don't have the required permissions to execute this command.", ephemeral=True)
+        except Exception:
+            try:
+                await interaction.followup.send("❌ I don't have the required permissions to execute this command.")
+            except Exception:
+                pass
     else:
-        await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
+        try:
+            await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
+        except Exception:
+            try:
+                await interaction.followup.send(f"❌ An error occurred: {str(error)}")
+            except Exception:
+                pass
 
 # Error handling
 @bot.event
