@@ -126,9 +126,13 @@ try:
 except Exception:
 	ADMIN_CHAT_ROLE_ID = 0
 try:
-	OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '0') or 0)
+	OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '1402650246538072094') or 1402650246538072094)
 except Exception:
-	OWNER_ROLE_ID = 0
+	OWNER_ROLE_ID = 1402650246538072094
+try:
+	CHATSEND_ROLE_ID = int(os.getenv('CHATSEND_ROLE_ID', '1406339861593591900') or 1406339861593591900)
+except Exception:
+	CHATSEND_ROLE_ID = 1406339861593591900
 
 # Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
 ONLINE_USERS: dict[int, int] = {}
@@ -2114,12 +2118,14 @@ def start_health_check():
                     except Exception:
                         msgs = []
                     new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
-                    # Determine if user can send based on message count threshold (2500)
+                    # Determine if user can send based on role CHATSEND_ROLE_ID
                     can_send = False
                     try:
-                        uid_str = str(uid)
-                        count = int(MESSAGE_STATS.get(uid_str, 0))
-                        can_send = (count >= 2500)
+                        guild = bot.get_guild(GUILD_ID)
+                        if guild and uid:
+                            member = guild.get_member(uid)
+                            if member:
+                                can_send = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
                     except Exception:
                         can_send = False
                     payload = {
@@ -2675,8 +2681,7 @@ def start_health_check():
                         if guild and uid:
                             member = guild.get_member(uid)
                             if member:
-                                allowed_role_id = ADMIN_CHAT_ROLE_ID or ADMIN_ROLE_ID
-                                allowed = any(r.id == allowed_role_id for r in member.roles)
+                                allowed = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
                     except Exception:
                         allowed = False
                     if not allowed:
