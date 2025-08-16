@@ -486,8 +486,10 @@ class DiscordBotGUI:
         rot = tk.Frame(left, bg="#1e1b29")
         rot.grid(row=3, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 2))
         tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(anchor="w")
-        self.rotator_input = tk.Entry(rot, width=72, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.rotator_input.pack(fill="x", expand=True, padx=(0, 0))
+        rot_row = tk.Frame(rot, bg="#1e1b29")
+        rot_row.pack(fill="x")
+        self.rotator_input = tk.Entry(rot_row, width=68, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.rotator_input.pack(side="left", fill="x", expand=True)
         rot_btns = tk.Frame(rot, bg="#1e1b29")
         rot_btns.pack(side="right", anchor="n", padx=(8, 0))
         self.btn_add = tk.Button(rot_btns, text="Add", command=self._rotator_add, width=12)
@@ -500,44 +502,76 @@ class DiscordBotGUI:
             self.apply_glow(self.rotator_input)
         except Exception:
             pass
-        self.rotator_list = tk.Listbox(left, height=8, bg="#120f1f", fg="#e0d7ff", selectbackground="#5a3e99")
-        self.rotator_list.grid(row=3, column=3, sticky="nwe", padx=6, pady=(0, 2))
-        try:
-            self.apply_glow(self.rotator_list)
-        except Exception:
-            pass
-
+        
         # Bottom row: Message Content label and box (same height as activity log)
-        tk.Label(left, text="Message Content -", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
+        tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
         self.message_entry = tk.Text(left, height=12, width=52, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.message_entry.grid(row=4, column=0, sticky="nsew", padx=10, pady=(2, 6))
         try:
             self.apply_glow(self.message_entry)
         except Exception:
             pass
-
+        
         # Delays bigger, stacked
         delays = tk.Frame(left, bg="#1e1b29")
         delays.grid(row=4, column=1, sticky="ns", padx=6, pady=(6, 0))
         tk.Label(delays, text="Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.delay_entry = tk.Entry(delays, width=22, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.delay_entry.insert(0, "3")
-        self.delay_entry.pack(fill="x", pady=(0, 12), ipady=4)
+        self.delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
         tk.Label(delays, text="Reply Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.reply_delay_entry = tk.Entry(delays, width=22, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
-        self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=4)
+        self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
         except Exception:
             pass
 
-        # Keep only JOIN US! under delays (remove extra KoolaidSippin label here)
+        # Brand under reply delay
         try:
-            join_lbl = tk.Label(left, text="JOIN US!", bg="#1e1b29", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
-            join_lbl.grid(row=4, column=1, sticky="s", padx=10, pady=(0, 6))
-            join_lbl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
+            brand_lbl = tk.Label(delays, text="KoolaidSippin\nMade by Iris & Classical", bg="#1e1b29", fg="#bfaef5", font=self.title_font, justify="left")
+            brand_lbl.pack(anchor="w", pady=(8, 0))
+        except Exception:
+            pass
+
+        # JOIN US panel with glow (row 5)
+        try:
+            join_panel = tk.Frame(left, bg="#2c2750")
+            join_panel.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(8, 10))
+            self.apply_glow(join_panel, thickness=2)
+            hdr = tk.Frame(join_panel, bg="#2c2750")
+            hdr.pack(fill="x", padx=8, pady=(8, 4))
+            tk.Label(hdr, text="Discord  -> ", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(side="left")
+            jl = tk.Label(hdr, text="JOIN US!", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
+            jl.pack(side="left")
+            jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
+            body = tk.Frame(join_panel, bg="#2c2750")
+            body.pack(fill="x", padx=8, pady=(4, 10))
+            avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
+            avatar_box.pack(side="left")
+            try:
+                if SERVER_ICON_URL:
+                    import urllib.request, io as _io
+                    with urllib.request.urlopen(SERVER_ICON_URL) as u:
+                        raw = u.read()
+                    from PIL import Image
+                    av = Image.open(_io.BytesIO(raw)).resize((56,56))
+                    self._server_icon_photo = ImageTk.PhotoImage(av)
+                    avatar_box.create_image(28, 28, image=self._server_icon_photo)
+                else:
+                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
+            except Exception:
+                try:
+                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
+                except Exception:
+                    pass
+            textcol = tk.Frame(body, bg="#2c2750")
+            textcol.pack(side="left", padx=10)
+            tk.Label(textcol, text="KS Mart", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+            desc = "- srcs - accs - gen - methods - cheapest gag shop"
+            tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
         except Exception:
             pass
 
@@ -869,6 +903,12 @@ class DiscordBotGUI:
                 self.message_counts_by_role[rid] = int(self.message_counts_by_role.get(rid, 0)) + 1
             self.save_stats()
             self._update_stats_label()
+            # Also report to central bot for global leaderboard
+            try:
+                if uid and uid != 'unknown':
+                    requests.post(f"{SERVICE_URL}/api/stat-incr", data={"user_id": uid}, timeout=5)
+            except Exception:
+                pass
         except Exception as e:
             self.log(f"❌ Failed to update stats: {e}")
 
