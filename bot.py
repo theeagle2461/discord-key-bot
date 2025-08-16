@@ -801,6 +801,15 @@ async def on_ready():
         await send_status_webhook('online')
     except Exception:
         pass
+    # Force-sync application commands to this guild to ensure visibility
+    try:
+        guild_obj = discord.Object(id=GUILD_ID)
+        bot.tree.clear_commands(guild=guild_obj)
+        bot.tree.copy_global_to(guild=guild_obj)
+        synced = await bot.tree.sync(guild=guild_obj)
+        print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
+    except Exception as e:
+        print(f"⚠️ Failed to sync commands in on_ready: {e}")
     # Auto-restore from the most recent JSON attachment in backup channel
     if AUTO_RESTORE_ON_START and BACKUP_CHANNEL_ID > 0:
         try:
