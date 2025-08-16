@@ -420,7 +420,7 @@ class DiscordBotGUI:
         token_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 6))
         tk.Label(token_bar, text="Token", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(token_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
-        self.token_entry = tk.Entry(token_bar, width=56, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.token_entry = tk.Entry(token_bar, width=64, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.token_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(token_bar, text="Save", command=self.save_token).pack(side="left", padx=(0, 6))
         self.token_var = tk.StringVar()
@@ -449,7 +449,7 @@ class DiscordBotGUI:
         chan_bar.grid(row=1, column=0, columnspan=2, sticky="we", padx=10, pady=2)
         tk.Label(chan_bar, text="Channel ID", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(chan_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
-        self.channel_entry = tk.Entry(chan_bar, width=42, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.channel_entry = tk.Entry(chan_bar, width=52, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.channel_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(chan_bar, text="Save", command=self.save_channel).pack(side="left", padx=(0, 6))
         try:
@@ -484,7 +484,7 @@ class DiscordBotGUI:
         rot = tk.Frame(left, bg="#1e1b29")
         rot.grid(row=3, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 2))
         tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(side="left")
-        self.rotator_input = tk.Entry(rot, width=56, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.rotator_input = tk.Entry(rot, width=64, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.rotator_input.pack(side="left", fill="x", expand=True, padx=(8, 6))
         self.btn_add = tk.Button(rot, text="Add", command=self._rotator_add, width=12)
         self.btn_add.pack(side="left")
@@ -542,9 +542,50 @@ class DiscordBotGUI:
         except Exception:
             pass
 
+        # Discord Join panel under delays with glow and image
+        try:
+            join_panel = tk.Frame(left, bg="#2c2750")
+            join_panel.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(0, 10))
+            self.apply_glow(join_panel, thickness=2)
+            # Top banner image
+            try:
+                import urllib.request, io as _io
+                with urllib.request.urlopen("https://cdn.discordapp.com/attachments/1401478380188205059/1406334168010461194/download_1_1.jpg") as u:
+                    raw = u.read()
+                from PIL import Image
+                banner_img = Image.open(_io.BytesIO(raw))
+                banner_img = banner_img.resize((520, 110))
+                self._join_banner_photo = ImageTk.PhotoImage(banner_img)
+                tk.Label(join_panel, image=self._join_banner_photo, bg="#2c2750").pack(fill="x", padx=8, pady=(8, 6))
+            except Exception:
+                pass
+            # Header row: Discord -> JOIN US (clickable)
+            hdr = tk.Frame(join_panel, bg="#2c2750")
+            hdr.pack(fill="x", padx=8)
+            tk.Label(hdr, text="Discord  -> ", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(side="left")
+            jl = tk.Label(hdr, text="JOIN US", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
+            jl.pack(side="left")
+            jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
+            # Server image + name + description list
+            body = tk.Frame(join_panel, bg="#2c2750")
+            body.pack(fill="x", padx=8, pady=(6, 10))
+            avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
+            avatar_box.pack(side="left")
+            try:
+                avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
+            except Exception:
+                pass
+            textcol = tk.Frame(body, bg="#2c2750")
+            textcol.pack(side="left", padx=10)
+            tk.Label(textcol, text="KS Mart", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+            desc = "- srcs\n- accs\n- gen\n- methods\n- gag shop"
+            tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
+        except Exception:
+            pass
+
         # Message counter label (live-updating)
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
-        self.stats_label.grid(row=5, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
+        self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
 
         # Right: Admin broadcast chat (unchanged)
         header = tk.Label(right, text="Broadcast Chat (Only an admin can chat)", bg="#1e1b29", fg="#e0d7ff")
