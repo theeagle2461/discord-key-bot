@@ -417,41 +417,12 @@ class DiscordBotGUI:
         right = tk.Frame(frame, bg="#1e1b29")
         right.place(relx=0.675, rely=0.0, relwidth=0.325, relheight=1.0)
 
-        # Top controls: token integrated bar and run buttons
-        token_bar = tk.Frame(left, bg="#2c2750")
-        token_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 6))
-        tk.Label(token_bar, text="Token", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
-        tk.Label(token_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
-        self.token_entry = tk.Entry(token_bar, width=64, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.token_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
-        tk.Button(token_bar, text="Save", command=self.save_token).pack(side="left", padx=(0, 6))
-        self.token_var = tk.StringVar()
-        self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
-        self.token_menu.pack(side="left")
-        try:
-            self.apply_glow(token_bar, thickness=2)
-            self.apply_glow(self.token_entry)
-        except Exception:
-            pass
-
-        run = tk.Frame(left, bg="#1e1b29")
-        run.grid(row=0, column=3, sticky="ne", padx=6, pady=(2, 4))
-        self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
-        self.btn_start.pack(fill="x", pady=(0, 6))
-        self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
-        self.btn_pause.pack(fill="x", pady=(0, 6))
-        self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
-        self.btn_restart.pack(fill="x")
-        # Mark as stateful
-        self._stateful_buttons = getattr(self, '_stateful_buttons', set())
-        self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
-
-        # Channel integrated bar with saved-channels selector next to it
+        # Top controls moved: Channel first (row 0), Token below (row 1)
         chan_bar = tk.Frame(left, bg="#2c2750")
-        chan_bar.grid(row=1, column=0, columnspan=2, sticky="we", padx=10, pady=2)
+        chan_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 4))
         tk.Label(chan_bar, text="Channel ID", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(chan_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
-        self.channel_entry = tk.Entry(chan_bar, width=52, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.channel_entry = tk.Entry(chan_bar, width=62, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.channel_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(chan_bar, text="Save", command=self.save_channel).pack(side="left", padx=(0, 6))
         try:
@@ -463,16 +434,45 @@ class DiscordBotGUI:
         # Saved channels checklist to the right of the channel bar
         self.channel_vars = {}
         self.channels_frame = tk.Frame(left, bg="#1e1b29")
-        self.channels_frame.grid(row=1, column=2, columnspan=2, sticky="nwe", padx=6, pady=2)
+        self.channels_frame.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
 
-        # Reply DM message integrated bar (multi-line)
+        # Token integrated bar (row 1)
+        token_bar = tk.Frame(left, bg="#2c2750")
+        token_bar.grid(row=1, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 6))
+        tk.Label(token_bar, text="Token", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
+        tk.Label(token_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
+        self.token_entry = tk.Entry(token_bar, width=72, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.token_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
+        tk.Button(token_bar, text="Save", command=self.save_token).pack(side="left", padx=(0, 6))
+        self.token_var = tk.StringVar()
+        self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
+        self.token_menu.pack(side="left")
+        try:
+            self.apply_glow(token_bar, thickness=2)
+            self.apply_glow(self.token_entry)
+        except Exception:
+            pass
+
+        # Run buttons (top-right)
+        run = tk.Frame(left, bg="#1e1b29")
+        run.grid(row=1, column=3, sticky="ne", padx=6, pady=(2, 4))
+        self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
+        self.btn_start.pack(fill="x", pady=(0, 6))
+        self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
+        self.btn_pause.pack(fill="x", pady=(0, 6))
+        self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
+        self.btn_restart.pack(fill="x")
+        self._stateful_buttons = getattr(self, '_stateful_buttons', set())
+        self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
+
+        # Reply DM message integrated bar (row 2)
         reply_bar = tk.Frame(left, bg="#2c2750")
         reply_bar.grid(row=2, column=0, columnspan=4, sticky="we", padx=10, pady=(6, 4))
         tk.Label(reply_bar, text="Reply DM", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
         inner_reply.pack(side="left", fill="x", expand=True)
-        self.reply_dm_entry = tk.Text(inner_reply, height=3, width=55, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(6, 6))
         self.reply_dm_button = tk.Button(reply_bar, text="Start Reply DM", command=self.toggle_reply_dm)
         self.reply_dm_button.pack(side="left", padx=(6, 8))
@@ -482,29 +482,35 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Message Rotator (wider, matches token bar width)
+        # Message Rotator (row 3) bigger, vertical buttons
         rot = tk.Frame(left, bg="#1e1b29")
         rot.grid(row=3, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 2))
-        tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(side="left")
-        self.rotator_input = tk.Entry(rot, width=64, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.rotator_input.pack(side="left", fill="x", expand=True, padx=(8, 6))
-        self.btn_add = tk.Button(rot, text="Add", command=self._rotator_add, width=12)
-        self.btn_add.pack(side="left")
-        self.btn_remove = tk.Button(rot, text="Remove", command=self._rotator_remove, width=12)
-        self.btn_remove.pack(side="left", padx=(6, 0))
-        self.btn_clear = tk.Button(rot, text="Clear", command=self._rotator_clear, width=12)
-        self.btn_clear.pack(side="left", padx=(6, 0))
+        tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(anchor="w")
+        self.rotator_input = tk.Entry(rot, width=72, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.rotator_input.pack(fill="x", expand=True, padx=(0, 0))
+        rot_btns = tk.Frame(rot, bg="#1e1b29")
+        rot_btns.pack(side="right", anchor="n", padx=(8, 0))
+        self.btn_add = tk.Button(rot_btns, text="Add", command=self._rotator_add, width=12)
+        self.btn_add.pack(fill="x")
+        self.btn_remove = tk.Button(rot_btns, text="Remove", command=self._rotator_remove, width=12)
+        self.btn_remove.pack(fill="x", pady=(6, 0))
+        self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=12)
+        self.btn_clear.pack(fill="x", pady=(6, 0))
         try:
             self.apply_glow(self.rotator_input)
         except Exception:
             pass
-        self.rotator_list = tk.Listbox(left, height=4, bg="#120f1f", fg="#e0d7ff", selectbackground="#5a3e99")
+        self.rotator_list = tk.Listbox(left, height=8, bg="#120f1f", fg="#e0d7ff", selectbackground="#5a3e99")
         self.rotator_list.grid(row=3, column=3, sticky="nwe", padx=6, pady=(0, 2))
+        try:
+            self.apply_glow(self.rotator_list)
+        except Exception:
+            pass
 
-        # Bottom row: Message Content
-        tk.Label(left, text="Message Content:").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
-        self.message_entry = tk.Text(left, height=6, width=44, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.message_entry.grid(row=4, column=0, sticky="nwe", padx=10, pady=(2, 6))
+        # Bottom row: Message Content label and box (same height as activity log)
+        tk.Label(left, text="Message Content -", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
+        self.message_entry = tk.Text(left, height=12, width=52, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry.grid(row=4, column=0, sticky="nsew", padx=10, pady=(2, 6))
         try:
             self.apply_glow(self.message_entry)
         except Exception:
@@ -512,90 +518,35 @@ class DiscordBotGUI:
 
         # Delays bigger, stacked
         delays = tk.Frame(left, bg="#1e1b29")
-        delays.grid(row=4, column=1, sticky="n", padx=6, pady=(6, 0))
+        delays.grid(row=4, column=1, sticky="ns", padx=6, pady=(6, 0))
         tk.Label(delays, text="Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.delay_entry = tk.Entry(delays, width=16, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.delay_entry = tk.Entry(delays, width=22, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.delay_entry.insert(0, "3")
-        self.delay_entry.pack(fill="x", pady=(0, 12))
+        self.delay_entry.pack(fill="x", pady=(0, 12), ipady=4)
         tk.Label(delays, text="Reply Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.reply_delay_entry = tk.Entry(delays, width=16, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_delay_entry = tk.Entry(delays, width=22, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
-        self.reply_delay_entry.pack(fill="x", pady=(0, 12))
+        self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=4)
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
         except Exception:
             pass
 
-        # Activity Log next to message content (bottom-right of left area), taller
-        log_panel = tk.Frame(left, bg="#1e1b29")
-        log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.log_text = tk.Text(log_panel, height=12, width=44, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
-        self.log_text.pack(fill="both", expand=True)
-
-        # Brand moved under Reply Delay with clickable JOIN US!
+        # Keep only JOIN US! under delays (remove extra KoolaidSippin label here)
         try:
-            brand_top = tk.Label(left, text="KoolaidSippin\nMade by Iris & Classical", bg="#1e1b29", fg="#bfaef5", font=self.title_font, justify="left")
-            brand_top.grid(row=4, column=1, sticky="s", padx=10, pady=(0, 0))
             join_lbl = tk.Label(left, text="JOIN US!", bg="#1e1b29", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
             join_lbl.grid(row=4, column=1, sticky="s", padx=10, pady=(0, 6))
             join_lbl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
         except Exception:
             pass
 
-        # Discord Join panel under delays with glow and image
-        try:
-            join_panel = tk.Frame(left, bg="#2c2750")
-            join_panel.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(0, 10))
-            self.apply_glow(join_panel, thickness=2)
-            # Top banner image
-            try:
-                import urllib.request, io as _io
-                with urllib.request.urlopen("https://cdn.discordapp.com/attachments/1401478380188205059/1406334168010461194/download_1_1.jpg") as u:
-                    raw = u.read()
-                from PIL import Image
-                banner_img = Image.open(_io.BytesIO(raw))
-                banner_img = banner_img.resize((520, 110))
-                self._join_banner_photo = ImageTk.PhotoImage(banner_img)
-                tk.Label(join_panel, image=self._join_banner_photo, bg="#2c2750").pack(fill="x", padx=8, pady=(8, 6))
-            except Exception:
-                pass
-            # Header row: Discord -> JOIN US (clickable)
-            hdr = tk.Frame(join_panel, bg="#2c2750")
-            hdr.pack(fill="x", padx=8)
-            tk.Label(hdr, text="Discord  -> ", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(side="left")
-            jl = tk.Label(hdr, text="JOIN US", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
-            jl.pack(side="left")
-            jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
-            # Server image + name + description list
-            body = tk.Frame(join_panel, bg="#2c2750")
-            body.pack(fill="x", padx=8, pady=(6, 10))
-            avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
-            avatar_box.pack(side="left")
-            try:
-                if SERVER_ICON_URL:
-                    import urllib.request, io as _io
-                    with urllib.request.urlopen(SERVER_ICON_URL) as u:
-                        raw = u.read()
-                    from PIL import Image
-                    av = Image.open(_io.BytesIO(raw)).resize((56,56))
-                    self._server_icon_photo = ImageTk.PhotoImage(av)
-                    avatar_box.create_image(28, 28, image=self._server_icon_photo)
-                else:
-                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-            except Exception:
-                try:
-                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-                except Exception:
-                    pass
-            textcol = tk.Frame(body, bg="#2c2750")
-            textcol.pack(side="left", padx=10)
-            tk.Label(textcol, text="KS Mart", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-            desc = "- srcs\n- accs\n- gen\n- methods\n- gag shop"
-            tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
-        except Exception:
-            pass
+        # Activity Log next to message content (taller)
+        log_panel = tk.Frame(left, bg="#1e1b29")
+        log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
+        tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        self.log_text = tk.Text(log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
+        self.log_text.pack(fill="both", expand=True)
 
         # Message counter label (live-updating)
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
