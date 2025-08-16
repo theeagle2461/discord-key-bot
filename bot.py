@@ -54,6 +54,11 @@ SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734
 # Webhook configuration for key notifications and selfbot launches
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
+PURCHASE_LOG_WEBHOOK = os.getenv('PURCHASE_LOG_WEBHOOK','')
+# NOWPayments credentials
+NWP_API_KEY = os.getenv('NWP_API_KEY','')
+NWP_IPN_SECRET = os.getenv('NWP_IPN_SECRET','')
+PUBLIC_URL = os.getenv('PUBLIC_URL','')  # optional; used for ipn callback if provided
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -117,6 +122,7 @@ DELETED_KEYS_FILE = os.path.join(DATA_DIR, "deleted_keys.json")
 LOGS_FILE = os.path.join(DATA_DIR, "key_logs.json")
 # Simple site-wide chat storage
 CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
+ANN_FILE = os.path.join(DATA_DIR, "announcements.json")
 STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
 ADMIN_MACHINE_ID = os.getenv('ADMIN_MACHINE_ID', '').strip()
 # Role allowed to chat in broadcast (falls back to ADMIN_ROLE_ID if not set)
@@ -124,6 +130,14 @@ try:
 	ADMIN_CHAT_ROLE_ID = int(os.getenv('ADMIN_CHAT_ROLE_ID', '0') or 0)
 except Exception:
 	ADMIN_CHAT_ROLE_ID = 0
+try:
+	OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '1402650246538072094') or 1402650246538072094)
+except Exception:
+	OWNER_ROLE_ID = 1402650246538072094
+try:
+	CHATSEND_ROLE_ID = int(os.getenv('CHATSEND_ROLE_ID', '1406339861593591900') or 1406339861593591900)
+except Exception:
+	CHATSEND_ROLE_ID = 1406339861593591900
 
 # Online selfbot user heartbeat tracker (user_id -> last_seen_ts)
 ONLINE_USERS: dict[int, int] = {}
@@ -1407,6 +1421,83 @@ async def on_command_error(ctx, error):
     else:
         await ctx.send(f"❌ An error occurred: {str(error)}")
 
+# Coinbase Commerce webhook handler
+from aiohttp import web
+
+async def coinbase_webhook(request: web.Request):
+    try:
+        secret = os.getenv('COMMERCE_WEBHOOK_SECRET','')
+        sig = request.headers.get('X-CC-Webhook-Signature','')
+        body = await request.read()
+        import hmac, hashlib
+        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return web.Response(status=400, text='bad sig')
+        data = json.loads(body.decode())
+        event = data.get('event', {})
+        type_ = event.get('type','')
+        charge = event.get('data',{})
+        meta = (charge.get('metadata') or {})
+        user_id = meta.get('user_id')
+        key_type = meta.get('key_type','')
+        amount = meta.get('amount','')
+        # Log to webhook if configured
+        try:
+            if PURCHASE_LOG_WEBHOOK:
+                color = 0xF59E0B if 'pending' in type_ else 0x22C55E if 'confirmed' in type_ else 0x64748B
+                embed = {
+                    'title': 'Autobuy',
+                    'description': f"{type_}",
+                    'color': color,
+                    'fields': [
+                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
+                        {'name':'Key','value': key_type or '','inline': True},
+                        {'name':'Amount','value': amount or '','inline': True},
+                    ]
+                }
+                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
+        except Exception:
+            pass
+        # On confirmed, generate and post the key to the ticket channel only visible to the buyer
+        if type_ == 'charge:confirmed' and user_id and key_type:
+            try:
+                # Pick duration by key_type
+                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
+                duration_days = durations.get(key_type, 30)
+                # Issue a key
+                gen_by = int(user_id)
+                key = key_manager.generate_key(gen_by, None, duration_days)
+                # Post in ticket channel (from metadata) and restrict visibility
+                ticket_channel_id = meta.get('ticket_channel_id')
+                guild = bot.get_guild(GUILD_ID)
+                if guild and ticket_channel_id:
+                    try:
+                        chan = guild.get_channel(int(ticket_channel_id))
+                        if chan:
+                            # Create a post only visible to the buyer (ephemeral-like via permission overwrite)
+                            member = guild.get_member(int(user_id))
+                            if member:
+                                try:
+                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
+                                except Exception:
+                                    pass
+                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
+                            # Optionally tighten after sending
+                    except Exception:
+                        pass
+                # Log in channel 1402647285145538630
+                try:
+                    ch = bot.get_channel(1402647285145538630)
+                    if ch:
+                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return web.Response(text='ok')
+    except Exception as e:
+        return web.Response(status=500, text=str(e))
+
 # Add a simple health check for Render
 import http.server
 import socketserver
@@ -2056,6 +2147,33 @@ def start_health_check():
                     self.wfile.write(json.dumps(resp, indent=2).encode())
                     return
 
+                if self.path.startswith('/api/ann-poll'):
+                    # Owner-only announcements feed
+                    parsed = urllib.parse.urlparse(self.path)
+                    q = urllib.parse.parse_qs(parsed.query or '')
+                    since_raw = q.get('since', ['0'])[0]
+                    try:
+                        since_ts = int(since_raw)
+                    except Exception:
+                        since_ts = 0
+                    now_ts = int(time.time())
+                    try:
+                        msgs = []
+                        if os.path.exists(ANN_FILE):
+                            with open(ANN_FILE, 'r') as f:
+                                msgs = json.load(f)
+                        if not isinstance(msgs, list):
+                            msgs = []
+                    except Exception:
+                        msgs = []
+                    new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
+                    payload = { 'messages': new_msgs[-100:], 'server_time': now_ts }
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(payload, indent=2).encode())
+                    return
+
                 if self.path.startswith('/api/chat-poll'):
                     # Long-poll style: clients poll for new chat messages
                     parsed = urllib.parse.urlparse(self.path)
@@ -2082,15 +2200,14 @@ def start_health_check():
                     except Exception:
                         msgs = []
                     new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
-                    # Determine if user can send based on role
+                    # Determine if user can send based on role CHATSEND_ROLE_ID
                     can_send = False
                     try:
                         guild = bot.get_guild(GUILD_ID)
                         if guild and uid:
                             member = guild.get_member(uid)
                             if member:
-                                allowed_role_id = ADMIN_CHAT_ROLE_ID or ADMIN_ROLE_ID
-                                can_send = any(r.id == allowed_role_id for r in member.roles)
+                                can_send = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
                     except Exception:
                         can_send = False
                     payload = {
@@ -2564,6 +2681,65 @@ def start_health_check():
                     self.end_headers()
                     return
 
+                if self.path == '/api/ann-post':
+                    # Only members with OWNER_ROLE_ID can post announcements
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode()
+                    data = urllib.parse.parse_qs(body)
+                    content = (data.get('content', [''])[0] or '').strip()
+                    user_q = (data.get('user_id', [''])[0] or '').strip()
+                    if not content:
+                        self.send_response(400)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(b'{"success":false,"error":"empty content"}')
+                        return
+                    try:
+                        uid = int(user_q)
+                    except Exception:
+                        uid = 0
+                    allowed = False
+                    try:
+                        guild = bot.get_guild(GUILD_ID)
+                        if guild and uid:
+                            member = guild.get_member(uid)
+                            if member:
+                                allowed = any(r.id == OWNER_ROLE_ID for r in member.roles)
+                    except Exception:
+                        allowed = False
+                    if not allowed:
+                        self.send_response(403)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(b'{"success":false,"error":"forbidden"}')
+                        return
+                    # Append announcement
+                    try:
+                        msgs = []
+                        if os.path.exists(ANN_FILE):
+                            with open(ANN_FILE, 'r') as f:
+                                msgs = json.load(f)
+                        if not isinstance(msgs, list):
+                            msgs = []
+                        ts = int(time.time())
+                        msgs.append({'ts': ts, 'content': content, 'user_id': uid})
+                        msgs = msgs[-200:]
+                        tmp = ANN_FILE + '.tmp'
+                        with open(tmp, 'w') as f:
+                            json.dump(msgs, f, indent=2)
+                        os.replace(tmp, ANN_FILE)
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': True, 'ts': ts}).encode())
+                        return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode())
+                        return
+
                 if self.path == '/api/chat-post':
                     # Only members with ADMIN_CHAT_ROLE_ID (or ADMIN_ROLE_ID) can post broadcast messages
                     content_length = int(self.headers.get('Content-Length', 0))
@@ -2587,8 +2763,7 @@ def start_health_check():
                         if guild and uid:
                             member = guild.get_member(uid)
                             if member:
-                                allowed_role_id = ADMIN_CHAT_ROLE_ID or ADMIN_ROLE_ID
-                                allowed = any(r.id == allowed_role_id for r in member.roles)
+                                allowed = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
                     except Exception:
                         allowed = False
                     if not allowed:
@@ -2699,6 +2874,22 @@ def start_health_check():
         from http.server import ThreadingHTTPServer
         server = ThreadingHTTPServer(("", port), HealthCheckHandler)
         print(f"🌐 Health check server started on port {port}")
+        # Start aiohttp app for webhooks
+        async def _run_aiohttp():
+            app = web.Application()
+            app.router.add_post('/webhook/coinbase-commerce', coinbase_webhook)
+            app.router.add_post('/webhook/nowpayments', nowpayments_webhook)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', port+1)
+            await site.start()
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.create_task(_run_aiohttp())
         server.serve_forever()
     except Exception as e:
         print(f"❌ Health check server failed: {e}")
@@ -2886,3 +3077,128 @@ async def leaderboard_command(interaction: discord.Interaction):
         await interaction.followup.send(embed=em)
     except Exception as e:
         await interaction.followup.send(f"Error: {e}")
+
+@bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
+async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
+    """Create a NOWPayments invoice for the chosen coin and key type inside a ticket channel."""
+    try:
+        await interaction.response.defer(ephemeral=True)
+        if not NWP_API_KEY or not NWP_IPN_SECRET:
+            await interaction.followup.send("Payment processor not configured.")
+            return
+        coin = coin.upper()
+        if coin not in ("BTC","LTC","ETH","USDC","USDT"):
+            await interaction.followup.send("Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.")
+            return
+        key_type = key_type.lower()
+        price_map = {"daily":3, "weekly":10, "monthly":20, "lifetime":50}
+        if key_type not in price_map:
+            await interaction.followup.send("Invalid key type. Choose daily, weekly, monthly or lifetime.")
+            return
+        amount = price_map[key_type]
+        order_id = f"{interaction.user.id}:{interaction.channel.id}:{key_type}:${amount}"
+        # Build invoice payload
+        payload = {
+            "price_amount": amount,
+            "price_currency": "USD",
+            "order_id": order_id,
+            "order_description": f"{key_type} key for {interaction.user.id}",
+            "pay_currency": coin,
+            "is_fixed_rate": True,
+        }
+        if PUBLIC_URL:
+            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
+        headers = {
+            "x-api-key": NWP_API_KEY,
+            "Content-Type": "application/json"
+        }
+        import requests as _req, json as _json
+        try:
+            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
+            if r.status_code not in (200,201):
+                await interaction.followup.send(f"Failed to create invoice (HTTP {r.status_code}).")
+                return
+            inv = r.json()
+        except Exception as e:
+            await interaction.followup.send(f"Error creating invoice: {e}")
+            return
+        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
+        if not url:
+            await interaction.followup.send("Invoice created but no URL returned.")
+            return
+        note = "autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
+        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
+        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
+        await interaction.followup.send(embed=em)
+    except Exception as e:
+        if interaction.response.is_done():
+            await interaction.followup.send(f"Error: {e}")
+        else:
+            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
+async def nowpayments_webhook(request: web.Request):
+    try:
+        secret = NWP_IPN_SECRET or ''
+        body_txt = await request.text()
+        sig = request.headers.get('x-nowpayments-sig','')
+        import hmac, hashlib
+        expected = hmac.new(secret.encode(), body_txt.encode() if isinstance(body_txt, str) else body_txt, hashlib.sha512).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return web.Response(status=400, text='bad sig')
+        data = json.loads(body_txt)
+        status = str(data.get('payment_status','')).lower()
+        order_id = str(data.get('order_id',''))
+        # order_id format: user:channel:key:amount
+        parts = order_id.split(':') if order_id else []
+        user_id = parts[0] if len(parts) > 0 else None
+        ticket_channel_id = parts[1] if len(parts) > 1 else None
+        key_type = parts[2] if len(parts) > 2 else ''
+        amount = parts[3] if len(parts) > 3 else ''
+        # Log pending/confirmed
+        try:
+            if PURCHASE_LOG_WEBHOOK:
+                color = 0xF59E0B if ('pending' in status or 'waiting' in status or 'confirming' in status) else 0x22C55E if ('finished' in status or 'confirmed' in status) else 0x64748B
+                embed = {
+                    'title': 'Autobuy (NOWPayments)',
+                    'description': status,
+                    'color': color,
+                    'fields': [
+                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
+                        {'name':'Key','value': key_type or '','inline': True},
+                        {'name':'Amount','value': amount or '','inline': True},
+                    ]
+                }
+                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
+        except Exception:
+            pass
+        # On finished/confirmed
+        if user_id and key_type and (('finished' in status) or ('confirmed' in status)):
+            try:
+                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
+                duration_days = durations.get(key_type, 30)
+                key = key_manager.generate_key(int(user_id), None, duration_days)
+                guild = bot.get_guild(GUILD_ID)
+                if guild and ticket_channel_id:
+                    try:
+                        chan = guild.get_channel(int(ticket_channel_id))
+                        if chan:
+                            member = guild.get_member(int(user_id))
+                            if member:
+                                try:
+                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
+                                except Exception:
+                                    pass
+                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
+                    except Exception:
+                        pass
+                try:
+                    ch = bot.get_channel(1402647285145538630)
+                    if ch:
+                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return web.Response(text='ok')
+    except Exception as e:
+        return web.Response(status=500, text=str(e))
