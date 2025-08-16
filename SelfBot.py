@@ -95,7 +95,7 @@ def render_banner(status: str = "offline", frame: int = 0):
 def show_banner_and_prompt() -> tuple[str, str, str]:
     # New GUI login window replacing console input
     root = tk.Tk()
-    root.title("CS Bot Activation")
+    root.title("KoolaidSippin Activation")
     root.configure(bg="#1e1b29")
     root.geometry("520x380")
     root.resizable(False, False)
@@ -115,7 +115,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     card = tk.Frame(root, bg="#2c2750", bd=2, relief="ridge")
     card.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.88, relheight=0.86)
 
-    title = tk.Label(card, text="CS Bot Login", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 16, "bold"))
+    title = tk.Label(card, text="KoolaidSippin Login", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 16, "bold"))
     title.pack(pady=(12, 6))
 
     frm = tk.Frame(card, bg="#2c2750")
@@ -207,7 +207,7 @@ class DiscordBotGUI:
 
     def __init__(self, root: tk.Tk, initial_token: str | None = None):
         self.root = root
-        self.root.title("CS Bot User Panel")
+        self.root.title("KoolaidSippin Panel")
         self.root.geometry("900x700")
         self.root.resizable(True, True)
         self.is_fullscreen = True
