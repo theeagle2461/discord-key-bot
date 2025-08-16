@@ -44,9 +44,12 @@ def render_banner(status: str = "offline", frame: int = 0):
     # Choose font (bigger if available)
     if BANNER_OK:
         try:
-            banner = figlet_format("KoolaidSippin", font="big")
+            banner = figlet_format("KoolaidSippin", font="straight")
         except Exception:
-            banner = figlet_format("KoolaidSippin", font="slant")
+            try:
+                banner = figlet_format("KoolaidSippin", font="block")
+            except Exception:
+                banner = figlet_format("KoolaidSippin", font="big")
         print(Style.BRIGHT + Fore.MAGENTA + banner)
     else:
         print("\n==================== KoolaidSippin ====================\n")
