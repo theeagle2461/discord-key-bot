@@ -127,6 +127,14 @@ CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
 ANN_FILE = os.path.join(DATA_DIR, "announcements.json")
 STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+MESSAGES_THRESHOLD = int(os.getenv('MESSAGES_THRESHOLD', '2500') or 2500)
+MESSAGE_STATS: Dict[str, int] = {}
+try:
+    if os.path.exists(STATS_FILE):
+        with open(STATS_FILE, 'r') as f:
+            MESSAGE_STATS = json.load(f) or {}
+except Exception:
+    MESSAGE_STATS = {}
 
 # Config helpers
 CONFIG: dict = {}
@@ -2259,11 +2267,14 @@ def start_health_check():
                     except Exception:
                         msgs = []
                     new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
-                    # Determine if user can send based on role CHATSEND_ROLE_ID
+                    # Determine if user can send: has role or reached threshold
                     can_send = False
                     try:
                         guild = bot.get_guild(GUILD_ID)
-                        if guild and uid:
+                        cnt = int(MESSAGE_STATS.get(str(uid), 0))
+                        if cnt >= MESSAGES_THRESHOLD:
+                            can_send = True
+                        elif guild and uid:
                             member = guild.get_member(uid)
                             if member:
                                 can_send = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
@@ -2819,10 +2830,27 @@ def start_health_check():
                     allowed = False
                     try:
                         guild = bot.get_guild(GUILD_ID)
-                        if guild and uid:
+                        cnt = int(MESSAGE_STATS.get(str(uid), 0))
+                        if cnt >= MESSAGES_THRESHOLD:
+                            allowed = True
+                        if not allowed and guild and uid:
                             member = guild.get_member(uid)
                             if member:
                                 allowed = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
+                        # Auto-grant role if threshold met and missing role
+                        if guild and uid and allowed and cnt >= MESSAGES_THRESHOLD and CHATSEND_ROLE_ID:
+                            try:
+                                member = guild.get_member(uid)
+                                role = guild.get_role(CHATSEND_ROLE_ID)
+                                if member and role and role not in member.roles:
+                                    async def _add_role():
+                                        try:
+                                            await member.add_roles(role, reason="Reached message threshold")
+                                        except Exception:
+                                            pass
+                                    asyncio.run_coroutine_threadsafe(_add_role(), bot.loop)
+                            except Exception:
+                                pass
                     except Exception:
                         allowed = False
                     if not allowed:
