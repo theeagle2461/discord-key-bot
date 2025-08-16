@@ -189,6 +189,7 @@ ACTIVATION_FILE = "activation.json"
 GUILD_ID = 1402622761246916628  # Your Discord server ID
 ROLE_ID = 1404221578782183556  # Role ID that grants access
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
+JOIN_URL = os.getenv("JOIN_URL", SERVICE_URL)
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
@@ -531,10 +532,13 @@ class DiscordBotGUI:
         self.log_text = tk.Text(log_panel, height=12, width=44, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
-        # Brand moved under Reply Delay
+        # Brand moved under Reply Delay with clickable JOIN US!
         try:
-            brand = tk.Label(left, text="KoolaidSippin\nMade by Iris & Classical\n\nJOIN US! - ", bg="#1e1b29", fg="#bfaef5", font=self.title_font, justify="left")
-            brand.grid(row=4, column=1, sticky="s", padx=10, pady=(0, 6))
+            brand_top = tk.Label(left, text="KoolaidSippin\nMade by Iris & Classical", bg="#1e1b29", fg="#bfaef5", font=self.title_font, justify="left")
+            brand_top.grid(row=4, column=1, sticky="s", padx=10, pady=(0, 0))
+            join_lbl = tk.Label(left, text="JOIN US!", bg="#1e1b29", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
+            join_lbl.grid(row=4, column=1, sticky="s", padx=10, pady=(0, 6))
+            join_lbl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
         except Exception:
             pass
 
