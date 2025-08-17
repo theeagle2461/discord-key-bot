@@ -815,6 +815,13 @@ async def on_ready():
         guild_obj = discord.Object(id=GUILD_ID)
         synced = await bot.tree.sync(guild=guild_obj)
         print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
+        # Fetch remote commands from Discord for this guild and log them
+        try:
+            fetched = await bot.tree.fetch_commands(guild=guild_obj)
+            names = [c.name for c in fetched]
+            print(f"🔎 Remote guild commands: {names}")
+        except Exception as _e:
+            print(f"⚠️ Failed to fetch remote commands: {_e}")
         try:
             names = [c.name for c in bot.tree.get_commands()]
             print(f"🔎 Commands in tree: {names}")
@@ -3250,9 +3257,10 @@ async def sbautobuy(interaction: discord.Interaction, coin: str, key_type: str):
 async def listcommands(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
-        cmds = bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))
-        names = [c.name for c in cmds]
-        await interaction.followup.send("\n".join(names) or "(no commands)")
+        guild_obj = discord.Object(id=GUILD_ID)
+        fetched = await bot.tree.fetch_commands(guild=guild_obj)
+        names = [c.name for c in fetched]
+        await interaction.followup.send("\n".join(names) or "(none)")
     except Exception as e:
         if interaction.response.is_done():
             await interaction.followup.send(f"Error: {e}")
