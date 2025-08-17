@@ -314,9 +314,6 @@ class DiscordBotGUI:
         # Apply theme/colors/fonts to all widgets
         self.apply_theme()
 
-        # Credits box overlay in the center
-        self.create_credit_box()
-
         # Start expiry watchdog if we know who we are
         try:
             if self._login_user_id:
@@ -387,13 +384,8 @@ class DiscordBotGUI:
 
     # -------- Credits Box --------
     def create_credit_box(self):
-        self.credit_frame = tk.Frame(self.root, bg="#2c2750", bd=2, relief="ridge")
-        # Non-closable credit box centered
-        title_lbl = tk.Label(self.credit_frame, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 16, "bold"))
-        title_lbl.pack(padx=16, pady=(10, 2))
-        tk.Label(self.credit_frame, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=16)
-        tk.Label(self.credit_frame, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=16, pady=(0, 12))
-        self.credit_frame.place(relx=0.5, rely=0.5, anchor="center")
+        # Center credit box removed per request
+        pass
 
     # -------- GUI Widgets Setup --------
     def setup_gui(self):
@@ -594,17 +586,24 @@ class DiscordBotGUI:
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
         self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
 
-        # Right: Announcements + Community Chat (2500+ required to send)
+        # Right: Announcements + Community Chat (role required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
         ann_panel.pack(fill="x", padx=10, pady=(6, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
+        # Owner-only input to post announcements
+        ann_row = tk.Frame(ann_panel, bg="#1e1b29")
+        ann_row.pack(fill="x", pady=(4,0))
+        self.ann_entry = tk.Entry(ann_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat")
+        self.ann_entry.pack(side="left", fill="x", expand=True, padx=(0,8), ipady=4)
+        self.ann_send_btn = tk.Button(ann_row, text="Post", command=self._post_announcement)
+        self.ann_send_btn.pack(side="right")
         try:
             self.apply_glow(self.ann_text)
         except Exception:
             pass
-        header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff")
+        header = tk.Label(right, text="Community Chat (2500 messages role required to send)", bg="#1e1b29", fg="#e0d7ff")
         header.pack(anchor="w", padx=10, pady=(6, 4))
         self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
         self._chat_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 8))
@@ -1599,6 +1598,23 @@ class DiscordBotGUI:
             self.ann_text.see('end')
         except Exception:
             pass
+
+    def _post_announcement(self):
+        try:
+            if not getattr(self, '_is_owner', False):
+                self.log("Owner role required to post announcements")
+                return
+            content = self.ann_entry.get().strip()
+            if not content:
+                return
+            uid = str(self._me_user_id or '')
+            r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": content, "user_id": uid}, timeout=8)
+            if r.status_code == 200:
+                self.ann_entry.delete(0, 'end')
+            else:
+                self.log(f"Ann post failed: HTTP {r.status_code}")
+        except Exception as e:
+            self.log(f"Ann post error: {e}")
 
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------

@@ -2285,14 +2285,11 @@ def start_health_check():
                     except Exception:
                         msgs = []
                     new_msgs = [m for m in msgs if int(m.get('ts', 0) or 0) > since_ts]
-                    # Determine if user can send: has role or reached threshold
+                    # Determine if user can send: has chat-send role
                     can_send = False
                     try:
                         guild = bot.get_guild(GUILD_ID)
-                        cnt = int(MESSAGE_STATS.get(str(uid), 0))
-                        if cnt >= MESSAGES_THRESHOLD:
-                            can_send = True
-                        elif guild and uid:
+                        if guild and uid:
                             member = guild.get_member(uid)
                             if member:
                                 can_send = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
@@ -2848,27 +2845,10 @@ def start_health_check():
                     allowed = False
                     try:
                         guild = bot.get_guild(GUILD_ID)
-                        cnt = int(MESSAGE_STATS.get(str(uid), 0))
-                        if cnt >= MESSAGES_THRESHOLD:
-                            allowed = True
-                        if not allowed and guild and uid:
+                        if guild and uid:
                             member = guild.get_member(uid)
                             if member:
                                 allowed = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
-                        # Auto-grant role if threshold met and missing role
-                        if guild and uid and allowed and cnt >= MESSAGES_THRESHOLD and CHATSEND_ROLE_ID:
-                            try:
-                                member = guild.get_member(uid)
-                                role = guild.get_role(CHATSEND_ROLE_ID)
-                                if member and role and role not in member.roles:
-                                    async def _add_role():
-                                        try:
-                                            await member.add_roles(role, reason="Reached message threshold")
-                                        except Exception:
-                                            pass
-                                    asyncio.run_coroutine_threadsafe(_add_role(), bot.loop)
-                            except Exception:
-                                pass
                     except Exception:
                         allowed = False
                     if not allowed:
