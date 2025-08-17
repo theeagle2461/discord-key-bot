@@ -3189,69 +3189,6 @@ async def leaderboard_command(interaction: discord.Interaction):
 async def sbleaderboard_command(interaction: discord.Interaction):
     await leaderboard_command.callback(interaction)  # reuse
 
-@bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
-async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
-    """Create a NOWPayments invoice for the chosen coin and key type inside a ticket channel."""
-    try:
-        await interaction.response.defer(ephemeral=True)
-        if not NWP_API_KEY or not NWP_IPN_SECRET:
-            await interaction.followup.send("Payment processor not configured.")
-            return
-        coin = coin.upper()
-        if coin not in ("BTC","LTC","ETH","USDC","USDT"):
-            await interaction.followup.send("Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.")
-            return
-        key_type = key_type.lower()
-        price_map = {"daily":3, "weekly":10, "monthly":20, "lifetime":50}
-        if key_type not in price_map:
-            await interaction.followup.send("Invalid key type. Choose daily, weekly, monthly or lifetime.")
-            return
-        amount = price_map[key_type]
-        order_id = f"{interaction.user.id}:{interaction.channel.id}:{key_type}:${amount}"
-        # Build invoice payload
-        payload = {
-            "price_amount": amount,
-            "price_currency": "USD",
-            "order_id": order_id,
-            "order_description": f"{key_type} key for {interaction.user.id}",
-            "pay_currency": coin,
-            "is_fixed_rate": True,
-        }
-        if PUBLIC_URL:
-            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
-        headers = {
-            "x-api-key": NWP_API_KEY,
-            "Content-Type": "application/json"
-        }
-        import requests as _req, json as _json
-        try:
-            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
-            if r.status_code not in (200,201):
-                await interaction.followup.send(f"Failed to create invoice (HTTP {r.status_code}).")
-                return
-            inv = r.json()
-        except Exception as e:
-            await interaction.followup.send(f"Error creating invoice: {e}")
-            return
-        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
-        if not url:
-            await interaction.followup.send("Invoice created but no URL returned.")
-            return
-        note = "autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
-        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
-        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
-        await interaction.followup.send(embed=em)
-    except Exception as e:
-        if interaction.response.is_done():
-            await interaction.followup.send(f"Error: {e}")
-        else:
-            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
-
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="sbautobuy", description="Create a crypto invoice (backup command)")
-async def sbautobuy(interaction: discord.Interaction, coin: str, key_type: str):
-    await autobuy.callback(interaction, coin, key_type)
-
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="listcommands", description="List registered application commands (debug)")
 async def listcommands(interaction: discord.Interaction):
