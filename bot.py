@@ -136,6 +136,14 @@ try:
             MESSAGE_STATS = json.load(f) or {}
 except Exception:
     MESSAGE_STATS = {}
+GUILD_STATS_FILE = os.path.join(DATA_DIR, "guild_message_stats.json")
+GUILD_MESSAGE_STATS: Dict[str, int] = {}
+try:
+    if os.path.exists(GUILD_STATS_FILE):
+        with open(GUILD_STATS_FILE, 'r') as f:
+            GUILD_MESSAGE_STATS = json.load(f) or {}
+except Exception:
+    GUILD_MESSAGE_STATS = {}
 
 # Config helpers
 CONFIG: dict = {}
@@ -3132,18 +3140,18 @@ async def periodic_backup_task():
 async def leaderboard_command(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=False)
-        # Load latest from file to avoid stale memory
+        # Load guild message counts
         stats: dict[str, int] = {}
         try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
+            if os.path.exists(GUILD_STATS_FILE):
+                async with aiofiles.open(GUILD_STATS_FILE, 'r') as f:
                     raw = await f.read()
                 import json as _json
                 stats = _json.loads(raw) or {}
             else:
-                stats = MESSAGE_STATS
+                stats = GUILD_MESSAGE_STATS
         except Exception:
-            stats = MESSAGE_STATS
+            stats = GUILD_MESSAGE_STATS
         top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
         if not top:
             await interaction.followup.send("No stats yet.")
@@ -3297,18 +3305,18 @@ async def leaderboard_text(ctx: commands.Context):
         # Only allow in the configured guild
         if not ctx.guild or ctx.guild.id != GUILD_ID:
             return
-        # Load stats
+        # Load guild stats
         stats: dict[str, int] = {}
         try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
+            if os.path.exists(GUILD_STATS_FILE):
+                async with aiofiles.open(GUILD_STATS_FILE, 'r') as f:
                     raw = await f.read()
                 import json as _json
                 stats = _json.loads(raw) or {}
             else:
-                stats = MESSAGE_STATS
+                stats = GUILD_MESSAGE_STATS
         except Exception:
-            stats = MESSAGE_STATS
+            stats = GUILD_MESSAGE_STATS
         top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
         if not top:
             await ctx.reply("No stats yet.")
@@ -3382,3 +3390,21 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
         await ctx.reply(embed=em)
     except Exception as e:
         await ctx.reply(f"Error: {e}")
+
+@bot.event
+async def on_message(message: discord.Message):
+    try:
+        if message and message.guild and message.guild.id == GUILD_ID and (not message.author.bot):
+            uid = str(message.author.id)
+            GUILD_MESSAGE_STATS[uid] = int(GUILD_MESSAGE_STATS.get(uid, 0)) + 1
+            try:
+                tmp = GUILD_STATS_FILE + '.tmp'
+                with open(tmp, 'w') as f:
+                    json.dump(GUILD_MESSAGE_STATS, f, indent=2)
+                os.replace(tmp, GUILD_STATS_FILE)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Ensure text commands still work
+    await bot.process_commands(message)
