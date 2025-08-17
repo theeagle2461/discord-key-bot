@@ -7,6 +7,7 @@ except Exception:  # pragma: no cover
         audioop = None
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 import json
@@ -3129,6 +3130,7 @@ async def periodic_backup_task():
     except Exception:
         pass
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="leaderboard", description="Show top selfbot senders (by message count)")
 async def leaderboard_command(interaction: discord.Interaction):
     try:
@@ -3164,6 +3166,11 @@ async def leaderboard_command(interaction: discord.Interaction):
         await interaction.followup.send(embed=em)
     except Exception as e:
         await interaction.followup.send(f"Error: {e}")
+
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="sbleaderboard", description="Show top selfbot senders (backup command)")
+async def sbleaderboard_command(interaction: discord.Interaction):
+    await leaderboard_command.callback(interaction)  # reuse
 
 @bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
 async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
@@ -3217,6 +3224,25 @@ async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
         em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
         em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
         await interaction.followup.send(embed=em)
+    except Exception as e:
+        if interaction.response.is_done():
+            await interaction.followup.send(f"Error: {e}")
+        else:
+            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="sbautobuy", description="Create a crypto invoice (backup command)")
+async def sbautobuy(interaction: discord.Interaction, coin: str, key_type: str):
+    await autobuy.callback(interaction, coin, key_type)
+
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="listcommands", description="List registered application commands (debug)")
+async def listcommands(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer(ephemeral=True)
+        cmds = bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))
+        names = [c.name for c in cmds]
+        await interaction.followup.send("\n".join(names) or "(no commands)")
     except Exception as e:
         if interaction.response.is_done():
             await interaction.followup.send(f"Error: {e}")
