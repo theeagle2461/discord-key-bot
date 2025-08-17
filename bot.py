@@ -3359,3 +3359,96 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
             pass
     except Exception as e:
         await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
+
+# ---------------------- TEXT COMMAND FALLBACKS ----------------------
+@bot.command(name="leaderboard")
+async def leaderboard_text(ctx: commands.Context):
+    try:
+        # Only allow in the configured guild
+        if not ctx.guild or ctx.guild.id != GUILD_ID:
+            return
+        # Load stats
+        stats: dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                import json as _json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await ctx.reply("No stats yet.")
+            return
+        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        desc_lines = []
+        rank = 1
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        await ctx.reply(embed=em)
+    except Exception as e:
+        await ctx.reply(f"Error: {e}")
+
+@bot.command(name="autobuy")
+async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = None):
+    try:
+        if not ctx.guild or ctx.guild.id != GUILD_ID:
+            return
+        if not coin or not key_type:
+            await ctx.reply("Usage: !autobuy <BTC|LTC|ETH|USDC|USDT> <daily|weekly|monthly|lifetime>")
+            return
+        if not NWP_API_KEY or not NWP_IPN_SECRET:
+            await ctx.reply("Payment processor not configured.")
+            return
+        coin = coin.upper()
+        if coin not in ("BTC","LTC","ETH","USDC","USDT"):
+            await ctx.reply("Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.")
+            return
+        key_type = key_type.lower()
+        price_map = {"daily":3, "weekly":10, "monthly":20, "lifetime":50}
+        if key_type not in price_map:
+            await ctx.reply("Invalid key type. Choose daily, weekly, monthly or lifetime.")
+            return
+        amount = price_map[key_type]
+        order_id = f"{ctx.author.id}:{ctx.channel.id}:{key_type}:${amount}"
+        payload = {
+            "price_amount": amount,
+            "price_currency": "USD",
+            "order_id": order_id,
+            "order_description": f"{key_type} key for {ctx.author.id}",
+            "pay_currency": coin,
+            "is_fixed_rate": True,
+        }
+        if PUBLIC_URL:
+            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
+        headers = {"x-api-key": NWP_API_KEY, "Content-Type": "application/json"}
+        import requests as _req, json as _json
+        try:
+            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
+            if r.status_code not in (200,201):
+                await ctx.reply(f"Failed to create invoice (HTTP {r.status_code}).")
+                return
+            inv = r.json()
+        except Exception as e:
+            await ctx.reply(f"Error creating invoice: {e}")
+            return
+        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
+        if not url:
+            await ctx.reply("Invoice created but no URL returned.")
+            return
+        note = "autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
+        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
+        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
+        await ctx.reply(embed=em)
+    except Exception as e:
+        await ctx.reply(f"Error: {e}")
