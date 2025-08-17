@@ -1334,9 +1334,14 @@ async def view_deleted_keys(interaction: discord.Interaction):
         created_time = f"<t:{data.get('activation_time', 0)}:R>"
         duration = data.get('duration_days', 'Unknown')
         
+        lines_val = [
+            f"Duration: {duration} days",
+            f"Created: {created_time}",
+            f"Deleted: {deleted_time}",
+        ]
         embed.add_field(
             name=f"🗑️ {key}",
-            value=f"Duration: {duration} days\nCreated: {created_time}\nDeleted: {deleted_time}",
+            value="\n".join(lines_val),
             inline=True
         )
     
