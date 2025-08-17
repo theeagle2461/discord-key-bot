@@ -813,10 +813,13 @@ async def on_ready():
     # Force-sync application commands to this guild to ensure visibility
     try:
         guild_obj = discord.Object(id=GUILD_ID)
-        bot.tree.clear_commands(guild=guild_obj)
-        bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
         print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
+        try:
+            names = [c.name for c in bot.tree.get_commands()]
+            print(f"🔎 Commands in tree: {names}")
+        except Exception:
+            pass
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
     # Auto-restore from the most recent JSON attachment in backup channel
@@ -1421,10 +1424,12 @@ async def sync_commands(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
         guild_obj = discord.Object(id=GUILD_ID)
-        bot.tree.clear_commands(guild=guild_obj)
-        bot.tree.copy_global_to(guild=guild_obj)
         synced = await bot.tree.sync(guild=guild_obj)
-        await interaction.followup.send(f"✅ Synced {len(synced)} commands to this guild.")
+        try:
+            names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
+        except Exception:
+            names = []
+        await interaction.followup.send(f"✅ Synced {len(synced)} commands. Available: {', '.join(names) or '(none)'}")
     except Exception as e:
         try:
             if interaction.response.is_done():
