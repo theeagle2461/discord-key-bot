@@ -128,6 +128,9 @@ CHAT_FILE = os.path.join(DATA_DIR, "chat_messages.json")
 ANN_FILE = os.path.join(DATA_DIR, "announcements.json")
 STATS_FILE = os.path.join(DATA_DIR, "selfbot_message_stats.json")
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+# Sender/rotator storage
+ROTATOR_FILE = os.path.join(DATA_DIR, "rotator_messages.json")
+SENDER_CHANNELS_FILE = os.path.join(DATA_DIR, "sender_channels.json")
 MESSAGES_THRESHOLD = int(os.getenv('MESSAGES_THRESHOLD', '2500') or 2500)
 MESSAGE_STATS: Dict[str, int] = {}
 try:
@@ -1678,27 +1681,104 @@ def start_health_check():
                     return
 
                 if self.path == '/sender':
+                    # Load sender state
+                    try:
+                        channels = []
+                        if os.path.exists(SENDER_CHANNELS_FILE):
+                            with open(SENDER_CHANNELS_FILE, 'r') as f:
+                                channels = json.load(f)
+                        if not isinstance(channels, list):
+                            channels = []
+                        channels = [str(c).strip() for c in channels if str(c).strip()]
+                    except Exception:
+                        channels = []
+                    try:
+                        rotator = []
+                        if os.path.exists(ROTATOR_FILE):
+                            with open(ROTATOR_FILE, 'r') as f:
+                                rotator = json.load(f)
+                        if isinstance(rotator, list):
+                            # Normalize to list of dicts with 'content'
+                            norm = []
+                            for item in rotator:
+                                if isinstance(item, dict) and 'content' in item:
+                                    norm.append({'content': str(item.get('content', '')), 'ts': int(item.get('ts', 0) or 0)})
+                                else:
+                                    norm.append({'content': str(item), 'ts': 0})
+                            rotator = norm
+                        else:
+                            rotator = []
+                    except Exception:
+                        rotator = []
+
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
+                    # Build lists
+                    channel_items = []
+                    for cid in channels:
+                        safe = html.escape(cid)
+                        channel_items.append(
+                            f"""
+                            <div class='pick'>
+                              <label class='row'>
+                                <input type='checkbox' name='channel_ids' value='{safe}'/>
+                                <span>#{safe}</span>
+                              </label>
+                              <form method='POST' action='/sender' style='display:inline-block;margin-left:8px'>
+                                <input type='hidden' name='action' value='remove_channel'/>
+                                <input type='hidden' name='channel_id' value='{safe}'/>
+                                <button class='xbtn' title='Remove channel'>&times;</button>
+                              </form>
+                            </div>
+                            """
+                        )
+                    rotator_items = []
+                    idx = 0
+                    for item in rotator:
+                        text = html.escape(item.get('content', ''))
+                        rotator_items.append(
+                            f"""
+                            <form method='POST' action='/sender' class='rotitem'>
+                              <input type='hidden' name='action' value='remove_rotator'/>
+                              <input type='hidden' name='idx' value='{idx}'/>
+                              <button class='rotbtn' title='Remove from rotator'>{text}</button>
+                            </form>
+                            """
+                        )
+                        idx += 1
                     page = f"""
                     <html><head><title>Message Sender</title>
                       <style>
-                        body{{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e6e9f0;margin:0}}
-                        header{{background:#0e1630;border-bottom:1px solid #1f2a4a;padding:16px 24px;display:flex;gap:16px;align-items:center}}
-                        main{{padding:24px;max-width:720px;margin:0 auto}}
-                        .card{{background:#0e1630;border:1px solid #1f2a4a;border-radius:12px;padding:20px}}
+                        :root {{ --bg:#0b1020; --panel:#0e1630; --muted:#9ab0ff; --border:#1f2a4a; --text:#e6e9f0; --accent:#2a5bff; }}
+                        * {{ box-sizing: border-box; }}
+                        body{{font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0}}
+                        header{{background:var(--panel);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}}
+                        .brand{{font-weight:800;letter-spacing:0.6px;font-size:22px}}
+                        main{{padding:24px;max-width:1100px;margin:0 auto}}
+                        .grid{{display:grid;grid-template-columns:1.2fr 0.8fr;gap:16px}}
+                        .card{{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px}}
                         label{{display:block;margin:10px 0 6px}}
-                        input,textarea,button{{padding:10px 12px;border-radius:8px;border:1px solid #2a3866;background:#0b132b;color:#e6e9f0;width:100%}}
-                        textarea{{min-height:140px;resize:vertical}}
-                        button{{cursor:pointer;background:#2a5bff;border-color:#2a5bff;width:auto}}
-                        button:hover{{background:#2248cc}}
-                        a.nav{{color:#9ab0ff;text-decoration:none;padding:8px 12px;border-radius:8px;background:#121a36}}
-                        a.nav:hover{{background:#1a2448}}
+                        input[type=text],textarea,button{{padding:10px 12px;border-radius:10px;border:1px solid #2a3866;background:#0b132b;color:var(--text)}}
+                        textarea{{min-height:160px;resize:vertical;width:100%}}
+                        input[type=text]{{width:100%}}
+                        .row{{display:flex;align-items:center;gap:8px}}
+                        .pick{{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border:1px solid #1b284f;border-radius:8px;background:#0b132b;margin-bottom:8px}}
+                        .xbtn{{background:#1b284f;border:1px solid #294080;color:#ccd6ff;border-radius:8px;padding:4px 8px;cursor:pointer}}
+                        .xbtn:hover{{filter:brightness(0.95)}}
+                        .rotbox{{max-height:300px;overflow:auto;border:1px solid #1b284f;border-radius:10px;background:#0b132b;padding:8px}}
+                        .rotitem{{margin:0 0 8px 0}}
+                        .rotbtn{{width:100%;text-align:left;background:#101a3a;border:1px solid #253a76;color:#d7deff;border-radius:8px;padding:10px;cursor:pointer}}
+                        .rotbtn:hover{{filter:brightness(0.97)}}
+                        .muted{{color:#a4b1d6}}
+                        button.primary{{cursor:pointer;background:var(--accent);border-color:var(--accent);color:white}}
+                        a.nav{{color:var(--muted);text-decoration:none;padding:8px 12px;border-radius:10px;background:#121a36;border:1px solid #1a2650}}
+                        a.nav:hover{{background:#19214a}}
                       </style>
                     </head>
                     <body>
                       <header>
+                        <div class='brand'>CS BOT <span style='font-weight:600;color:#b799ff'>made by iris&classical</span></div>
                         <a class='nav' href='/'>Dashboard</a>
                         <a class='nav' href='/keys'>Keys</a>
                         <a class='nav' href='/my'>My Keys</a>
@@ -1706,16 +1786,48 @@ def start_health_check():
                         <a class='nav' href='/logout'>Logout</a>
                       </header>
                       <main>
-                        <div class='card'>
-                          <h2>Send a Message</h2>
-                          <form method='POST' action='/sender'>
-                            <label>Channel ID</label>
-                            <input type='text' name='channel_id' placeholder='Target channel ID' required />
-                            <label>Message</label>
-                            <textarea name='content' placeholder='Type your message...' required></textarea>
-                            <div style='margin-top:12px'><button type='submit'>Send</button></div>
-                          </form>
-                          <p class='muted' style='margin-top:10px'>Messages are sent by the bot and require the bot to have permission in the channel.</p>
+                        <div class='grid'>
+                          <div class='card'>
+                            <h2>Send a Message</h2>
+                            <form method='POST' action='/sender'>
+                              <input type='hidden' name='action' value='send'/>
+                              <label>Message Content</label>
+                              <textarea name='content' placeholder='Type your message...'></textarea>
+                              <div class='row' style='margin-top:8px'>
+                                <input id='use_rot' type='checkbox' name='use_rotator' value='1'/>
+                                <label for='use_rot' style='margin:0'>Use rotator messages instead</label>
+                              </div>
+                              <div style='height:12px'></div>
+                              <label>Select Channels</label>
+                              <div class='rotbox'>
+                                {''.join(channel_items) if channel_items else '<div class="muted">No channels saved. Add some on the right.</div>'}
+                              </div>
+                              <div style='margin-top:12px'>
+                                <button class='primary' type='submit'>Send to selected channels</button>
+                              </div>
+                            </form>
+                            <p class='muted' style='margin-top:10px'>Bot must have permission in each channel.</p>
+                          </div>
+                          <div class='card'>
+                            <h3>Message Rotator</h3>
+                            <form method='POST' action='/sender'>
+                              <input type='hidden' name='action' value='add_rotator'/>
+                              <label>Add Message</label>
+                              <textarea name='rotator_content' placeholder='Message to add to rotator...'></textarea>
+                              <div style='margin-top:8px'><button type='submit'>Add to Rotator</button></div>
+                            </form>
+                            <div style='height:12px'></div>
+                            <div class='rotbox'>
+                              {''.join(rotator_items) if rotator_items else '<div class="muted">No rotator messages yet.</div>'}
+                            </div>
+                            <div style='height:20px'></div>
+                            <h3>Saved Channels</h3>
+                            <form method='POST' action='/sender' class='row'>
+                              <input type='hidden' name='action' value='add_channel'/>
+                              <input type='text' name='new_channel_id' placeholder='Add channel ID e.g. 1234567890'/>
+                              <button type='submit'>Add</button>
+                            </form>
+                          </div>
                         </div>
                       </main>
                     </body></html>
@@ -2735,24 +2847,162 @@ def start_health_check():
                     content_length = int(self.headers.get('Content-Length', 0))
                     body = self.rfile.read(content_length).decode()
                     data = urllib.parse.parse_qs(body)
-                    chan_str = (data.get('channel_id', [''])[0]).strip()
-                    content = (data.get('content', [''])[0]).strip()
-                    ok = False
+                    action = (data.get('action', ['send'])[0] or 'send').strip().lower()
+
+                    # Helper: load/save channels
+                    def _load_channels() -> list[str]:
+                        try:
+                            if os.path.exists(SENDER_CHANNELS_FILE):
+                                with open(SENDER_CHANNELS_FILE, 'r') as f:
+                                    arr = json.load(f)
+                                if isinstance(arr, list):
+                                    return [str(x).strip() for x in arr if str(x).strip()]
+                        except Exception:
+                            pass
+                        return []
+                    def _save_channels(items: list[str]) -> None:
+                        try:
+                            tmp = SENDER_CHANNELS_FILE + '.tmp'
+                            with open(tmp, 'w') as f:
+                                json.dump(items, f, indent=2)
+                            os.replace(tmp, SENDER_CHANNELS_FILE)
+                        except Exception:
+                            pass
+                    # Helper: load/save rotator
+                    def _load_rotator() -> list[dict]:
+                        try:
+                            if os.path.exists(ROTATOR_FILE):
+                                with open(ROTATOR_FILE, 'r') as f:
+                                    arr = json.load(f)
+                                out = []
+                                if isinstance(arr, list):
+                                    for it in arr:
+                                        if isinstance(it, dict) and 'content' in it:
+                                            out.append({'content': str(it.get('content','')), 'ts': int(it.get('ts',0) or 0)})
+                                        else:
+                                            out.append({'content': str(it), 'ts': 0})
+                                return out
+                        except Exception:
+                            pass
+                        return []
+                    def _save_rotator(items: list[dict]) -> None:
+                        try:
+                            tmp = ROTATOR_FILE + '.tmp'
+                            with open(tmp, 'w') as f:
+                                json.dump(items, f, indent=2)
+                            os.replace(tmp, ROTATOR_FILE)
+                        except Exception:
+                            pass
+
+                    if action == 'add_channel':
+                        new_cid = (data.get('new_channel_id', [''])[0] or '').strip()
+                        chans = _load_channels()
+                        if new_cid:
+                            # Validate numeric ID
+                            try:
+                                _ = int(new_cid)
+                                if new_cid not in chans:
+                                    chans.append(new_cid)
+                                    _save_channels(chans)
+                            except Exception:
+                                pass
+                        self.send_response(303)
+                        self.send_header('Location', '/sender')
+                        self.end_headers()
+                        return
+                    if action == 'remove_channel':
+                        rem = (data.get('channel_id', [''])[0] or '').strip()
+                        chans = _load_channels()
+                        if rem in chans:
+                            chans = [c for c in chans if c != rem]
+                            _save_channels(chans)
+                        self.send_response(303)
+                        self.send_header('Location', '/sender')
+                        self.end_headers()
+                        return
+                    if action == 'add_rotator':
+                        text = (data.get('rotator_content', [''])[0] or '').strip()
+                        items = _load_rotator()
+                        if text:
+                            items.append({'content': text, 'ts': int(time.time())})
+                            # Cap list
+                            items = items[-500:]
+                            _save_rotator(items)
+                        self.send_response(303)
+                        self.send_header('Location', '/sender')
+                        self.end_headers()
+                        return
+                    if action == 'remove_rotator':
+                        try:
+                            idx = int((data.get('idx', [''])[0] or '').strip())
+                        except Exception:
+                            idx = -1
+                        items = _load_rotator()
+                        if 0 <= idx < len(items):
+                            del items[idx]
+                            _save_rotator(items)
+                        self.send_response(303)
+                        self.send_header('Location', '/sender')
+                        self.end_headers()
+                        return
+
+                    # Default: send action
+                    selected_channels = data.get('channel_ids', [])
+                    content = (data.get('content', [''])[0] or '').strip()
+                    use_rot = (data.get('use_rotator', [''])[0] or '') in ('1','true','on','yes')
+                    if use_rot:
+                        rot_items = _load_rotator()
+                        messages_to_send = [it.get('content','') for it in rot_items if str(it.get('content','')).strip()]
+                    else:
+                        messages_to_send = [content] if content else []
+                    ok = True
                     err = None
+                    # If no channels selected, fallback to single channel_id if provided
+                    if not selected_channels:
+                        fallback = (data.get('channel_id', [''])[0] or '').strip()
+                        if fallback:
+                            selected_channels = [fallback]
                     try:
-                        cid = int(chan_str)
-                        ch = bot.get_channel(cid)
-                        if ch is None:
-                            err = 'Bot cannot see this channel'
-                        elif not content:
-                            err = 'Empty message'
+                        if not selected_channels:
+                            ok = False
+                            err = 'No channels selected'
+                        elif not messages_to_send:
+                            ok = False
+                            err = 'Empty message content'
                         else:
-                            fut = asyncio.run_coroutine_threadsafe(ch.send(content), bot.loop)
-                            fut.result(timeout=5)
-                            ok = True
+                            # Send sequentially
+                            for cid_str in selected_channels:
+                                try:
+                                    cid = int(str(cid_str).strip())
+                                except Exception:
+                                    continue
+                                ch = bot.get_channel(cid)
+                                if not ch:
+                                    # Try fetching by guild iteration as fallback
+                                    try:
+                                        for g in bot.guilds:
+                                            ch = g.get_channel(cid)
+                                            if ch:
+                                                break
+                                    except Exception:
+                                        ch = None
+                                if not ch:
+                                    ok = False
+                                    err = f"Bot cannot see channel {cid}"
+                                    continue
+                                for msg_text in messages_to_send:
+                                    if not msg_text:
+                                        continue
+                                    fut = asyncio.run_coroutine_threadsafe(ch.send(msg_text), bot.loop)
+                                    try:
+                                        fut.result(timeout=10)
+                                    except Exception as e:
+                                        ok = False
+                                        err = str(e)
                     except Exception as e:
+                        ok = False
                         err = str(e)
-                    # Redirect back with a flash-like message in query
+                    # Redirect back
                     self.send_response(303)
                     if ok:
                         self.send_header('Location', '/sender')
