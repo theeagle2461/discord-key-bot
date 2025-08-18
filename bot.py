@@ -43,8 +43,8 @@ ROLE_NAME = os.getenv('ROLE_NAME', 'activated key')
 OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '1402650246538072094') or 0)
 CHATSEND_ROLE_ID = int(os.getenv('CHATSEND_ROLE_ID', '1406339861593591900') or 0)
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
-# Backup to Discord channel and auto-restore settings
-BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
+# Backup to Discord channel and auto-restore settings (default to provided ID)
+BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '1406849195591208960') or 1406849195591208960)
 AUTO_RESTORE_ON_START = (os.getenv('AUTO_RESTORE_ON_START', 'false').lower() in ('1','true','yes'))
 try:
 	BACKUP_INTERVAL_MIN = int(os.getenv('BACKUP_INTERVAL_MIN', '60') or 60)
@@ -136,14 +136,6 @@ try:
             MESSAGE_STATS = json.load(f) or {}
 except Exception:
     MESSAGE_STATS = {}
-GUILD_STATS_FILE = os.path.join(DATA_DIR, "guild_message_stats.json")
-GUILD_MESSAGE_STATS: Dict[str, int] = {}
-try:
-    if os.path.exists(GUILD_STATS_FILE):
-        with open(GUILD_STATS_FILE, 'r') as f:
-            GUILD_MESSAGE_STATS = json.load(f) or {}
-except Exception:
-    GUILD_MESSAGE_STATS = {}
 
 # Config helpers
 CONFIG: dict = {}
