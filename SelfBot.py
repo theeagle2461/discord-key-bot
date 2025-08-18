@@ -314,8 +314,7 @@ class DiscordBotGUI:
         # Apply theme/colors/fonts to all widgets
         self.apply_theme()
 
-        # Credits box overlay in the center
-        self.create_credit_box()
+        # Credits overlay removed; credit will be shown under the reply delay section
 
         # Start expiry watchdog if we know who we are
         try:
@@ -549,7 +548,16 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Removed duplicate credit box that was next to delay controls
+        # Credit box under reply delay
+        try:
+            credit = tk.Frame(delays, bg="#2c2750")
+            credit.pack(fill="x", padx=0, pady=(4, 0))
+            self.apply_glow(credit, thickness=2)
+            tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
+            tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
+            tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
+        except Exception:
+            pass
 
         # JOIN US panel with glow (row 5)
         try:
