@@ -449,6 +449,11 @@ class DiscordBotGUI:
         self.token_var = tk.StringVar()
         self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
         self.token_menu.pack(side="left")
+        # Allow sending with multiple tokens
+        self.use_all_tokens_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(token_bar, text="Use all tokens", variable=self.use_all_tokens_var,
+                       bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
+                       activebackground="#2c2750", activeforeground="#e0d7ff").pack(side="left", padx=(8, 0))
         try:
             self.apply_glow(token_bar, thickness=2)
             self.apply_glow(self.token_entry)
@@ -504,6 +509,19 @@ class DiscordBotGUI:
             self.apply_glow(self.rotator_input)
         except Exception:
             pass
+        # List of rotator messages (click to select, double-click to remove)
+        rot_list_frame = tk.Frame(rot, bg="#1e1b29")
+        rot_list_frame.pack(fill="x", pady=(6, 0))
+        tk.Label(rot_list_frame, text="Rotator Messages", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        list_wrap = tk.Frame(rot_list_frame, bg="#1e1b29")
+        list_wrap.pack(fill="x")
+        self.rotator_list = tk.Listbox(list_wrap, height=5, selectmode="browse", bg="#2c2750", fg="#e0d7ff",
+                                       activestyle="dotbox", highlightthickness=0, relief="flat")
+        self.rotator_list.pack(side="left", fill="x", expand=True)
+        rot_scroll = tk.Scrollbar(list_wrap, orient="vertical", command=self.rotator_list.yview)
+        rot_scroll.pack(side="right", fill="y")
+        self.rotator_list.configure(yscrollcommand=rot_scroll.set)
+        self.rotator_list.bind("<Double-Button-1>", lambda e: self._rotator_remove())
         
         # Bottom row: Message Content label and box (same height as activity log)
         tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
@@ -531,16 +549,7 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Credit box moved here under reply delay
-        try:
-            credit = tk.Frame(delays, bg="#2c2750")
-            credit.pack(fill="x", padx=0, pady=(12, 0))
-            self.apply_glow(credit, thickness=2)
-            tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
-            tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
-            tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
-        except Exception:
-            pass
+        # Removed duplicate credit box that was next to delay controls
 
         # JOIN US panel with glow (row 5)
         try:
@@ -818,7 +827,8 @@ class DiscordBotGUI:
         col = 0
         for name in sorted(self.channels.keys()):
             var = tk.BooleanVar()
-            cb = tk.Checkbutton(self.channels_frame, text=name, variable=var, font=self.normal_font,
+            label_text = f"{name}  (ID: {self.channels.get(name, '')})"
+            cb = tk.Checkbutton(self.channels_frame, text=label_text, variable=var, font=self.normal_font,
                                 bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99", activebackground="#2c2750",
                                 activeforeground="#e0d7ff", cursor="hand2")
             cb.grid(row=row, column=col, sticky="w", padx=5, pady=2)
@@ -1082,8 +1092,8 @@ class DiscordBotGUI:
             self.log("⚠️ Already sending messages.")
             return
         token_name = self.token_var.get()
-        if token_name not in self.tokens:
-            self.log("❌ Please select a valid token.")
+        if not self.use_all_tokens_var.get() and token_name not in self.tokens:
+            self.log("❌ Please select a valid token or enable 'Use all tokens'.")
             return
         selected_channels = [name for name, var in self.channel_vars.items() if var.get()]
         if not selected_channels:
@@ -1117,10 +1127,18 @@ class DiscordBotGUI:
         except Exception:
             pass
         
-        threading.Thread(target=self.send_messages_loop,
-                         args=(self.tokens[token_name], self.selected_channel_names, message, delay, loop_count),
-                         daemon=True).start()
-        self.log("▶️ Started sending messages.")
+        if self.use_all_tokens_var.get():
+            # Launch a thread per token
+            for tok in self.tokens.values():
+                threading.Thread(target=self.send_messages_loop,
+                                 args=(tok, self.selected_channel_names, message, delay, loop_count),
+                                 daemon=True).start()
+            self.log(f"▶️ Started sending with {len(self.tokens)} tokens.")
+        else:
+            threading.Thread(target=self.send_messages_loop,
+                             args=(self.tokens[token_name], self.selected_channel_names, message, delay, loop_count),
+                             daemon=True).start()
+            self.log("▶️ Started sending messages.")
 
     def send_messages_loop(self, token, channel_names, message, delay, loop_count):
         headers = {
