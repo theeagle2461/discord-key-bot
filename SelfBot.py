@@ -440,14 +440,20 @@ class DiscordBotGUI:
         # Saved channels checklist to the right of the channel bar
         self.channel_vars = {}
         # Scrollable channels area (medium height)
-        self.channels_scroll = tk.Frame(left, bg="#1e1b29")
-        self.channels_scroll.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
-        self.channels_canvas = tk.Canvas(self.channels_scroll, bg="#1e1b29", highlightthickness=0, height=110)
-        self.channels_canvas.pack(side="left", fill="both", expand=True)
-        self.channels_sb = tk.Scrollbar(self.channels_scroll, orient="vertical", command=self.channels_canvas.yview)
+        # Channels box to the right of channel entry
+        self.channels_select_wrap = tk.Frame(left, bg="#2c2750")
+        self.channels_select_wrap.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
+        try:
+            self.apply_glow(self.channels_select_wrap, thickness=2)
+        except Exception:
+            pass
+        tk.Label(self.channels_select_wrap, text="Channels", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        self.channels_canvas = tk.Canvas(self.channels_select_wrap, bg="#120f1f", highlightthickness=0, height=110)
+        self.channels_canvas.pack(side="left", fill="both", expand=True, padx=(8,0), pady=(0,8))
+        self.channels_sb = tk.Scrollbar(self.channels_select_wrap, orient="vertical", command=self.channels_canvas.yview)
         self.channels_sb.pack(side="right", fill="y")
         self.channels_canvas.configure(yscrollcommand=self.channels_sb.set)
-        self.channels_frame = tk.Frame(self.channels_canvas, bg="#1e1b29")
+        self.channels_frame = tk.Frame(self.channels_canvas, bg="#120f1f")
         self.channels_canvas_window = self.channels_canvas.create_window((0, 0), window=self.channels_frame, anchor="nw")
         def _channels_on_configure(event=None):
             try:
@@ -481,12 +487,12 @@ class DiscordBotGUI:
         except Exception:
             pass
         tk.Label(select_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
-        self.multi_tokens_canvas = tk.Canvas(select_wrap, bg="#2c2750", highlightthickness=0, height=64)
+        self.multi_tokens_canvas = tk.Canvas(select_wrap, bg="#120f1f", highlightthickness=0, height=64)
         self.multi_tokens_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
         self.multi_tokens_sb = tk.Scrollbar(select_wrap, orient="vertical", command=self.multi_tokens_canvas.yview)
         self.multi_tokens_sb.pack(side="right", fill="y")
         self.multi_tokens_canvas.configure(yscrollcommand=self.multi_tokens_sb.set)
-        self.multi_tokens_frame = tk.Frame(self.multi_tokens_canvas, bg="#2c2750")
+        self.multi_tokens_frame = tk.Frame(self.multi_tokens_canvas, bg="#120f1f")
         self.multi_tokens_canvas_window = self.multi_tokens_canvas.create_window((0,0), window=self.multi_tokens_frame, anchor="nw")
         def _multi_conf(e=None):
             try:
@@ -511,7 +517,7 @@ class DiscordBotGUI:
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
         inner_reply.pack(side="left", fill="x", expand=True)
-        self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(6, 6))
         self.reply_dm_button = tk.Button(reply_bar, text="Start Reply DM", command=self.toggle_reply_dm)
         self.reply_dm_button.pack(side="left", padx=(6, 8))
@@ -581,12 +587,12 @@ class DiscordBotGUI:
         except Exception:
             pass
         tk.Label(token_side, text="Tokens", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
-        side_canvas = tk.Canvas(token_side, bg="#2c2750", highlightthickness=0, height=64)
+        side_canvas = tk.Canvas(token_side, bg="#120f1f", highlightthickness=0, height=64)
         side_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
         side_sb = tk.Scrollbar(token_side, orient="vertical", command=side_canvas.yview)
         side_sb.pack(side="right", fill="y")
         side_canvas.configure(yscrollcommand=side_sb.set)
-        self.multi_tokens_side_frame = tk.Frame(side_canvas, bg="#2c2750")
+        self.multi_tokens_side_frame = tk.Frame(side_canvas, bg="#120f1f")
         side_window = side_canvas.create_window((0,0), window=self.multi_tokens_side_frame, anchor="nw")
         def _side_conf(e=None):
             try:
@@ -600,8 +606,8 @@ class DiscordBotGUI:
         
         # Bottom row: Message Content label and box (same height as activity log)
         tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
-        # Make message box as big as token bar width
-        self.message_entry = tk.Text(left, height=6, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        # Make message box as big as token bar width and match chat background
+        self.message_entry = tk.Text(left, height=6, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(2, 6))
         try:
             self.apply_glow(self.message_entry)
@@ -635,7 +641,7 @@ class DiscordBotGUI:
             tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
             # Run buttons placed under the credit box
             run = tk.Frame(delays, bg="#1e1b29")
-            run.pack(fill="x", padx=0, pady=(10, 0))
+            run.pack(fill="x", padx=0, pady=(16, 2))
             self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
             self.btn_start.pack(fill="x", pady=(0, 6))
             self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
