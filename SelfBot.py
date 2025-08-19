@@ -668,22 +668,19 @@ class DiscordBotGUI:
 
         # Right: Discord banner (JOIN US) under Activity Log on left moved earlier; now render under Activity Log
         try:
-            join_panel = tk.Frame(right, bg="#2c2750")
-            join_panel.pack(fill="x", padx=10, pady=(6, 6))
+            join_panel = tk.Frame(left, bg="#2c2750")
+            join_panel.grid(row=6, column=2, columnspan=2, sticky="we", padx=6, pady=(6, 6))
             self.apply_glow(join_panel, thickness=2)
             hdr = tk.Frame(join_panel, bg="#2c2750")
             hdr.pack(fill="x", padx=8, pady=(8, 4))
-            tk.Label(hdr, text="Discord Server", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(side="left")
-            jl = tk.Label(hdr, text="Join", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
-            jl.pack(side="left", padx=(6,0))
+            jl = tk.Label(hdr, text="Discord - JOIN US!", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
+            jl.pack(side="left")
             jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
             body = tk.Frame(join_panel, bg="#2c2750")
             body.pack(fill="x", padx=8, pady=(4, 10))
             textcol = tk.Frame(body, bg="#2c2750")
             textcol.pack(side="left", padx=10)
-            tk.Label(textcol, text="Server Name", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-            desc = os.getenv("SERVER_DESCRIPTION", "- best server description here -")
-            tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
+            tk.Label(textcol, text="- srcs - accs - gen - methods - cheapest gag shop", bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
             avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
             avatar_box.pack(side="right")
             body.pack_propagate(False)
@@ -1705,9 +1702,7 @@ class DiscordBotGUI:
         if msg.strip().startswith("/leaderboard"):
             self.show_leaderboard()
             return
-        if not self.chat_can_send:
-            self.log("You must send 2500 messages before you can chat.")
-            return
+        # Allow role-based sending regardless of remote can_send flag
         # Enforce 2500 messages role to send in community chat
         try:
             roles = self._get_user_roles(self.user_token, str(self._me_user_id or ''))
