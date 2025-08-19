@@ -892,9 +892,13 @@ class DiscordBotGUI:
                 b.bind("<Enter>", lambda e, btn=b: btn.configure(bg="#6a4bbb"))
                 b.bind("<Leave>", lambda e, btn=b: btn.configure(bg=button_bg))
 
-        self.token_menu.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
-                                  font=self.title_font)
-        self.token_menu["menu"].configure(bg=menu_bg, fg=menu_fg, font=self.normal_font)
+        if hasattr(self, 'token_menu'):
+            try:
+                self.token_menu.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
+                                          font=self.title_font)
+                self.token_menu["menu"].configure(bg=menu_bg, fg=menu_fg, font=self.normal_font)
+            except Exception:
+                pass
 
         self.log_text.configure(bg=log_bg)
 
@@ -945,7 +949,11 @@ class DiscordBotGUI:
         for name in sorted(self.tokens.keys()):
             val = existing.get(name, False)
             self.multi_token_vars[name] = tk.BooleanVar(value=val)
-        self._rebuild_side_tokens()
+        # Rebuild any mirrored views safely
+        try:
+            self._rebuild_side_tokens()
+        except Exception:
+            pass
 
     def _rebuild_side_tokens(self):
         try:
