@@ -400,8 +400,12 @@ class DiscordBotGUI:
         # User info header (avatar + username)
         self.user_info_frame = tk.Frame(frame, bg="#1e1b29")
         self.user_info_frame.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=0.08)
+        # Strip of selected token avatars (up to 3)
+        self.avatar_strip = tk.Frame(self.user_info_frame, bg="#1e1b29")
+        self.avatar_strip.pack(side="left", padx=(6, 4), pady=6)
+        self._selected_avatar_photos = []
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
-        self.avatar_label.pack(side="left", padx=(6, 8), pady=6)
+        self.avatar_label.pack(side="left", padx=(4, 8), pady=6)
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
         self.username_label.pack(side="left", pady=6)
 
@@ -514,7 +518,7 @@ class DiscordBotGUI:
 
         # Message Rotator moved under message content area
         rot = tk.Frame(left, bg="#2c2750")
-        rot.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(2, 2))
+        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(2, 2))
         try:
             self.apply_glow(rot, thickness=2)
         except Exception:
@@ -562,6 +566,31 @@ class DiscordBotGUI:
         self.btn_remove.pack(fill="x", pady=(6, 0))
         self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=10)
         self.btn_clear.pack(fill="x", pady=(6, 0))
+
+        # Token box to the right of rotator
+        token_side = tk.Frame(left, bg="#2c2750")
+        token_side.grid(row=5, column=1, sticky="nwe", padx=(6,10), pady=(2,2))
+        try:
+            self.apply_glow(token_side, thickness=2)
+        except Exception:
+            pass
+        tk.Label(token_side, text="Tokens", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        side_canvas = tk.Canvas(token_side, bg="#2c2750", highlightthickness=0, height=64)
+        side_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
+        side_sb = tk.Scrollbar(token_side, orient="vertical", command=side_canvas.yview)
+        side_sb.pack(side="right", fill="y")
+        side_canvas.configure(yscrollcommand=side_sb.set)
+        self.multi_tokens_side_frame = tk.Frame(side_canvas, bg="#2c2750")
+        side_window = side_canvas.create_window((0,0), window=self.multi_tokens_side_frame, anchor="nw")
+        def _side_conf(e=None):
+            try:
+                side_canvas.configure(scrollregion=side_canvas.bbox("all"))
+                side_canvas.itemconfigure(side_window, width=side_canvas.winfo_width())
+            except Exception:
+                pass
+        self.multi_tokens_side_frame.bind('<Configure>', _side_conf)
+        # Mirror the checklist into side frame
+        self._rebuild_side_tokens()
         
         # Bottom row: Message Content label and box (same height as activity log)
         tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
@@ -896,6 +925,24 @@ class DiscordBotGUI:
                                 activebackground="#2c2750", activeforeground="#e0d7ff")
             cb.pack(anchor='w')
             self.multi_token_vars[name] = var
+        self._rebuild_side_tokens()
+
+    def _rebuild_side_tokens(self):
+        try:
+            # Mirror left multi_token_vars into the side token box
+            for w in list(getattr(self, 'multi_tokens_side_frame', tk.Frame()).winfo_children()):
+                w.destroy()
+            for name, var in getattr(self, 'multi_token_vars', {}).items():
+                sv = tk.BooleanVar(value=var.get())
+                def _bind_toggle(v=var, sv=sv):
+                    v.set(sv.get())
+                cb = tk.Checkbutton(self.multi_tokens_side_frame, text=name, variable=sv,
+                                    bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
+                                    activebackground="#2c2750", activeforeground="#e0d7ff",
+                                    command=_bind_toggle)
+                cb.pack(anchor='w')
+        except Exception:
+            pass
 
     def update_channel_checkboxes(self):
         # Clear old checkboxes
