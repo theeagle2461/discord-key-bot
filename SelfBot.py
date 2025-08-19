@@ -1132,6 +1132,27 @@ class DiscordBotGUI:
         self._roles_cache[user_id] = roles
         return roles
 
+    def _resolve_me_user(self, token: str) -> tuple[str, str, str]:
+        """Return (user_id, username#discrim, avatar_url) for the token, or ('','','') on failure."""
+        try:
+            r = requests.get("https://discord.com/api/v10/users/@me", headers={"Authorization": token}, timeout=6)
+            if r.status_code != 200:
+                return '', '', ''
+            u = r.json() or {}
+            uid = str(u.get('id',''))
+            username = f"{u.get('username','')}#{u.get('discriminator','')}"
+            avatar_hash = u.get("avatar")
+            if avatar_hash:
+                ext = "gif" if avatar_hash.startswith("a_") else "png"
+                avatar_url = f"https://cdn.discordapp.com/avatars/{uid}/{avatar_hash}.{ext}?size=64"
+            else:
+                disc = str(u.get('discriminator','0'))
+                mod = int(disc) % 5 if disc.isdigit() else 0
+                avatar_url = f"https://cdn.discordapp.com/embed/avatars/{mod}.png"
+            return uid, username, avatar_url
+        except Exception:
+            return '', '', ''
+
     def increment_message_stats(self, token: str):
         try:
             self.message_counter_total += 1
@@ -1736,6 +1757,15 @@ class DiscordBotGUI:
             self.log("You must send 2500 messages to send messages in this chat")
             return
         try:
+            # Resolve user info for echo if cache missing
+            if not getattr(self, '_me_user_id', None) or not getattr(self, '_me_username', None) or not getattr(self, '_me_avatar_url', None):
+                uid_res, uname_res, aurl_res = self._resolve_me_user(self.user_token)
+                if uid_res:
+                    self._me_user_id = uid_res
+                if uname_res:
+                    self._me_username = uname_res
+                if aurl_res:
+                    self._me_avatar_url = aurl_res
             uid = self._me_user_id or ''
             r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
