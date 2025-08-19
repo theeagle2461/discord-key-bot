@@ -611,10 +611,23 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # JOIN US panel with glow (row 5)
+        # (JOIN US banner moved to right column above Announcements)
+
+        # Activity Log next to message content (taller)
+        log_panel = tk.Frame(left, bg="#1e1b29")
+        log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
+        tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        self.log_text = tk.Text(log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
+        self.log_text.pack(fill="both", expand=True)
+
+        # Message counter label (live-updating)
+        self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
+        self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
+
+        # Right: Discord banner (JOIN US) above Announcements
         try:
-            join_panel = tk.Frame(left, bg="#2c2750")
-            join_panel.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(8, 10))
+            join_panel = tk.Frame(right, bg="#2c2750")
+            join_panel.pack(fill="x", padx=10, pady=(6, 6))
             self.apply_glow(join_panel, thickness=2)
             hdr = tk.Frame(join_panel, bg="#2c2750")
             hdr.pack(fill="x", padx=8, pady=(8, 4))
@@ -624,7 +637,6 @@ class DiscordBotGUI:
             jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
             body = tk.Frame(join_panel, bg="#2c2750")
             body.pack(fill="x", padx=8, pady=(4, 10))
-            # Move server avatar to the right side of the banner
             textcol = tk.Frame(body, bg="#2c2750")
             textcol.pack(side="left", padx=10)
             tk.Label(textcol, text="KS Mart", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
@@ -632,7 +644,6 @@ class DiscordBotGUI:
             tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
             avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
             avatar_box.pack(side="right")
-            # Ensure avatar sits at the top-right within the banner body
             body.pack_propagate(False)
             try:
                 if SERVER_ICON_URL:
@@ -655,20 +666,9 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Activity Log next to message content (taller)
-        log_panel = tk.Frame(left, bg="#1e1b29")
-        log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.log_text = tk.Text(log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
-        self.log_text.pack(fill="both", expand=True)
-
-        # Message counter label (live-updating)
-        self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
-        self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
-
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
-        ann_panel.pack(fill="x", padx=10, pady=(6, 4))
+        ann_panel.pack(fill="x", padx=10, pady=(4, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
