@@ -1838,10 +1838,11 @@ class DiscordBotGUI:
         msg = self.ann_entry.get().strip()
         if not msg:
             return
-        # Only owner can send announcements
+        # Only owner can send announcements (check live roles)
         try:
-            is_owner = bool(getattr(self, '_is_owner', False))
-            if not is_owner:
+            my_uid = str(self._me_user_id or '')
+            roles = self._get_user_roles(self.user_token, my_uid)
+            if str(OWNER_ROLE_ID) not in roles:
                 self.log("Only the owner can post announcements")
                 return
         except Exception:
