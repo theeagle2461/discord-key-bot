@@ -477,8 +477,6 @@ class DiscordBotGUI:
         self.token_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(token_bar, text="Save", command=self.save_token).pack(side="left", padx=(0, 6))
         self.token_var = tk.StringVar()
-        self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
-        self.token_menu.pack(side="left")
         # Select token box to the right of token entry
         select_wrap = tk.Frame(left, bg="#2c2750")
         select_wrap.grid(row=1, column=2, columnspan=2, sticky="we", padx=(6,10), pady=(0,2))
@@ -669,7 +667,7 @@ class DiscordBotGUI:
         # Right: Discord banner (JOIN US) under Activity Log on left moved earlier; now render under Activity Log
         try:
             join_panel = tk.Frame(left, bg="#2c2750")
-            join_panel.grid(row=6, column=2, columnspan=2, sticky="we", padx=6, pady=(6, 6))
+            join_panel.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
             self.apply_glow(join_panel, thickness=2)
             hdr = tk.Frame(join_panel, bg="#2c2750")
             hdr.pack(fill="x", padx=8, pady=(8, 4))
@@ -934,11 +932,7 @@ class DiscordBotGUI:
         self.log(f"✅ Channel '{name}' saved.")
 
     def update_token_menu(self):
-        menu = self.token_menu["menu"]
-        menu.delete(0, "end")
-        for name in self.tokens.keys():
-            menu.add_command(label=name, command=lambda n=name: self.token_var.set(n))
-        # Clear user info if current token not found
+        # If current selection missing, clear user info
         if self.token_var.get() not in self.tokens:
             self.token_var.set("")
             self.clear_user_info()
@@ -1719,13 +1713,18 @@ class DiscordBotGUI:
         if msg.strip().startswith("/leaderboard"):
             self.show_leaderboard()
             return
-        # Allow role-based sending regardless of remote can_send flag
-        # Enforce 2500 messages role to send in community chat
+        # Allow sending if you have the role OR server allows (fallback)
+        allow = False
         try:
             roles = self._get_user_roles(self.user_token, str(self._me_user_id or ''))
+            allow = str(CHATSEND_ROLE_ID) in roles
         except Exception:
             roles = []
-        if str(CHATSEND_ROLE_ID) not in roles:
+        if not allow:
+            # Fallback to server can_send flag
+            if getattr(self, 'chat_can_send', False) is True:
+                allow = True
+        if not allow:
             self.log("You must send 2500 messages to send messages in this chat")
             return
         try:
