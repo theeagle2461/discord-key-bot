@@ -493,17 +493,7 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Run buttons (top-right)
-        run = tk.Frame(left, bg="#1e1b29")
-        run.grid(row=1, column=3, sticky="ne", padx=6, pady=(2, 4))
-        self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
-        self.btn_start.pack(fill="x", pady=(0, 6))
-        self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
-        self.btn_pause.pack(fill="x", pady=(0, 6))
-        self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
-        self.btn_restart.pack(fill="x")
-        self._stateful_buttons = getattr(self, '_stateful_buttons', set())
-        self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
+        # Run buttons will be placed under the credit box in the Delays section
 
         # Reply DM message integrated bar (row 2)
         reply_bar = tk.Frame(left, bg="#2c2750")
@@ -522,9 +512,9 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Message Rotator (row 3) bigger, vertical buttons
+        # Message Rotator moved under message content area
         rot = tk.Frame(left, bg="#2c2750")
-        rot.grid(row=3, column=0, columnspan=4, sticky="we", padx=10, pady=(2, 2))
+        rot.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(2, 2))
         try:
             self.apply_glow(rot, thickness=2)
         except Exception:
@@ -607,6 +597,17 @@ class DiscordBotGUI:
             tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
             tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
+            # Run buttons placed under the credit box
+            run = tk.Frame(delays, bg="#1e1b29")
+            run.pack(fill="x", padx=0, pady=(10, 0))
+            self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
+            self.btn_start.pack(fill="x", pady=(0, 6))
+            self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
+            self.btn_pause.pack(fill="x", pady=(0, 6))
+            self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
+            self.btn_restart.pack(fill="x")
+            self._stateful_buttons = getattr(self, '_stateful_buttons', set())
+            self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
         except Exception:
             pass
 
@@ -682,7 +683,7 @@ class DiscordBotGUI:
         self.ann_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
         self.ann_send_btn = tk.Button(ann_entry_row, text="Send", command=self.ann_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
         self.ann_send_btn.pack(side="right")
-        header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff")
+        header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold"))
         header.pack(anchor="w", padx=10, pady=(6, 4))
         self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
         self._chat_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 8))
@@ -1592,7 +1593,7 @@ class DiscordBotGUI:
             self.show_leaderboard()
             return
         if not self.chat_can_send:
-            self.log("Only an admin can chat")
+            self.log("You must send 2500 messages before you can chat.")
             return
         # Enforce 2500 messages role to send in community chat
         try:
