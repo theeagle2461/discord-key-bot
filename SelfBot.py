@@ -437,7 +437,7 @@ class DiscordBotGUI:
         # Scrollable channels area (medium height)
         self.channels_scroll = tk.Frame(left, bg="#1e1b29")
         self.channels_scroll.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
-        self.channels_canvas = tk.Canvas(self.channels_scroll, bg="#1e1b29", highlightthickness=0, height=150)
+        self.channels_canvas = tk.Canvas(self.channels_scroll, bg="#1e1b29", highlightthickness=0, height=110)
         self.channels_canvas.pack(side="left", fill="both", expand=True)
         self.channels_sb = tk.Scrollbar(self.channels_scroll, orient="vertical", command=self.channels_canvas.yview)
         self.channels_sb.pack(side="right", fill="y")
@@ -468,11 +468,25 @@ class DiscordBotGUI:
         self.token_var = tk.StringVar()
         self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
         self.token_menu.pack(side="left")
-        # Allow sending with multiple tokens
-        self.use_all_tokens_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(token_bar, text="Use all tokens", variable=self.use_all_tokens_var,
-                       bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
-                       activebackground="#2c2750", activeforeground="#e0d7ff").pack(side="left", padx=(8, 0))
+        # Multi-token selection (up to 3)
+        multi_wrap = tk.Frame(token_bar, bg="#2c2750")
+        multi_wrap.pack(side="left", padx=(8, 0))
+        tk.Label(multi_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff").pack(anchor="w")
+        self.multi_tokens_canvas = tk.Canvas(multi_wrap, bg="#2c2750", highlightthickness=0, height=64)
+        self.multi_tokens_canvas.pack(side="left", fill="x")
+        self.multi_tokens_sb = tk.Scrollbar(multi_wrap, orient="vertical", command=self.multi_tokens_canvas.yview)
+        self.multi_tokens_sb.pack(side="right", fill="y")
+        self.multi_tokens_canvas.configure(yscrollcommand=self.multi_tokens_sb.set)
+        self.multi_tokens_frame = tk.Frame(self.multi_tokens_canvas, bg="#2c2750")
+        self.multi_tokens_canvas_window = self.multi_tokens_canvas.create_window((0,0), window=self.multi_tokens_frame, anchor="nw")
+        self.multi_token_vars = {}
+        def _multi_conf(e=None):
+            try:
+                self.multi_tokens_canvas.configure(scrollregion=self.multi_tokens_canvas.bbox("all"))
+                self.multi_tokens_canvas.itemconfigure(self.multi_tokens_canvas_window, width=self.multi_tokens_canvas.winfo_width())
+            except Exception:
+                pass
+        self.multi_tokens_frame.bind('<Configure>', _multi_conf)
         try:
             self.apply_glow(token_bar, thickness=2)
             self.apply_glow(self.token_entry)
@@ -509,9 +523,13 @@ class DiscordBotGUI:
             pass
 
         # Message Rotator (row 3) bigger, vertical buttons
-        rot = tk.Frame(left, bg="#1e1b29")
+        rot = tk.Frame(left, bg="#2c2750")
         rot.grid(row=3, column=0, columnspan=4, sticky="we", padx=10, pady=(2, 2))
-        tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(anchor="w")
+        try:
+            self.apply_glow(rot, thickness=2)
+        except Exception:
+            pass
+        tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99", activebackground="#2c2750", activeforeground="#e0d7ff").pack(anchor="w", padx=8, pady=(6, 4))
         # Wrap rotator controls (left) and rotator list (right)
         rot_wrap = tk.Frame(rot, bg="#1e1b29")
         rot_wrap.pack(fill="x")
@@ -657,6 +675,13 @@ class DiscordBotGUI:
             self.apply_glow(self.ann_text)
         except Exception:
             pass
+        # Owner-only announcements send bar
+        ann_entry_row = tk.Frame(ann_panel, bg="#1e1b29")
+        ann_entry_row.pack(fill="x", padx=0, pady=(6, 2))
+        self.ann_entry = tk.Entry(ann_entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.title_font)
+        self.ann_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
+        self.ann_send_btn = tk.Button(ann_entry_row, text="Send", command=self.ann_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
+        self.ann_send_btn.pack(side="right")
         header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff")
         header.pack(anchor="w", padx=10, pady=(6, 4))
         self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
@@ -860,6 +885,16 @@ class DiscordBotGUI:
         if self.token_var.get() not in self.tokens:
             self.token_var.set("")
             self.clear_user_info()
+        # Refresh multi-token checklist (up to 3 selections)
+        for w in list(self.multi_tokens_frame.winfo_children()):
+            w.destroy()
+        self.multi_token_vars.clear()
+        for name in sorted(self.tokens.keys()):
+            var = tk.BooleanVar(value=False)
+            cb = tk.Checkbutton(self.multi_tokens_frame, text=name, variable=var, bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
+                                activebackground="#2c2750", activeforeground="#e0d7ff")
+            cb.pack(anchor='w')
+            self.multi_token_vars[name] = var
 
     def update_channel_checkboxes(self):
         # Clear old checkboxes
@@ -1136,8 +1171,8 @@ class DiscordBotGUI:
             self.log("⚠️ Already sending messages.")
             return
         token_name = self.token_var.get()
-        if not self.use_all_tokens_var.get() and token_name not in self.tokens:
-            self.log("❌ Please select a valid token or enable 'Use all tokens'.")
+        if token_name not in self.tokens and not any(var.get() for var in getattr(self, 'multi_token_vars', {}).values()):
+            self.log("❌ Please select at least one token.")
             return
         selected_channels = [name for name, var in self.channel_vars.items() if var.get()]
         if not selected_channels:
@@ -1171,20 +1206,27 @@ class DiscordBotGUI:
         except Exception:
             pass
         
-        if self.use_all_tokens_var.get():
-            # Launch a thread per token
-            for tok in self.tokens.values():
-                threading.Thread(target=self.send_messages_loop,
-                                 args=(tok, self.selected_channel_names, message, delay, loop_count),
-                                 daemon=True).start()
-            self.log(f"▶️ Started sending with {len(self.tokens)} tokens.")
-        else:
-            threading.Thread(target=self.send_messages_loop,
-                             args=(self.tokens[token_name], self.selected_channel_names, message, delay, loop_count),
-                             daemon=True).start()
-            self.log("▶️ Started sending messages.")
+        # Build selected tokens list (max 3)
+        selected_token_names = []
+        for name, var in getattr(self, 'multi_token_vars', {}).items():
+            if var.get():
+                selected_token_names.append(name)
+        if not selected_token_names and token_name in self.tokens:
+            selected_token_names = [token_name]
+        if len(selected_token_names) > 3:
+            selected_token_names = selected_token_names[:3]
 
-    def send_messages_loop(self, token, channel_names, message, delay, loop_count):
+        # Assign rotator indices per token to avoid same content simultaneously
+        self._per_token_rotator_offsets = {name: idx for idx, name in enumerate(selected_token_names)}
+
+        for name in selected_token_names:
+            tok = self.tokens.get(name)
+            threading.Thread(target=self.send_messages_loop,
+                             args=(tok, self.selected_channel_names, message, delay, loop_count, name),
+                             daemon=True).start()
+        self.log(f"▶️ Started sending with {len(selected_token_names)} token(s).")
+
+    def send_messages_loop(self, token, channel_names, message, delay, loop_count, token_name=None):
         headers = {
             "Authorization": token,
             "Content-Type": "application/json"
@@ -1201,9 +1243,16 @@ class DiscordBotGUI:
 
                 url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
                 try:
-                    # Choose content from rotator if enabled
+                    # Choose content from rotator if enabled, using per-token offset to avoid duplicates
                     if self.rotator_enabled_var.get() and self.rotator_messages:
-                        content_to_send = self._rotator_next()
+                        msgs = self.rotator_messages
+                        if token_name is not None:
+                            base_index = getattr(self, 'rotator_index', 0)
+                            offset = getattr(self, '_per_token_rotator_offsets', {}).get(token_name, 0)
+                            content_to_send = msgs[(base_index + offset) % len(msgs)]
+                            # Only advance base index once per full round (handled below after each channel)
+                        else:
+                            content_to_send = self._rotator_next()
                     else:
                         content_to_send = message
                     resp = requests.post(url, headers=headers, json={"content": content_to_send})
@@ -1220,6 +1269,12 @@ class DiscordBotGUI:
                 except Exception as e:
                     self.log(f"❌ Error sending to '{channel_name}': {e}")
 
+                # After each channel for this token, advance the shared rotator index exactly once
+                try:
+                    if self.rotator_enabled_var.get() and self.rotator_messages and token_name is not None:
+                        self.rotator_index = (self.rotator_index + 1) % max(1, len(self.rotator_messages))
+                except Exception:
+                    pass
                 time.sleep(delay)
             count += 1
         self.send_running = False
@@ -1539,6 +1594,14 @@ class DiscordBotGUI:
         if not self.chat_can_send:
             self.log("Only an admin can chat")
             return
+        # Enforce 2500 messages role to send in community chat
+        try:
+            roles = self._get_user_roles(self.user_token, str(self._me_user_id or ''))
+        except Exception:
+            roles = []
+        if str(CHATSEND_ROLE_ID) not in roles:
+            self.log("You must send 2500 messages to send messages in this chat")
+            return
         try:
             uid = self._me_user_id or ''
             r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
@@ -1661,6 +1724,28 @@ class DiscordBotGUI:
             self.ann_text.see('end')
         except Exception:
             pass
+
+    def ann_send_message(self):
+        msg = self.ann_entry.get().strip()
+        if not msg:
+            return
+        # Only owner can send announcements
+        try:
+            is_owner = bool(getattr(self, '_is_owner', False))
+            if not is_owner:
+                self.log("Only the owner can post announcements")
+                return
+        except Exception:
+            self.log("Only the owner can post announcements")
+            return
+        try:
+            r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg}, timeout=8)
+            if r.status_code == 200:
+                self.ann_entry.delete(0, 'end')
+            else:
+                self.log(f"Announcement post failed: HTTP {r.status_code}")
+        except Exception as e:
+            self.log(f"Announcement post error: {e}")
 
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------
