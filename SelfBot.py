@@ -712,6 +712,11 @@ class DiscordBotGUI:
 		ann_entry_row.pack(fill="x", padx=0, pady=(6, 2))
 		self.ann_entry = tk.Entry(ann_entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.title_font)
 		self.ann_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
+		# Enter-to-send for Announcements
+		try:
+			self.ann_entry.bind("<Return>", lambda e: (self.ann_send_message(), "break"))
+		except Exception:
+			pass
 		self.ann_send_btn = tk.Button(ann_entry_row, text="Send", command=self.ann_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
 		self.ann_send_btn.pack(side="right")
 		header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold"))
@@ -732,6 +737,11 @@ class DiscordBotGUI:
 		entry_row.pack(fill="x", padx=10, pady=(0, 8))
 		self.chat_entry = tk.Entry(entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.title_font)
 		self.chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
+		# Enter-to-send for Community Chat
+		try:
+			self.chat_entry.bind("<Return>", lambda e: (self.chat_send_message(), "break"))
+		except Exception:
+			pass
 		self.chat_send_btn = tk.Button(entry_row, text="Send", command=self.chat_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
 		self.chat_send_btn.pack(side="right")
 		threading.Thread(target=self.chat_poll_loop, daemon=True).start()
