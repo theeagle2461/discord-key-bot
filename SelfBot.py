@@ -564,47 +564,7 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # JOIN US panel with glow (row 5)
-        try:
-            join_panel = tk.Frame(left, bg="#2c2750")
-            join_panel.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(8, 10))
-            self.apply_glow(join_panel, thickness=2)
-            hdr = tk.Frame(join_panel, bg="#2c2750")
-            hdr.pack(fill="x", padx=8, pady=(8, 4))
-            tk.Label(hdr, text="Discord  -> ", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(side="left")
-            jl = tk.Label(hdr, text="JOIN US!", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
-            jl.pack(side="left")
-            jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
-            body = tk.Frame(join_panel, bg="#2c2750")
-            body.pack(fill="x", padx=8, pady=(4, 10))
-            # Move server avatar to the right side of the banner
-            textcol = tk.Frame(body, bg="#2c2750")
-            textcol.pack(side="left", padx=10)
-            tk.Label(textcol, text="KS Mart", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-            desc = "- srcs - accs - gen - methods - cheapest gag shop"
-            tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
-            avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
-            avatar_box.pack(side="right")
-            try:
-                if SERVER_ICON_URL:
-                    rr = requests.get(SERVER_ICON_URL, timeout=10)
-                    if rr.status_code == 200:
-                        from PIL import Image
-                        import io as _io
-                        av = Image.open(_io.BytesIO(rr.content)).resize((56,56))
-                        self._server_icon_photo = ImageTk.PhotoImage(av)
-                        avatar_box.create_image(28, 28, image=self._server_icon_photo)
-                    else:
-                        avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-                else:
-                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-            except Exception:
-                try:
-                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        # (Removed JOIN US banner by request)
 
         # Activity Log next to message content (taller)
         log_panel = tk.Frame(left, bg="#1e1b29")
@@ -623,6 +583,13 @@ class DiscordBotGUI:
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
+        # Owner-only announcements send bar
+        ann_entry_row = tk.Frame(ann_panel, bg="#1e1b29")
+        ann_entry_row.pack(fill="x", padx=0, pady=(6, 2))
+        self.ann_entry = tk.Entry(ann_entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.title_font)
+        self.ann_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
+        self.ann_send_btn = tk.Button(ann_entry_row, text="Send", command=self.ann_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
+        self.ann_send_btn.pack(side="right")
         try:
             self.apply_glow(self.ann_text)
         except Exception:
@@ -1506,10 +1473,26 @@ class DiscordBotGUI:
         if msg.strip().startswith("/leaderboard"):
             self.show_leaderboard()
             return
-        if not self.chat_can_send:
-            self.log("Only an admin can chat")
-            return
         try:
+            # Ensure we have user identity cached
+            if not getattr(self, '_me_user_id', None):
+                try:
+                    headers = {"Authorization": self.user_token}
+                    rme = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                    if rme.status_code == 200:
+                        u = rme.json()
+                        self._me_user_id = u.get('id')
+                        self._me_username = f"{u.get('username','')}#{u.get('discriminator','')}"
+                        ah = u.get('avatar')
+                        if ah:
+                            ext = "gif" if str(ah).startswith("a_") else "png"
+                            self._me_avatar_url = f"https://cdn.discordapp.com/avatars/{self._me_user_id}/{ah}.{ext}?size=64"
+                        else:
+                            disc = str(u.get('discriminator','0'))
+                            mod = int(disc) % 5 if disc.isdigit() else 0
+                            self._me_avatar_url = f"https://cdn.discordapp.com/embed/avatars/{mod}.png"
+                except Exception:
+                    pass
             uid = self._me_user_id or ''
             r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
@@ -1522,9 +1505,41 @@ class DiscordBotGUI:
                 self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
                 self._draw_chat_items()
             else:
-                self.log(f"Chat post failed: HTTP {r.status_code}")
+                try:
+                    errtxt = r.text.strip()
+                except Exception:
+                    errtxt = f"HTTP {r.status_code}"
+                self.log(f"Chat post failed: {errtxt}")
         except Exception as e:
             self.log(f"Chat error: {e}")
+
+    def ann_send_message(self):
+        msg = self.ann_entry.get().strip()
+        if not msg:
+            return
+        try:
+            # Ensure identity
+            if not getattr(self, '_me_user_id', None):
+                try:
+                    headers = {"Authorization": self.user_token}
+                    rme = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                    if rme.status_code == 200:
+                        u = rme.json()
+                        self._me_user_id = u.get('id')
+                except Exception:
+                    pass
+            uid = self._me_user_id or ''
+            r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg, "user_id": uid}, timeout=8)
+            if r.status_code == 200:
+                self.ann_entry.delete(0, 'end')
+            else:
+                try:
+                    errtxt = r.text.strip()
+                except Exception:
+                    errtxt = f"HTTP {r.status_code}"
+                self.log(f"Announcement post failed: {errtxt}")
+        except Exception as e:
+            self.log(f"Announcement post error: {e}")
 
     # -------- Sound --------
     def play_opening_sound(self):
