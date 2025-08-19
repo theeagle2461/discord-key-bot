@@ -404,6 +404,7 @@ class DiscordBotGUI:
         self.avatar_strip = tk.Frame(self.user_info_frame, bg="#1e1b29")
         self.avatar_strip.pack(side="left", padx=(6, 4), pady=6)
         self._selected_avatar_photos = []
+        self.root.after(800, self._refresh_selected_avatars)
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
         self.avatar_label.pack(side="left", padx=(4, 8), pady=6)
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
@@ -899,16 +900,15 @@ class DiscordBotGUI:
         if self.token_var.get() not in self.tokens:
             self.token_var.set("")
             self.clear_user_info()
-        # Refresh multi-token checklist (up to 3 selections)
-        for w in list(self.multi_tokens_frame.winfo_children()):
-            w.destroy()
-        self.multi_token_vars.clear()
+        # Ensure multi-token state exists and sync keys
+        if not hasattr(self, 'multi_token_vars'):
+            self.multi_token_vars = {}
+        # Preserve existing selections where possible
+        existing = {k: v.get() for k, v in self.multi_token_vars.items()}
+        self.multi_token_vars = {}
         for name in sorted(self.tokens.keys()):
-            var = tk.BooleanVar(value=False)
-            cb = tk.Checkbutton(self.multi_tokens_frame, text=name, variable=var, bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
-                                activebackground="#2c2750", activeforeground="#e0d7ff")
-            cb.pack(anchor='w')
-            self.multi_token_vars[name] = var
+            val = existing.get(name, False)
+            self.multi_token_vars[name] = tk.BooleanVar(value=val)
         self._rebuild_side_tokens()
 
     def _rebuild_side_tokens(self):
@@ -920,11 +920,59 @@ class DiscordBotGUI:
                 sv = tk.BooleanVar(value=var.get())
                 def _bind_toggle(v=var, sv=sv):
                     v.set(sv.get())
+                    # Also refresh avatar strip when selection changes
+                    try:
+                        self._refresh_selected_avatars()
+                    except Exception:
+                        pass
                 cb = tk.Checkbutton(self.multi_tokens_side_frame, text=name, variable=sv,
                                     bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
                                     activebackground="#2c2750", activeforeground="#e0d7ff",
                                     command=_bind_toggle)
                 cb.pack(anchor='w')
+        except Exception:
+            pass
+
+    def _refresh_selected_avatars(self):
+        # Rebuild the avatar strip for selected tokens (up to 3)
+        try:
+            for w in list(self.avatar_strip.winfo_children()):
+                w.destroy()
+            self._selected_avatar_photos = []
+            count = 0
+            for name, var in getattr(self, 'multi_token_vars', {}).items():
+                if var.get():
+                    tok = self.tokens.get(name)
+                    if not tok:
+                        continue
+                    try:
+                        headers = {"Authorization": tok}
+                        r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                        if r.status_code != 200:
+                            continue
+                        u = r.json()
+                        avatar_hash = u.get("avatar")
+                        uid = u.get("id")
+                        if avatar_hash:
+                            ext = "gif" if avatar_hash.startswith("a_") else "png"
+                            aurl = f"https://cdn.discordapp.com/avatars/{uid}/{avatar_hash}.{ext}?size=64"
+                        else:
+                            disc = str(u.get('discriminator','0'))
+                            mod = int(disc) % 5 if disc.isdigit() else 0
+                            aurl = f"https://cdn.discordapp.com/embed/avatars/{mod}.png"
+                        rr = requests.get(aurl, timeout=8)
+                        if rr.status_code == 200:
+                            from PIL import Image
+                            import io as _io
+                            img = Image.open(_io.BytesIO(rr.content)).resize((28,28))
+                            ph = ImageTk.PhotoImage(img)
+                            self._selected_avatar_photos.append(ph)
+                            tk.Label(self.avatar_strip, image=ph, bg="#1e1b29").pack(side='left', padx=(0,4))
+                            count += 1
+                            if count >= 3:
+                                break
+                    except Exception:
+                        continue
         except Exception:
             pass
 
