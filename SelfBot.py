@@ -673,6 +673,20 @@ class DiscordBotGUI:
             self.apply_glow(join_panel, thickness=2)
             hdr = tk.Frame(join_panel, bg="#2c2750")
             hdr.pack(fill="x", padx=8, pady=(8, 4))
+            # Server icon before the text
+            icon_box = tk.Canvas(hdr, width=20, height=20, bg="#2c2750", highlightthickness=0)
+            icon_box.pack(side="left", padx=(0,6))
+            try:
+                if SERVER_ICON_URL:
+                    irr = requests.get(SERVER_ICON_URL, timeout=6)
+                    if irr.status_code == 200:
+                        from PIL import Image
+                        import io as _io
+                        iav = Image.open(_io.BytesIO(irr.content)).resize((20,20))
+                        self._server_icon_small = ImageTk.PhotoImage(iav)
+                        icon_box.create_image(10,10, image=self._server_icon_small)
+            except Exception:
+                pass
             jl = tk.Label(hdr, text="Discord - JOIN US!", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
             jl.pack(side="left")
             jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
