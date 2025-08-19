@@ -420,7 +420,7 @@ class DiscordBotGUI:
 
         # Top controls moved: Channel first (row 0), Token below (row 1)
         chan_bar = tk.Frame(left, bg="#2c2750")
-        chan_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 4))
+        chan_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 1))
         tk.Label(chan_bar, text="Channel ID", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(chan_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         self.channel_entry = tk.Entry(chan_bar, width=62, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
@@ -434,12 +434,32 @@ class DiscordBotGUI:
 
         # Saved channels checklist to the right of the channel bar
         self.channel_vars = {}
-        self.channels_frame = tk.Frame(left, bg="#1e1b29")
-        self.channels_frame.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
+        # Scrollable channels area (medium height)
+        self.channels_scroll = tk.Frame(left, bg="#1e1b29")
+        self.channels_scroll.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
+        self.channels_canvas = tk.Canvas(self.channels_scroll, bg="#1e1b29", highlightthickness=0, height=150)
+        self.channels_canvas.pack(side="left", fill="both", expand=True)
+        self.channels_sb = tk.Scrollbar(self.channels_scroll, orient="vertical", command=self.channels_canvas.yview)
+        self.channels_sb.pack(side="right", fill="y")
+        self.channels_canvas.configure(yscrollcommand=self.channels_sb.set)
+        self.channels_frame = tk.Frame(self.channels_canvas, bg="#1e1b29")
+        self.channels_canvas_window = self.channels_canvas.create_window((0, 0), window=self.channels_frame, anchor="nw")
+        def _channels_on_configure(event=None):
+            try:
+                self.channels_canvas.configure(scrollregion=self.channels_canvas.bbox("all"))
+            except Exception:
+                pass
+        self.channels_frame.bind("<Configure>", _channels_on_configure)
+        def _channels_canvas_resize(event):
+            try:
+                self.channels_canvas.itemconfigure(self.channels_canvas_window, width=event.width)
+            except Exception:
+                pass
+        self.channels_canvas.bind("<Configure>", _channels_canvas_resize)
 
         # Token integrated bar (row 1)
         token_bar = tk.Frame(left, bg="#2c2750")
-        token_bar.grid(row=1, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 6))
+        token_bar.grid(row=1, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 2))
         tk.Label(token_bar, text="Token", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(token_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         self.token_entry = tk.Entry(token_bar, width=72, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
@@ -490,7 +510,7 @@ class DiscordBotGUI:
 
         # Message Rotator (row 3) bigger, vertical buttons
         rot = tk.Frame(left, bg="#1e1b29")
-        rot.grid(row=3, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 2))
+        rot.grid(row=3, column=0, columnspan=4, sticky="we", padx=10, pady=(2, 2))
         tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(anchor="w")
         # Wrap rotator controls (left) and rotator list (right)
         rot_wrap = tk.Frame(rot, bg="#1e1b29")
@@ -501,31 +521,39 @@ class DiscordBotGUI:
         rot_row.pack(fill="x")
         self.rotator_input = tk.Entry(rot_row, width=68, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.rotator_input.pack(side="left", fill="x", expand=True)
-        rot_btns = tk.Frame(rot_left, bg="#1e1b29")
-        rot_btns.pack(anchor="n", padx=(8, 0))
-        self.btn_add = tk.Button(rot_btns, text="Add", command=self._rotator_add, width=12)
-        self.btn_add.pack(fill="x")
-        self.btn_remove = tk.Button(rot_btns, text="Remove", command=self._rotator_remove, width=12)
-        self.btn_remove.pack(fill="x", pady=(6, 0))
-        self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=12)
-        self.btn_clear.pack(fill="x", pady=(6, 0))
+        # Buttons will be placed to the right of the Rotator Messages list
         try:
             self.apply_glow(self.rotator_input)
         except Exception:
             pass
-        # Rotator messages list on the right side of rotator controls
+        # Rotator messages list on the right side of rotator controls, with glowing border
         rot_right = tk.Frame(rot_wrap, bg="#1e1b29")
         rot_right.pack(side="right", fill="y", padx=(8, 0))
         tk.Label(rot_right, text="Rotator Messages", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        list_wrap = tk.Frame(rot_right, bg="#1e1b29")
-        list_wrap.pack()
-        self.rotator_list = tk.Listbox(list_wrap, height=5, width=32, selectmode="browse", bg="#2c2750", fg="#e0d7ff",
+        rot_content = tk.Frame(rot_right, bg="#1e1b29")
+        rot_content.pack()
+        try:
+            self.apply_glow(rot_content, thickness=2)
+        except Exception:
+            pass
+        list_frame = tk.Frame(rot_content, bg="#1e1b29")
+        list_frame.pack(side="left")
+        self.rotator_list = tk.Listbox(list_frame, height=5, width=30, selectmode="browse", bg="#2c2750", fg="#e0d7ff",
                                        activestyle="dotbox", highlightthickness=0, relief="flat")
         self.rotator_list.pack(side="left", fill="both")
-        rot_scroll = tk.Scrollbar(list_wrap, orient="vertical", command=self.rotator_list.yview)
+        rot_scroll = tk.Scrollbar(list_frame, orient="vertical", command=self.rotator_list.yview)
         rot_scroll.pack(side="right", fill="y")
         self.rotator_list.configure(yscrollcommand=rot_scroll.set)
         self.rotator_list.bind("<Double-Button-1>", lambda e: self._rotator_remove())
+        # Buttons to the right of the list
+        rot_btns = tk.Frame(rot_content, bg="#1e1b29")
+        rot_btns.pack(side="right", padx=(8, 0), anchor="n")
+        self.btn_add = tk.Button(rot_btns, text="Add", command=self._rotator_add, width=10)
+        self.btn_add.pack(fill="x")
+        self.btn_remove = tk.Button(rot_btns, text="Remove", command=self._rotator_remove, width=10)
+        self.btn_remove.pack(fill="x", pady=(6, 0))
+        self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=10)
+        self.btn_clear.pack(fill="x", pady=(6, 0))
         
         # Bottom row: Message Content label and box (same height as activity log)
         tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
@@ -553,10 +581,10 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Credit box under reply delay
+        # Credit box under reply delay (moved slightly further down)
         try:
             credit = tk.Frame(delays, bg="#2c2750")
-            credit.pack(fill="x", padx=0, pady=(4, 0))
+            credit.pack(fill="x", padx=0, pady=(12, 0))
             self.apply_glow(credit, thickness=2)
             tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
@@ -585,6 +613,8 @@ class DiscordBotGUI:
             tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
             avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
             avatar_box.pack(side="right")
+            # Ensure avatar sits at the top-right within the banner body
+            body.pack_propagate(False)
             try:
                 if SERVER_ICON_URL:
                     rr = requests.get(SERVER_ICON_URL, timeout=10)
