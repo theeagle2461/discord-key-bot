@@ -464,7 +464,7 @@ class DiscordBotGUI:
 
         # Token integrated bar (row 1)
         token_bar = tk.Frame(left, bg="#2c2750")
-        token_bar.grid(row=1, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 2))
+        token_bar.grid(row=1, column=0, columnspan=2, sticky="we", padx=10, pady=(0, 2))
         tk.Label(token_bar, text="Token", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(token_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         self.token_entry = tk.Entry(token_bar, width=72, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
@@ -473,6 +473,28 @@ class DiscordBotGUI:
         self.token_var = tk.StringVar()
         self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
         self.token_menu.pack(side="left")
+        # Select token box to the right of token entry
+        select_wrap = tk.Frame(left, bg="#2c2750")
+        select_wrap.grid(row=1, column=2, columnspan=2, sticky="we", padx=(6,10), pady=(0,2))
+        try:
+            self.apply_glow(select_wrap, thickness=2)
+        except Exception:
+            pass
+        tk.Label(select_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        self.multi_tokens_canvas = tk.Canvas(select_wrap, bg="#2c2750", highlightthickness=0, height=64)
+        self.multi_tokens_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
+        self.multi_tokens_sb = tk.Scrollbar(select_wrap, orient="vertical", command=self.multi_tokens_canvas.yview)
+        self.multi_tokens_sb.pack(side="right", fill="y")
+        self.multi_tokens_canvas.configure(yscrollcommand=self.multi_tokens_sb.set)
+        self.multi_tokens_frame = tk.Frame(self.multi_tokens_canvas, bg="#2c2750")
+        self.multi_tokens_canvas_window = self.multi_tokens_canvas.create_window((0,0), window=self.multi_tokens_frame, anchor="nw")
+        def _multi_conf(e=None):
+            try:
+                self.multi_tokens_canvas.configure(scrollregion=self.multi_tokens_canvas.bbox("all"))
+                self.multi_tokens_canvas.itemconfigure(self.multi_tokens_canvas_window, width=self.multi_tokens_canvas.winfo_width())
+            except Exception:
+                pass
+        self.multi_tokens_frame.bind('<Configure>', _multi_conf)
         # Multi-token selection (up to 3) moved to separate box on the right
         try:
             self.apply_glow(token_bar, thickness=2)
