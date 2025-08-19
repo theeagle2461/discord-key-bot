@@ -472,25 +472,7 @@ class DiscordBotGUI:
         self.token_var = tk.StringVar()
         self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
         self.token_menu.pack(side="left")
-        # Multi-token selection (up to 3)
-        multi_wrap = tk.Frame(token_bar, bg="#2c2750")
-        multi_wrap.pack(side="left", padx=(8, 0))
-        tk.Label(multi_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff").pack(anchor="w")
-        self.multi_tokens_canvas = tk.Canvas(multi_wrap, bg="#2c2750", highlightthickness=0, height=64)
-        self.multi_tokens_canvas.pack(side="left", fill="x")
-        self.multi_tokens_sb = tk.Scrollbar(multi_wrap, orient="vertical", command=self.multi_tokens_canvas.yview)
-        self.multi_tokens_sb.pack(side="right", fill="y")
-        self.multi_tokens_canvas.configure(yscrollcommand=self.multi_tokens_sb.set)
-        self.multi_tokens_frame = tk.Frame(self.multi_tokens_canvas, bg="#2c2750")
-        self.multi_tokens_canvas_window = self.multi_tokens_canvas.create_window((0,0), window=self.multi_tokens_frame, anchor="nw")
-        self.multi_token_vars = {}
-        def _multi_conf(e=None):
-            try:
-                self.multi_tokens_canvas.configure(scrollregion=self.multi_tokens_canvas.bbox("all"))
-                self.multi_tokens_canvas.itemconfigure(self.multi_tokens_canvas_window, width=self.multi_tokens_canvas.winfo_width())
-            except Exception:
-                pass
-        self.multi_tokens_frame.bind('<Configure>', _multi_conf)
+        # Multi-token selection (up to 3) moved to separate box on the right
         try:
             self.apply_glow(token_bar, thickness=2)
             self.apply_glow(self.token_entry)
@@ -531,7 +513,8 @@ class DiscordBotGUI:
         rot_left.pack(side="left", fill="both", expand=True)
         rot_row = tk.Frame(rot_left, bg="#1e1b29")
         rot_row.pack(fill="x")
-        self.rotator_input = tk.Entry(rot_row, width=68, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        # Make rotator input as wide as token bar
+        self.rotator_input = tk.Entry(rot_row, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.rotator_input.pack(side="left", fill="x", expand=True)
         # Buttons will be placed to the right of the Rotator Messages list
         try:
@@ -594,8 +577,9 @@ class DiscordBotGUI:
         
         # Bottom row: Message Content label and box (same height as activity log)
         tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
-        self.message_entry = tk.Text(left, height=12, width=52, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.message_entry.grid(row=4, column=0, sticky="nsew", padx=10, pady=(2, 6))
+        # Make message box as big as token bar width
+        self.message_entry = tk.Text(left, height=6, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(2, 6))
         try:
             self.apply_glow(self.message_entry)
         except Exception:
@@ -653,7 +637,7 @@ class DiscordBotGUI:
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
         self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
 
-        # Right: Discord banner (JOIN US) above Announcements
+        # Right: Discord banner (JOIN US) under Activity Log on left moved earlier; now render under Activity Log
         try:
             join_panel = tk.Frame(right, bg="#2c2750")
             join_panel.pack(fill="x", padx=10, pady=(6, 6))
