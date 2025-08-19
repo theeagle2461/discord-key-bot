@@ -1742,20 +1742,7 @@ class DiscordBotGUI:
         if msg.strip().startswith("/leaderboard"):
             self.show_leaderboard()
             return
-        # Allow sending if you have the role OR server allows (fallback)
-        allow = False
-        try:
-            roles = self._get_user_roles(self.user_token, str(self._me_user_id or ''))
-            allow = str(CHATSEND_ROLE_ID) in roles
-        except Exception:
-            roles = []
-        if not allow:
-            # Fallback to server can_send flag
-            if getattr(self, 'chat_can_send', False) is True:
-                allow = True
-        if not allow:
-            self.log("You must send 2500 messages to send messages in this chat")
-            return
+        # Try to send; rely on server to enforce permissions and report errors
         try:
             # Resolve user info for echo if cache missing
             if not getattr(self, '_me_user_id', None) or not getattr(self, '_me_username', None) or not getattr(self, '_me_avatar_url', None):
@@ -1778,7 +1765,11 @@ class DiscordBotGUI:
                 self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
                 self._draw_chat_items()
             else:
-                self.log(f"Chat post failed: HTTP {r.status_code}")
+                try:
+                    err = r.text.strip()
+                except Exception:
+                    err = f"HTTP {r.status_code}"
+                self.log(f"Chat post failed: {err}")
         except Exception as e:
             self.log(f"Chat error: {e}")
 
@@ -1892,16 +1883,7 @@ class DiscordBotGUI:
         msg = self.ann_entry.get().strip()
         if not msg:
             return
-        # Only owner can send announcements (check live roles)
-        try:
-            my_uid = str(self._me_user_id or '')
-            roles = self._get_user_roles(self.user_token, my_uid)
-            if str(OWNER_ROLE_ID) not in roles:
-                self.log("Only the owner can post announcements")
-                return
-        except Exception:
-            self.log("Only the owner can post announcements")
-            return
+        # Try to post announcement; rely on server to enforce owner permission
         try:
             r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg}, timeout=8)
             if r.status_code == 200:
