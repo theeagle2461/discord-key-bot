@@ -192,11 +192,8 @@ ROLE_ID = 1404221578782183556  # Role ID that grants access
 OWNER_ROLE_ID = int(os.getenv("OWNER_ROLE_ID", "1402650246538072094"))
 CHATSEND_ROLE_ID = int(os.getenv("CHATSEND_ROLE_ID", "1406339861593591900"))
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
-JOIN_URL = os.getenv("JOIN_URL", "https://discord.gg/fEeeXAJfbF")
-SERVER_ICON_URL = os.getenv("SERVER_ICON_URL", "https://cdn.discordapp.com/attachments/1389338051670446323/1406327041741291671/static_6.png")
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
-
 
 def machine_id() -> str:
     raw = f"{platform.node()}|{platform.system()}|{platform.machine()}"
@@ -651,8 +648,6 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # (JOIN US banner moved to right column above Announcements)
-
         # Activity Log next to message content (taller)
         log_panel = tk.Frame(left, bg="#1e1b29")
         log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
@@ -663,63 +658,7 @@ class DiscordBotGUI:
         # Message counter label (live-updating)
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
         self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
-
-        # Right: Discord banner (JOIN US) under Activity Log on left moved earlier; now render under Activity Log
-        try:
-            join_panel = tk.Frame(left, bg="#2c2750")
-            join_panel.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
-            self.apply_glow(join_panel, thickness=2)
-            hdr = tk.Frame(join_panel, bg="#2c2750")
-            hdr.pack(fill="x", padx=8, pady=(8, 4))
-            # Server icon before the text
-            icon_box = tk.Canvas(hdr, width=20, height=20, bg="#2c2750", highlightthickness=0)
-            icon_box.pack(side="left", padx=(0,6))
-            try:
-                if SERVER_ICON_URL:
-                    irr = requests.get(SERVER_ICON_URL, timeout=6)
-                    if irr.status_code == 200:
-                        from PIL import Image
-                        import io as _io
-                        iav = Image.open(_io.BytesIO(irr.content)).resize((20,20))
-                        self._server_icon_small = ImageTk.PhotoImage(iav)
-                        icon_box.create_image(10,10, image=self._server_icon_small)
-            except Exception:
-                pass
-            jl = tk.Label(hdr, text="Discord - JOIN US!", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
-            jl.pack(side="left")
-            jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
-            body = tk.Frame(join_panel, bg="#2c2750")
-            body.pack(fill="x", padx=8, pady=(4, 10))
-            textcol = tk.Frame(body, bg="#2c2750")
-            textcol.pack(side="left", padx=10)
-            # Ensure the description is fully visible (wrap long text)
-            desc_lbl = tk.Label(textcol, text="- srcs - accs - gen - methods - cheapest gag shop", wraplength=260, justify="left",
-                                bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10))
-            desc_lbl.pack(anchor="w")
-            avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
-            avatar_box.pack(side="right")
-            body.pack_propagate(False)
-            try:
-                if SERVER_ICON_URL:
-                    rr = requests.get(SERVER_ICON_URL, timeout=10)
-                    if rr.status_code == 200:
-                        from PIL import Image
-                        import io as _io
-                        av = Image.open(_io.BytesIO(rr.content)).resize((56,56))
-                        self._server_icon_photo = ImageTk.PhotoImage(av)
-                        avatar_box.create_image(28, 28, image=self._server_icon_photo)
-                    else:
-                        avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-                else:
-                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-            except Exception:
-                try:
-                    avatar_box.create_oval(2, 2, 54, 54, outline="#7d5fff")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
+            
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
         ann_panel.pack(fill="x", padx=10, pady=(4, 4))
@@ -2256,5 +2195,4 @@ if __name__ == "__main__":
 
     selfbot = Selfbot()
     selfbot.run()
-
 
