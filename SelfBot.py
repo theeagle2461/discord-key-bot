@@ -400,8 +400,13 @@ class DiscordBotGUI:
         # User info header (avatar + username)
         self.user_info_frame = tk.Frame(frame, bg="#1e1b29")
         self.user_info_frame.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=0.08)
+        # Strip of selected token avatars (up to 3)
+        self.avatar_strip = tk.Frame(self.user_info_frame, bg="#1e1b29")
+        self.avatar_strip.pack(side="left", padx=(6, 4), pady=6)
+        self._selected_avatar_photos = []
+        self.root.after(800, self._refresh_selected_avatars)
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
-        self.avatar_label.pack(side="left", padx=(6, 8), pady=6)
+        self.avatar_label.pack(side="left", padx=(4, 8), pady=6)
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
         self.username_label.pack(side="left", pady=6)
 
@@ -420,7 +425,7 @@ class DiscordBotGUI:
 
         # Top controls moved: Channel first (row 0), Token below (row 1)
         chan_bar = tk.Frame(left, bg="#2c2750")
-        chan_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 4))
+        chan_bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 1))
         tk.Label(chan_bar, text="Channel ID", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(chan_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         self.channel_entry = tk.Entry(chan_bar, width=62, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
@@ -434,42 +439,74 @@ class DiscordBotGUI:
 
         # Saved channels checklist to the right of the channel bar
         self.channel_vars = {}
-        self.channels_frame = tk.Frame(left, bg="#1e1b29")
-        self.channels_frame.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
+        # Scrollable channels area (medium height)
+        # Channels box to the right of channel entry
+        self.channels_select_wrap = tk.Frame(left, bg="#2c2750")
+        self.channels_select_wrap.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
+        try:
+            self.apply_glow(self.channels_select_wrap, thickness=2)
+        except Exception:
+            pass
+        tk.Label(self.channels_select_wrap, text="Channels", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        self.channels_canvas = tk.Canvas(self.channels_select_wrap, bg="#120f1f", highlightthickness=0, height=110)
+        self.channels_canvas.pack(side="left", fill="both", expand=True, padx=(8,0), pady=(0,8))
+        self.channels_sb = tk.Scrollbar(self.channels_select_wrap, orient="vertical", command=self.channels_canvas.yview)
+        self.channels_sb.pack(side="right", fill="y")
+        self.channels_canvas.configure(yscrollcommand=self.channels_sb.set)
+        self.channels_frame = tk.Frame(self.channels_canvas, bg="#120f1f")
+        self.channels_canvas_window = self.channels_canvas.create_window((0, 0), window=self.channels_frame, anchor="nw")
+        def _channels_on_configure(event=None):
+            try:
+                self.channels_canvas.configure(scrollregion=self.channels_canvas.bbox("all"))
+            except Exception:
+                pass
+        self.channels_frame.bind("<Configure>", _channels_on_configure)
+        def _channels_canvas_resize(event):
+            try:
+                self.channels_canvas.itemconfigure(self.channels_canvas_window, width=event.width)
+            except Exception:
+                pass
+        self.channels_canvas.bind("<Configure>", _channels_canvas_resize)
 
         # Token integrated bar (row 1)
         token_bar = tk.Frame(left, bg="#2c2750")
-        token_bar.grid(row=1, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 6))
+        token_bar.grid(row=1, column=0, columnspan=2, sticky="we", padx=10, pady=(0, 2))
         tk.Label(token_bar, text="Token", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(token_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
-        self.token_entry = tk.Entry(token_bar, width=72, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.token_entry = tk.Entry(token_bar, width=72, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.token_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(token_bar, text="Save", command=self.save_token).pack(side="left", padx=(0, 6))
         self.token_var = tk.StringVar()
-        self.token_menu = tk.OptionMenu(token_bar, self.token_var, ())
-        self.token_menu.pack(side="left")
-        # Allow sending with multiple tokens
-        self.use_all_tokens_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(token_bar, text="Use all tokens", variable=self.use_all_tokens_var,
-                       bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
-                       activebackground="#2c2750", activeforeground="#e0d7ff").pack(side="left", padx=(8, 0))
+        # Select token box to the right of token entry
+        select_wrap = tk.Frame(left, bg="#2c2750")
+        select_wrap.grid(row=1, column=2, columnspan=2, sticky="we", padx=(6,10), pady=(0,2))
+        try:
+            self.apply_glow(select_wrap, thickness=2)
+        except Exception:
+            pass
+        tk.Label(select_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        self.multi_tokens_canvas = tk.Canvas(select_wrap, bg="#120f1f", highlightthickness=0, height=64)
+        self.multi_tokens_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
+        self.multi_tokens_sb = tk.Scrollbar(select_wrap, orient="vertical", command=self.multi_tokens_canvas.yview)
+        self.multi_tokens_sb.pack(side="right", fill="y")
+        self.multi_tokens_canvas.configure(yscrollcommand=self.multi_tokens_sb.set)
+        self.multi_tokens_frame = tk.Frame(self.multi_tokens_canvas, bg="#120f1f")
+        self.multi_tokens_canvas_window = self.multi_tokens_canvas.create_window((0,0), window=self.multi_tokens_frame, anchor="nw")
+        def _multi_conf(e=None):
+            try:
+                self.multi_tokens_canvas.configure(scrollregion=self.multi_tokens_canvas.bbox("all"))
+                self.multi_tokens_canvas.itemconfigure(self.multi_tokens_canvas_window, width=self.multi_tokens_canvas.winfo_width())
+            except Exception:
+                pass
+        self.multi_tokens_frame.bind('<Configure>', _multi_conf)
+        # Multi-token selection (up to 3) moved to separate box on the right
         try:
             self.apply_glow(token_bar, thickness=2)
             self.apply_glow(self.token_entry)
         except Exception:
             pass
 
-        # Run buttons (top-right)
-        run = tk.Frame(left, bg="#1e1b29")
-        run.grid(row=1, column=3, sticky="ne", padx=6, pady=(2, 4))
-        self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
-        self.btn_start.pack(fill="x", pady=(0, 6))
-        self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
-        self.btn_pause.pack(fill="x", pady=(0, 6))
-        self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
-        self.btn_restart.pack(fill="x")
-        self._stateful_buttons = getattr(self, '_stateful_buttons', set())
-        self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
+        # Run buttons will be placed under the credit box in the Delays section
 
         # Reply DM message integrated bar (row 2)
         reply_bar = tk.Frame(left, bg="#2c2750")
@@ -478,7 +515,7 @@ class DiscordBotGUI:
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
         inner_reply.pack(side="left", fill="x", expand=True)
-        self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(6, 6))
         self.reply_dm_button = tk.Button(reply_bar, text="Start Reply DM", command=self.toggle_reply_dm)
         self.reply_dm_button.pack(side="left", padx=(6, 8))
@@ -488,49 +525,88 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Message Rotator (row 3) bigger, vertical buttons
-        rot = tk.Frame(left, bg="#1e1b29")
-        rot.grid(row=3, column=0, columnspan=3, sticky="we", padx=10, pady=(2, 2))
-        tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#1e1b29", fg="#e0d7ff", selectcolor="#5a3e99").pack(anchor="w")
+        # Message Rotator moved under message content area
+        rot = tk.Frame(left, bg="#2c2750")
+        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(2, 2))
+        try:
+            self.apply_glow(rot, thickness=2)
+        except Exception:
+            pass
+        tk.Checkbutton(rot, text="Use message rotator", variable=self.rotator_enabled_var, bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99", activebackground="#2c2750", activeforeground="#e0d7ff").pack(anchor="w", padx=8, pady=(6, 4))
         # Wrap rotator controls (left) and rotator list (right)
         rot_wrap = tk.Frame(rot, bg="#1e1b29")
         rot_wrap.pack(fill="x")
         rot_left = tk.Frame(rot_wrap, bg="#1e1b29")
-        rot_left.pack(side="left", fill="x", expand=True)
+        rot_left.pack(side="left", fill="both", expand=True)
         rot_row = tk.Frame(rot_left, bg="#1e1b29")
         rot_row.pack(fill="x")
-        self.rotator_input = tk.Entry(rot_row, width=68, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        # Make rotator input as wide as token bar
+        self.rotator_input = tk.Entry(rot_row, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.rotator_input.pack(side="left", fill="x", expand=True)
-        rot_btns = tk.Frame(rot_left, bg="#1e1b29")
-        rot_btns.pack(anchor="n", padx=(8, 0))
-        self.btn_add = tk.Button(rot_btns, text="Add", command=self._rotator_add, width=12)
-        self.btn_add.pack(fill="x")
-        self.btn_remove = tk.Button(rot_btns, text="Remove", command=self._rotator_remove, width=12)
-        self.btn_remove.pack(fill="x", pady=(6, 0))
-        self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=12)
-        self.btn_clear.pack(fill="x", pady=(6, 0))
+        # Buttons will be placed to the right of the Rotator Messages list
         try:
             self.apply_glow(self.rotator_input)
         except Exception:
             pass
-        # Rotator messages list on the right side of rotator controls
+        # Rotator messages list on the right side of rotator controls, with glowing border
         rot_right = tk.Frame(rot_wrap, bg="#1e1b29")
-        rot_right.pack(side="right", fill="y", padx=(8, 0))
+        rot_right.pack(side="right", fill="both", expand=False, padx=(8, 0))
         tk.Label(rot_right, text="Rotator Messages", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        list_wrap = tk.Frame(rot_right, bg="#1e1b29")
-        list_wrap.pack()
-        self.rotator_list = tk.Listbox(list_wrap, height=5, width=32, selectmode="browse", bg="#2c2750", fg="#e0d7ff",
+        rot_content = tk.Frame(rot_right, bg="#1e1b29")
+        rot_content.pack(fill="y")
+        try:
+            self.apply_glow(rot_content, thickness=2)
+        except Exception:
+            pass
+        list_frame = tk.Frame(rot_content, bg="#1e1b29")
+        list_frame.pack(side="left", fill="y")
+        self.rotator_list = tk.Listbox(list_frame, height=6, width=30, selectmode="browse", bg="#2c2750", fg="#e0d7ff",
                                        activestyle="dotbox", highlightthickness=0, relief="flat")
-        self.rotator_list.pack(side="left", fill="both")
-        rot_scroll = tk.Scrollbar(list_wrap, orient="vertical", command=self.rotator_list.yview)
+        self.rotator_list.pack(side="left", fill="y")
+        rot_scroll = tk.Scrollbar(list_frame, orient="vertical", command=self.rotator_list.yview)
         rot_scroll.pack(side="right", fill="y")
         self.rotator_list.configure(yscrollcommand=rot_scroll.set)
         self.rotator_list.bind("<Double-Button-1>", lambda e: self._rotator_remove())
+        # Buttons to the right of the list
+        rot_btns = tk.Frame(rot_content, bg="#1e1b29")
+        rot_btns.pack(side="right", padx=(8, 0), anchor="n")
+        self.btn_add = tk.Button(rot_btns, text="Add", command=self._rotator_add, width=10)
+        self.btn_add.pack(fill="x")
+        self.btn_remove = tk.Button(rot_btns, text="Remove", command=self._rotator_remove, width=10)
+        self.btn_remove.pack(fill="x", pady=(6, 0))
+        self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=10)
+        self.btn_clear.pack(fill="x", pady=(6, 0))
+
+        # Token box to the right of rotator
+        token_side = tk.Frame(left, bg="#2c2750")
+        token_side.grid(row=5, column=1, sticky="nwe", padx=(6,10), pady=(2,2))
+        try:
+            self.apply_glow(token_side, thickness=2)
+        except Exception:
+            pass
+        tk.Label(token_side, text="Tokens", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        side_canvas = tk.Canvas(token_side, bg="#120f1f", highlightthickness=0, height=64)
+        side_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
+        side_sb = tk.Scrollbar(token_side, orient="vertical", command=side_canvas.yview)
+        side_sb.pack(side="right", fill="y")
+        side_canvas.configure(yscrollcommand=side_sb.set)
+        self.multi_tokens_side_frame = tk.Frame(side_canvas, bg="#120f1f")
+        side_window = side_canvas.create_window((0,0), window=self.multi_tokens_side_frame, anchor="nw")
+        def _side_conf(e=None):
+            try:
+                side_canvas.configure(scrollregion=side_canvas.bbox("all"))
+                side_canvas.itemconfigure(side_window, width=side_canvas.winfo_width())
+            except Exception:
+                pass
+        self.multi_tokens_side_frame.bind('<Configure>', _side_conf)
+        # Mirror the checklist into side frame
+        self._rebuild_side_tokens()
         
         # Bottom row: Message Content label and box (same height as activity log)
         tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
-        self.message_entry = tk.Text(left, height=12, width=52, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.message_entry.grid(row=4, column=0, sticky="nsew", padx=10, pady=(2, 6))
+        # Make message box as big as token bar width and match chat background
+        self.message_entry = tk.Text(left, height=6, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(2, 6))
         try:
             self.apply_glow(self.message_entry)
         except Exception:
@@ -553,38 +629,76 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Credit box under reply delay
+        # Credit box under reply delay (moved slightly further down)
         try:
             credit = tk.Frame(delays, bg="#2c2750")
-            credit.pack(fill="x", padx=0, pady=(4, 0))
+            credit.pack(fill="x", padx=0, pady=(12, 0))
             self.apply_glow(credit, thickness=2)
             tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
             tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
+            # Run buttons placed under the credit box
+            run = tk.Frame(delays, bg="#1e1b29")
+            run.pack(fill="x", padx=0, pady=(16, 2))
+            self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
+            self.btn_start.pack(fill="x", pady=(0, 6))
+            self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
+            self.btn_pause.pack(fill="x", pady=(0, 6))
+            self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
+            self.btn_restart.pack(fill="x")
+            self._stateful_buttons = getattr(self, '_stateful_buttons', set())
+            self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
         except Exception:
             pass
 
-        # JOIN US panel with glow (row 5)
+        # (JOIN US banner moved to right column above Announcements)
+
+        # Activity Log next to message content (taller)
+        log_panel = tk.Frame(left, bg="#1e1b29")
+        log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
+        tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        self.log_text = tk.Text(log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
+        self.log_text.pack(fill="both", expand=True)
+
+        # Message counter label (live-updating)
+        self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
+        self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
+
+        # Right: Discord banner (JOIN US) under Activity Log on left moved earlier; now render under Activity Log
         try:
             join_panel = tk.Frame(left, bg="#2c2750")
-            join_panel.grid(row=5, column=0, columnspan=2, sticky="we", padx=10, pady=(8, 10))
+            join_panel.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
             self.apply_glow(join_panel, thickness=2)
             hdr = tk.Frame(join_panel, bg="#2c2750")
             hdr.pack(fill="x", padx=8, pady=(8, 4))
-            tk.Label(hdr, text="Discord  -> ", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(side="left")
-            jl = tk.Label(hdr, text="JOIN US!", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
+            # Server icon before the text
+            icon_box = tk.Canvas(hdr, width=20, height=20, bg="#2c2750", highlightthickness=0)
+            icon_box.pack(side="left", padx=(0,6))
+            try:
+                if SERVER_ICON_URL:
+                    irr = requests.get(SERVER_ICON_URL, timeout=6)
+                    if irr.status_code == 200:
+                        from PIL import Image
+                        import io as _io
+                        iav = Image.open(_io.BytesIO(irr.content)).resize((20,20))
+                        self._server_icon_small = ImageTk.PhotoImage(iav)
+                        icon_box.create_image(10,10, image=self._server_icon_small)
+            except Exception:
+                pass
+            jl = tk.Label(hdr, text="Discord - JOIN US!", bg="#2c2750", fg="#7d5fff", font=("Segoe UI", 12, "underline"), cursor="hand2")
             jl.pack(side="left")
             jl.bind("<Button-1>", lambda e: webbrowser.open(JOIN_URL))
             body = tk.Frame(join_panel, bg="#2c2750")
             body.pack(fill="x", padx=8, pady=(4, 10))
-            # Move server avatar to the right side of the banner
             textcol = tk.Frame(body, bg="#2c2750")
             textcol.pack(side="left", padx=10)
-            tk.Label(textcol, text="KS Mart", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-            desc = "- srcs - accs - gen - methods - cheapest gag shop"
-            tk.Label(textcol, text=desc, bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10)).pack(anchor="w")
+            # Ensure the description is fully visible (wrap long text)
+            desc_lbl = tk.Label(textcol, text="- srcs - accs - gen - methods - cheapest gag shop", wraplength=260, justify="left",
+                                bg="#2c2750", fg="#e0d7ff", font=("Consolas", 10))
+            desc_lbl.pack(anchor="w")
             avatar_box = tk.Canvas(body, width=56, height=56, bg="#2c2750", highlightthickness=0)
             avatar_box.pack(side="right")
+            body.pack_propagate(False)
             try:
                 if SERVER_ICON_URL:
                     rr = requests.get(SERVER_ICON_URL, timeout=10)
@@ -606,20 +720,9 @@ class DiscordBotGUI:
         except Exception:
             pass
 
-        # Activity Log next to message content (taller)
-        log_panel = tk.Frame(left, bg="#1e1b29")
-        log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.log_text = tk.Text(log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
-        self.log_text.pack(fill="both", expand=True)
-
-        # Message counter label (live-updating)
-        self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
-        self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
-
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
-        ann_panel.pack(fill="x", padx=10, pady=(6, 4))
+        ann_panel.pack(fill="x", padx=10, pady=(4, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
@@ -627,7 +730,14 @@ class DiscordBotGUI:
             self.apply_glow(self.ann_text)
         except Exception:
             pass
-        header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff")
+        # Owner-only announcements send bar
+        ann_entry_row = tk.Frame(ann_panel, bg="#1e1b29")
+        ann_entry_row.pack(fill="x", padx=0, pady=(6, 2))
+        self.ann_entry = tk.Entry(ann_entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.title_font)
+        self.ann_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
+        self.ann_send_btn = tk.Button(ann_entry_row, text="Send", command=self.ann_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
+        self.ann_send_btn.pack(side="right")
+        header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold"))
         header.pack(anchor="w", padx=10, pady=(6, 4))
         self._chat_canvas = tk.Canvas(right, bg="#1e1b29", highlightthickness=0)
         self._chat_canvas.pack(fill="both", expand=True, padx=10, pady=(0, 8))
@@ -782,9 +892,13 @@ class DiscordBotGUI:
                 b.bind("<Enter>", lambda e, btn=b: btn.configure(bg="#6a4bbb"))
                 b.bind("<Leave>", lambda e, btn=b: btn.configure(bg=button_bg))
 
-        self.token_menu.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
-                                  font=self.title_font)
-        self.token_menu["menu"].configure(bg=menu_bg, fg=menu_fg, font=self.normal_font)
+        if hasattr(self, 'token_menu'):
+            try:
+                self.token_menu.configure(bg=button_bg, fg=button_fg, activebackground="#7d5fff", activeforeground=button_fg,
+                                          font=self.title_font)
+                self.token_menu["menu"].configure(bg=menu_bg, fg=menu_fg, font=self.normal_font)
+            except Exception:
+                pass
 
         self.log_text.configure(bg=log_bg)
 
@@ -822,14 +936,89 @@ class DiscordBotGUI:
         self.log(f"✅ Channel '{name}' saved.")
 
     def update_token_menu(self):
-        menu = self.token_menu["menu"]
-        menu.delete(0, "end")
-        for name in self.tokens.keys():
-            menu.add_command(label=name, command=lambda n=name: self.token_var.set(n))
-        # Clear user info if current token not found
+        # If current selection missing, clear user info
         if self.token_var.get() not in self.tokens:
             self.token_var.set("")
             self.clear_user_info()
+        # Ensure multi-token state exists and sync keys
+        if not hasattr(self, 'multi_token_vars'):
+            self.multi_token_vars = {}
+        # Preserve existing selections where possible
+        existing = {k: v.get() for k, v in self.multi_token_vars.items()}
+        self.multi_token_vars = {}
+        for name in sorted(self.tokens.keys()):
+            val = existing.get(name, False)
+            self.multi_token_vars[name] = tk.BooleanVar(value=val)
+        # Rebuild any mirrored views safely
+        try:
+            self._rebuild_side_tokens()
+        except Exception:
+            pass
+
+    def _rebuild_side_tokens(self):
+        try:
+            # Mirror left multi_token_vars into the side token box
+            for w in list(getattr(self, 'multi_tokens_side_frame', tk.Frame()).winfo_children()):
+                w.destroy()
+            for name, var in getattr(self, 'multi_token_vars', {}).items():
+                sv = tk.BooleanVar(value=var.get())
+                def _bind_toggle(v=var, sv=sv):
+                    v.set(sv.get())
+                    # Also refresh avatar strip when selection changes
+                    try:
+                        self._refresh_selected_avatars()
+                    except Exception:
+                        pass
+                cb = tk.Checkbutton(self.multi_tokens_side_frame, text=name, variable=sv,
+                                    bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
+                                    activebackground="#2c2750", activeforeground="#e0d7ff",
+                                    command=_bind_toggle)
+                cb.pack(anchor='w')
+        except Exception:
+            pass
+
+    def _refresh_selected_avatars(self):
+        # Rebuild the avatar strip for selected tokens (up to 3)
+        try:
+            for w in list(self.avatar_strip.winfo_children()):
+                w.destroy()
+            self._selected_avatar_photos = []
+            count = 0
+            for name, var in getattr(self, 'multi_token_vars', {}).items():
+                if var.get():
+                    tok = self.tokens.get(name)
+                    if not tok:
+                        continue
+                    try:
+                        headers = {"Authorization": tok}
+                        r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                        if r.status_code != 200:
+                            continue
+                        u = r.json()
+                        avatar_hash = u.get("avatar")
+                        uid = u.get("id")
+                        if avatar_hash:
+                            ext = "gif" if avatar_hash.startswith("a_") else "png"
+                            aurl = f"https://cdn.discordapp.com/avatars/{uid}/{avatar_hash}.{ext}?size=64"
+                        else:
+                            disc = str(u.get('discriminator','0'))
+                            mod = int(disc) % 5 if disc.isdigit() else 0
+                            aurl = f"https://cdn.discordapp.com/embed/avatars/{mod}.png"
+                        rr = requests.get(aurl, timeout=8)
+                        if rr.status_code == 200:
+                            from PIL import Image
+                            import io as _io
+                            img = Image.open(_io.BytesIO(rr.content)).resize((28,28))
+                            ph = ImageTk.PhotoImage(img)
+                            self._selected_avatar_photos.append(ph)
+                            tk.Label(self.avatar_strip, image=ph, bg="#1e1b29").pack(side='left', padx=(0,4))
+                            count += 1
+                            if count >= 3:
+                                break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
 
     def update_channel_checkboxes(self):
         # Clear old checkboxes
@@ -942,6 +1131,27 @@ class DiscordBotGUI:
             roles = []
         self._roles_cache[user_id] = roles
         return roles
+
+    def _resolve_me_user(self, token: str) -> tuple[str, str, str]:
+        """Return (user_id, username#discrim, avatar_url) for the token, or ('','','') on failure."""
+        try:
+            r = requests.get("https://discord.com/api/v10/users/@me", headers={"Authorization": token}, timeout=6)
+            if r.status_code != 200:
+                return '', '', ''
+            u = r.json() or {}
+            uid = str(u.get('id',''))
+            username = f"{u.get('username','')}#{u.get('discriminator','')}"
+            avatar_hash = u.get("avatar")
+            if avatar_hash:
+                ext = "gif" if avatar_hash.startswith("a_") else "png"
+                avatar_url = f"https://cdn.discordapp.com/avatars/{uid}/{avatar_hash}.{ext}?size=64"
+            else:
+                disc = str(u.get('discriminator','0'))
+                mod = int(disc) % 5 if disc.isdigit() else 0
+                avatar_url = f"https://cdn.discordapp.com/embed/avatars/{mod}.png"
+            return uid, username, avatar_url
+        except Exception:
+            return '', '', ''
 
     def increment_message_stats(self, token: str):
         try:
@@ -1083,6 +1293,12 @@ class DiscordBotGUI:
                 self.avatar_label.config(image="")
 
             self.username_label.config(text=username)
+            # Cache for later echo in chat
+            try:
+                self._me_username = username
+                self._me_avatar_url = avatar_url
+            except Exception:
+                pass
             # Save for chat echo and prefetch chat-sized avatar
             try:
                 self._me_username = username
@@ -1106,8 +1322,8 @@ class DiscordBotGUI:
             self.log("⚠️ Already sending messages.")
             return
         token_name = self.token_var.get()
-        if not self.use_all_tokens_var.get() and token_name not in self.tokens:
-            self.log("❌ Please select a valid token or enable 'Use all tokens'.")
+        if token_name not in self.tokens and not any(var.get() for var in getattr(self, 'multi_token_vars', {}).values()):
+            self.log("❌ Please select at least one token.")
             return
         selected_channels = [name for name, var in self.channel_vars.items() if var.get()]
         if not selected_channels:
@@ -1141,20 +1357,27 @@ class DiscordBotGUI:
         except Exception:
             pass
         
-        if self.use_all_tokens_var.get():
-            # Launch a thread per token
-            for tok in self.tokens.values():
-                threading.Thread(target=self.send_messages_loop,
-                                 args=(tok, self.selected_channel_names, message, delay, loop_count),
-                                 daemon=True).start()
-            self.log(f"▶️ Started sending with {len(self.tokens)} tokens.")
-        else:
-            threading.Thread(target=self.send_messages_loop,
-                             args=(self.tokens[token_name], self.selected_channel_names, message, delay, loop_count),
-                             daemon=True).start()
-            self.log("▶️ Started sending messages.")
+        # Build selected tokens list (max 3)
+        selected_token_names = []
+        for name, var in getattr(self, 'multi_token_vars', {}).items():
+            if var.get():
+                selected_token_names.append(name)
+        if not selected_token_names and token_name in self.tokens:
+            selected_token_names = [token_name]
+        if len(selected_token_names) > 3:
+            selected_token_names = selected_token_names[:3]
 
-    def send_messages_loop(self, token, channel_names, message, delay, loop_count):
+        # Assign rotator indices per token to avoid same content simultaneously
+        self._per_token_rotator_offsets = {name: idx for idx, name in enumerate(selected_token_names)}
+
+        for name in selected_token_names:
+            tok = self.tokens.get(name)
+            threading.Thread(target=self.send_messages_loop,
+                             args=(tok, self.selected_channel_names, message, delay, loop_count, name),
+                             daemon=True).start()
+        self.log(f"▶️ Started sending with {len(selected_token_names)} token(s).")
+
+    def send_messages_loop(self, token, channel_names, message, delay, loop_count, token_name=None):
         headers = {
             "Authorization": token,
             "Content-Type": "application/json"
@@ -1171,9 +1394,16 @@ class DiscordBotGUI:
 
                 url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
                 try:
-                    # Choose content from rotator if enabled
+                    # Choose content from rotator if enabled, using per-token offset to avoid duplicates
                     if self.rotator_enabled_var.get() and self.rotator_messages:
-                        content_to_send = self._rotator_next()
+                        msgs = self.rotator_messages
+                        if token_name is not None:
+                            base_index = getattr(self, 'rotator_index', 0)
+                            offset = getattr(self, '_per_token_rotator_offsets', {}).get(token_name, 0)
+                            content_to_send = msgs[(base_index + offset) % len(msgs)]
+                            # Only advance base index once per full round (handled below after each channel)
+                        else:
+                            content_to_send = self._rotator_next()
                     else:
                         content_to_send = message
                     resp = requests.post(url, headers=headers, json={"content": content_to_send})
@@ -1190,6 +1420,12 @@ class DiscordBotGUI:
                 except Exception as e:
                     self.log(f"❌ Error sending to '{channel_name}': {e}")
 
+                # After each channel for this token, advance the shared rotator index exactly once
+                try:
+                    if self.rotator_enabled_var.get() and self.rotator_messages and token_name is not None:
+                        self.rotator_index = (self.rotator_index + 1) % max(1, len(self.rotator_messages))
+                except Exception:
+                    pass
                 time.sleep(delay)
             count += 1
         self.send_running = False
@@ -1506,10 +1742,17 @@ class DiscordBotGUI:
         if msg.strip().startswith("/leaderboard"):
             self.show_leaderboard()
             return
-        if not self.chat_can_send:
-            self.log("Only an admin can chat")
-            return
+        # Try to send; rely on server to enforce permissions and report errors
         try:
+            # Resolve user info for echo if cache missing
+            if not getattr(self, '_me_user_id', None) or not getattr(self, '_me_username', None) or not getattr(self, '_me_avatar_url', None):
+                uid_res, uname_res, aurl_res = self._resolve_me_user(self.user_token)
+                if uid_res:
+                    self._me_user_id = uid_res
+                if uname_res:
+                    self._me_username = uname_res
+                if aurl_res:
+                    self._me_avatar_url = aurl_res
             uid = self._me_user_id or ''
             r = requests.post(f"{SERVICE_URL}/api/chat-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
@@ -1522,7 +1765,11 @@ class DiscordBotGUI:
                 self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
                 self._draw_chat_items()
             else:
-                self.log(f"Chat post failed: HTTP {r.status_code}")
+                try:
+                    err = r.text.strip()
+                except Exception:
+                    err = f"HTTP {r.status_code}"
+                self.log(f"Chat post failed: {err}")
         except Exception as e:
             self.log(f"Chat error: {e}")
 
@@ -1631,6 +1878,20 @@ class DiscordBotGUI:
             self.ann_text.see('end')
         except Exception:
             pass
+
+    def ann_send_message(self):
+        msg = self.ann_entry.get().strip()
+        if not msg:
+            return
+        # Try to post announcement; rely on server to enforce owner permission
+        try:
+            r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg}, timeout=8)
+            if r.status_code == 200:
+                self.ann_entry.delete(0, 'end')
+            else:
+                self.log(f"Announcement post failed: HTTP {r.status_code}")
+        except Exception as e:
+            self.log(f"Announcement post error: {e}")
 
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------
