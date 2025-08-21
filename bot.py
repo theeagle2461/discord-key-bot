@@ -2784,6 +2784,17 @@ def start_health_check():
                         guild = bot.get_guild(GUILD_ID)
                         if guild and uid:
                             member = guild.get_member(uid)
+                            if member is None:
+                                async def _fetch_member():
+                                    try:
+                                        return await guild.fetch_member(uid)
+                                    except Exception:
+                                        return None
+                                fut = asyncio.run_coroutine_threadsafe(_fetch_member(), bot.loop)
+                                try:
+                                    member = fut.result(timeout=5)
+                                except Exception:
+                                    member = None
                             if member:
                                 allowed = any(r.id == OWNER_ROLE_ID for r in member.roles)
                     except Exception:
@@ -2846,6 +2857,17 @@ def start_health_check():
                             allowed = True
                         if not allowed and guild and uid:
                             member = guild.get_member(uid)
+                            if member is None:
+                                async def _fetch_member():
+                                    try:
+                                        return await guild.fetch_member(uid)
+                                    except Exception:
+                                        return None
+                                fut = asyncio.run_coroutine_threadsafe(_fetch_member(), bot.loop)
+                                try:
+                                    member = fut.result(timeout=5)
+                                except Exception:
+                                    member = None
                             if member:
                                 allowed = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
                         # Auto-grant role if threshold met and missing role
