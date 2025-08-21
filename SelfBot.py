@@ -658,14 +658,22 @@ class DiscordBotGUI:
         self._rebuild_side_tokens()
         
         # Bottom row: Message Content label and box (same height as activity log)
-        tk.Label(left, text="Message Content", bg="#1e1b29", fg="#e0d7ff").grid(row=4, column=0, sticky="nw", padx=10, pady=(6, 2))
+        msg_bar = tk.Frame(left, bg="#2c2750")
+        msg_bar.grid(row=4, column=0, sticky="we", padx=10, pady=(6,2))
+        try:
+            self.apply_glow(msg_bar, thickness=2)
+        except Exception:
+            pass
+        tk.Label(msg_bar, text="Message Content", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=8, pady=(4,2))
         # Make message box as big as token bar width and match chat background
-        self.message_entry = tk.Text(left, height=6, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(2, 6))
+        self.message_entry = tk.Text(left, height=8, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(0, 6))
         try:
             self.apply_glow(self.message_entry)
         except Exception:
             pass
+        # Ensure row 4 expands vertically with the text box
+        left.grid_rowconfigure(4, weight=1)
         
         # Delays bigger, stacked
         delays = tk.Frame(left, bg="#1e1b29")
