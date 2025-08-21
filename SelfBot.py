@@ -102,7 +102,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     root = tk.Tk()
     root.title("KS Bot Activation")
     root.configure(bg="#1e1b29")
-    root.geometry("520x380")
+    root.geometry("620x460")
     root.resizable(False, False)
 
     # Center on screen
@@ -110,7 +110,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
         root.update_idletasks()
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
-        ww, wh = 520, 380
+        ww, wh = 620, 460
         x = int((sw - ww) / 2)
         y = int((sh - wh) / 3)
         root.geometry(f"{ww}x{wh}+{x}+{y}")
