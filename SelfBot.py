@@ -215,19 +215,17 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
             r = requests.get(url, headers={"Authorization": tok}, timeout=10)
             if r.status_code != 200:
                 try:
-                    messagebox.showerror(
-                        "Join Discord",
-                        "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF"
-                    )
+                    title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
+                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\\nJoin here: https://discord.gg/fEeeXAJfbF")
+                    messagebox.showerror(title, text)
                 except Exception:
                     pass
                 return
         except Exception:
             try:
-                messagebox.showerror(
-                    "Join Discord",
-                    "Could not verify Discord membership. Please join here and try again: https://discord.gg/fEeeXAJfbF"
-                )
+                title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
+                text = os.getenv("JOIN_DIALOG_TEXT", "Could not verify Discord membership. Please join here and try again: https://discord.gg/fEeeXAJfbF")
+                messagebox.showerror(title, text)
             except Exception:
                 pass
             return
