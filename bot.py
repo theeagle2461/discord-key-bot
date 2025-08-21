@@ -2141,8 +2141,11 @@ def start_health_check():
                     self.send_header('Content-Type', 'application/json')
                     self.send_header('Content-Disposition', 'attachment; filename="backup.json"')
                     self.end_headers()
-                    import json
-                    self.wfile.write(json.dumps(payload, indent=2).encode())
+                    try:
+                        self.wfile.write(json.dumps(payload, indent=2).encode())
+                    except Exception:
+                        import json as _json
+                        self.wfile.write(_json.dumps(payload, indent=2).encode())
                     return
 
                 if self.path.startswith('/api/member-status'):
@@ -2221,8 +2224,11 @@ def start_health_check():
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    import json
-                    self.wfile.write(json.dumps(resp, indent=2).encode())
+                    try:
+                        self.wfile.write(json.dumps(resp, indent=2).encode())
+                    except Exception:
+                        import json as _json
+                        self.wfile.write(_json.dumps(resp, indent=2).encode())
                     return
 
                 if self.path.startswith('/api/ann-poll'):
@@ -2249,7 +2255,11 @@ def start_health_check():
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    self.wfile.write(json.dumps(payload, indent=2).encode())
+                    try:
+                        self.wfile.write(json.dumps(payload, indent=2).encode())
+                    except Exception:
+                        import json as _json
+                        self.wfile.write(_json.dumps(payload, indent=2).encode())
                     return
 
                 if self.path.startswith('/api/chat-poll'):
@@ -2318,12 +2328,15 @@ def start_health_check():
                     parsed = urllib.parse.urlparse(self.path)
                     q = urllib.parse.parse_qs(parsed.query or '')
                     key = (q.get('key', [None])[0])
-                    import json
                     if not key:
                         self.send_response(400)
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
-                        self.wfile.write(json.dumps({'error':'missing key'}).encode())
+                        try:
+                            self.wfile.write(json.dumps({'error':'missing key'}).encode())
+                        except Exception:
+                            import json as _json
+                            self.wfile.write(_json.dumps({'error':'missing key'}).encode())
                         return
                     info = None
                     if key in key_manager.keys:
@@ -2545,8 +2558,11 @@ def start_health_check():
                         },
                         "last_updated": int(time.time())
                     }
-                    import json
-                    self.wfile.write(json.dumps(keys_data, indent=2).encode())
+                    try:
+                        self.wfile.write(json.dumps(keys_data, indent=2).encode())
+                    except Exception:
+                        import json as _json
+                        self.wfile.write(_json.dumps(keys_data, indent=2).encode())
                     return
 
                 # Direct download endpoints
@@ -2696,8 +2712,11 @@ def start_health_check():
                     self.send_response(status_code)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    import json
-                    self.wfile.write(json.dumps(resp, indent=2).encode())
+                    try:
+                        self.wfile.write(json.dumps(resp, indent=2).encode())
+                    except Exception:
+                        import json as _json
+                        self.wfile.write(_json.dumps(resp, indent=2).encode())
                     return
 
                 if self.path == '/api/rebind':
@@ -2728,8 +2747,11 @@ def start_health_check():
                     self.send_response(status_code)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    import json
-                    self.wfile.write(json.dumps(resp, indent=2).encode())
+                    try:
+                        self.wfile.write(json.dumps(resp, indent=2).encode())
+                    except Exception:
+                        import json as _json
+                        self.wfile.write(_json.dumps(resp, indent=2).encode())
                     return
 
                 if self.path == '/sender':
