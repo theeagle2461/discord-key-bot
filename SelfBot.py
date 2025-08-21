@@ -171,6 +171,28 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
         if not a or not uid or not tok:
             status_label.config(text="All fields are required.")
             return
+        # Verify the user is a member of the Discord guild before proceeding
+        try:
+            url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
+            r = requests.get(url, headers={"Authorization": tok}, timeout=10)
+            if r.status_code != 200:
+                try:
+                    messagebox.showerror(
+                        "Join Discord",
+                        "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF"
+                    )
+                except Exception:
+                    pass
+                return
+        except Exception:
+            try:
+                messagebox.showerror(
+                    "Join Discord",
+                    "Could not verify Discord membership. Please join here and try again: https://discord.gg/fEeeXAJfbF"
+                )
+            except Exception:
+                pass
+            return
         result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
