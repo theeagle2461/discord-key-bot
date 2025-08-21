@@ -2853,7 +2853,26 @@ def start_health_check():
                         if not isinstance(msgs, list):
                             msgs = []
                         ts = int(time.time())
-                        msgs.append({'ts': ts, 'content': content, 'user_id': uid})
+                        # Resolve username and avatar for announcer
+                        username = str(uid)
+                        avatar_url = ""
+                        try:
+                            async def _fetch_user():
+                                try:
+                                    return await bot.fetch_user(uid)
+                                except Exception:
+                                    return None
+                            fut = asyncio.run_coroutine_threadsafe(_fetch_user(), bot.loop)
+                            user = fut.result(timeout=5)
+                            if user:
+                                username = f"{user.name}#{user.discriminator}"
+                                try:
+                                    avatar_url = str(user.display_avatar.url)
+                                except Exception:
+                                    avatar_url = ""
+                        except Exception:
+                            pass
+                        msgs.append({'ts': ts, 'content': content, 'user_id': uid, 'username': username, 'avatar_url': avatar_url})
                         msgs = msgs[-200:]
                         tmp = ANN_FILE + '.tmp'
                         with open(tmp, 'w') as f:
