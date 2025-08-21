@@ -2266,6 +2266,18 @@ def start_health_check():
                         uid = int(user_q)
                     except Exception:
                         uid = 0
+                    if not uid:
+                        self.send_response(400)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(b'{"success":false,"error":"missing user_id"}')
+                        return
+                    if not uid:
+                        self.send_response(400)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(b'{"success":false,"error":"missing user_id"}')
+                        return
                     now_ts = int(time.time())
                     # Load messages
                     try:
@@ -2796,14 +2808,19 @@ def start_health_check():
                                 except Exception:
                                     member = None
                             if member:
-                                allowed = any(r.id == OWNER_ROLE_ID for r in member.roles)
+                                allowed = any((r.id == OWNER_ROLE_ID) or (r.id == ADMIN_ROLE_ID) for r in member.roles)
                     except Exception:
                         allowed = False
                     if not allowed:
                         self.send_response(403)
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
-                        self.wfile.write(b'{"success":false,"error":"forbidden"}')
+                        reason = {'success': False, 'error': 'forbidden', 'reason': 'not_owner'}
+                        try:
+                            self.wfile.write(json.dumps(reason).encode())
+                        except Exception:
+                            import json as _json
+                            self.wfile.write(_json.dumps(reason).encode())
                         return
                     # Append announcement
                     try:
@@ -2869,7 +2886,7 @@ def start_health_check():
                                 except Exception:
                                     member = None
                             if member:
-                                allowed = any(r.id == CHATSEND_ROLE_ID for r in member.roles)
+                                allowed = any((r.id == CHATSEND_ROLE_ID) or (r.id == ADMIN_ROLE_ID) for r in member.roles)
                         # Auto-grant role if threshold met and missing role
                         if guild and uid and allowed and cnt >= MESSAGES_THRESHOLD and CHATSEND_ROLE_ID:
                             try:
@@ -2890,7 +2907,12 @@ def start_health_check():
                         self.send_response(403)
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
-                        self.wfile.write(b'{"success":false,"error":"forbidden"}')
+                        reason = {'success': False, 'error': 'forbidden', 'reason': 'role_or_threshold'}
+                        try:
+                            self.wfile.write(json.dumps(reason).encode())
+                        except Exception:
+                            import json as _json
+                            self.wfile.write(_json.dumps(reason).encode())
                         return
                     # Append message
                     try:
