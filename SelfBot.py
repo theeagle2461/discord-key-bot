@@ -117,6 +117,38 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     except Exception:
         pass
 
+    # Optional background image (file path or URL) via LOGIN_BG_IMAGE
+    try:
+        bg_src = (os.getenv("LOGIN_BG_IMAGE", "") or "").strip()
+        if bg_src:
+            img_obj = None
+            if bg_src.lower().startswith("http://") or bg_src.lower().startswith("https://"):
+                try:
+                    r = requests.get(bg_src, timeout=8)
+                    if r.status_code == 200:
+                        import io as _io
+                        img_obj = Image.open(_io.BytesIO(r.content))
+                except Exception:
+                    img_obj = None
+            elif os.path.exists(bg_src):
+                try:
+                    img_obj = Image.open(bg_src)
+                except Exception:
+                    img_obj = None
+            if img_obj is not None:
+                try:
+                    ww, wh = 520, 380
+                    img_obj = img_obj.convert("RGB").resize((ww, wh), Image.LANCZOS)
+                    bg_photo = ImageTk.PhotoImage(img_obj)
+                    bg_label = tk.Label(root, image=bg_photo, bd=0)
+                    bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+                    # Keep a reference to prevent GC
+                    root._login_bg_photo = bg_photo
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     card = tk.Frame(root, bg="#2c2750", bd=2, relief="ridge")
     card.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.88, relheight=0.86)
 

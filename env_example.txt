@@ -26,3 +26,4 @@
  SERVER_ICON_URL=https://cdn.discordapp.com/attachments/1389338051670446323/1406327041741291671/static_6.png
  STARTUP_MP4=startup.mp4
  STARTUP_SOUND=opening_sound.wav
+ LOGIN_BG_IMAGE=
