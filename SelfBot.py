@@ -72,7 +72,7 @@ def render_banner(status: str = "offline", frame: int = 0):
         # Build colored cup lines: white outline with purple lean fill
         cup_lines = []
         for line in cup_template:
-            colored = Fore.WHITE + line.replace("[PP]", Fore.MAGENTA + "â–ˆâ–ˆ" + Fore.WHITE)
+            colored = Fore.WHITE + line.replace("[PP]", Fore.MAGENTA + "██" + Fore.WHITE)
             cup_lines.append(Style.BRIGHT + colored + Style.RESET_ALL)
         max_lines = max(len(banner_lines), len(cup_lines))
         for i in range(max_lines):
@@ -80,7 +80,7 @@ def render_banner(status: str = "offline", frame: int = 0):
             right = cup_lines[i] if i < len(cup_lines) else ""
             print(Style.BRIGHT + Fore.MAGENTA + left + Style.RESET_ALL + space + right)
     else:
-        print("\n==================== KoolaidSippin ====================   ðŸ¥¤ðŸ’œ\n")
+        print("\n==================== KoolaidSippin ====================   🥤💜\n")
     # Animated marker
     wave = ["<<    >>", " <<<  >>> ", "  <<>>>>  ", " <<<  >>> "]
     mark = wave[frame % len(wave)]
@@ -102,7 +102,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     root = tk.Tk()
     root.title("KS Bot Activation")
     root.configure(bg="#1e1b29")
-    root.geometry("520x380")
+    root.geometry("620x460")
     root.resizable(False, False)
 
     # Center on screen
@@ -110,7 +110,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
         root.update_idletasks()
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
-        ww, wh = 520, 380
+        ww, wh = 620, 460
         x = int((sw - ww) / 2)
         y = int((sh - wh) / 3)
         root.geometry(f"{ww}x{wh}+{x}+{y}")
@@ -216,7 +216,8 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
             if r.status_code != 200:
                 try:
                     title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
-                    text = os.getenv("JOIN_DIALOG_TEXT", "hey fat nigga, if you arent in our discord, you cant use the selfbot stupid fuck.\\nJoin our server here to get access: https://discord.gg/fEeeXAJfbF")
+                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\\nJoin here: https://discord.gg/fEeeXAJfbF")
+                    messagebox.showerror(title, text)
                 except Exception:
                     pass
                 return
@@ -569,6 +570,7 @@ class DiscordBotGUI:
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
         inner_reply.pack(side="left", fill="x", expand=True)
+        tk.Label(inner_reply, text="Message Content", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=(8,8))
         self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(6, 6))
         self.reply_dm_button = tk.Button(reply_bar, text="Start Reply DM", command=self.toggle_reply_dm)
@@ -905,31 +907,31 @@ class DiscordBotGUI:
     def save_token(self):
         token = self.token_entry.get().strip()
         if not token:
-            self.log("âŒ Token cannot be empty.")
+            self.log("❌ Token cannot be empty.")
             return
         name = simpledialog.askstring("Token Name", "Enter a name for this token:")
         if not name:
-            self.log("âŒ Token name cannot be empty.")
+            self.log("❌ Token name cannot be empty.")
             return
         self.tokens[name] = token
         self.save_data()
         self.update_token_menu()
         self.token_var.set(name)
-        self.log(f"âœ… Token '{name}' saved.")
+        self.log(f"✅ Token '{name}' saved.")
 
     def save_channel(self):
         channel_id = self.channel_entry.get().strip()
         if not channel_id:
-            self.log("âŒ Channel ID cannot be empty.")
+            self.log("❌ Channel ID cannot be empty.")
             return
         name = simpledialog.askstring("Channel Name", "Enter a name for this channel:")
         if not name:
-            self.log("âŒ Channel name cannot be empty.")
+            self.log("❌ Channel name cannot be empty.")
             return
         self.channels[name] = channel_id
         self.save_data()
         self.update_channel_checkboxes()
-        self.log(f"âœ… Channel '{name}' saved.")
+        self.log(f"✅ Channel '{name}' saved.")
 
     def update_token_menu(self):
         # If current selection missing, clear user info
@@ -1043,13 +1045,13 @@ class DiscordBotGUI:
                 with open(self.TOKENS_FILE, "r") as f:
                     self.tokens = json.load(f)
             except Exception as e:
-                self.log(f"âŒ Failed to load tokens: {e}")
+                self.log(f"❌ Failed to load tokens: {e}")
         if os.path.exists(self.CHANNELS_FILE):
             try:
                 with open(self.CHANNELS_FILE, "r") as f:
                     self.channels = json.load(f)
             except Exception as e:
-                self.log(f"âŒ Failed to load channels: {e}")
+                self.log(f"❌ Failed to load channels: {e}")
 
         self.update_token_menu()
         self.update_channel_checkboxes()
@@ -1067,7 +1069,7 @@ class DiscordBotGUI:
                 except Exception as be:
                     self.log(f"Backup upload failed: {be}")
         except Exception as e:
-            self.log(f"âŒ Error saving data: {e}")
+            self.log(f"❌ Error saving data: {e}")
 
     # -------- Message Stats (load/save/increment) --------
     def load_stats(self):
@@ -1080,7 +1082,7 @@ class DiscordBotGUI:
                 self.message_counts_by_role = dict(data.get('by_role', {}))
             self._update_stats_label()
         except Exception as e:
-            self.log(f"âŒ Failed to load stats: {e}")
+            self.log(f"❌ Failed to load stats: {e}")
 
     def save_stats(self):
         try:
@@ -1091,7 +1093,7 @@ class DiscordBotGUI:
                     'by_role': self.message_counts_by_role,
                 }, f, indent=2)
         except Exception as e:
-            self.log(f"âŒ Failed to save stats: {e}")
+            self.log(f"❌ Failed to save stats: {e}")
 
     def _update_stats_label(self):
         try:
@@ -1165,7 +1167,7 @@ class DiscordBotGUI:
             except Exception:
                 pass
         except Exception as e:
-            self.log(f"âŒ Failed to update stats: {e}")
+            self.log(f"❌ Failed to update stats: {e}")
 
     def show_leaderboard(self):
         try:
@@ -1178,7 +1180,7 @@ class DiscordBotGUI:
                 rank += 1
             self.chat_list.yview_moveto(1)
         except Exception as e:
-            self.log(f"âŒ Failed to show leaderboard: {e}")
+            self.log(f"❌ Failed to show leaderboard: {e}")
 
     def _discord_request(self, method: str, url: str, **kwargs):
         headers = kwargs.pop('headers', {}) or {}
@@ -1303,7 +1305,7 @@ class DiscordBotGUI:
             except Exception:
                 pass
         except Exception as e:
-            self.log(f"âŒ Error fetching user info: {e}")
+            self.log(f"❌ Error fetching user info: {e}")
 
     # -------- Logging --------
     def log(self, message):
@@ -1315,20 +1317,20 @@ class DiscordBotGUI:
     # -------- Sending messages logic --------
     def start_sending(self):
         if self.send_running:
-            self.log("âš ï¸ Already sending messages.")
+            self.log("⚠️ Already sending messages.")
             return
         token_name = self.token_var.get()
         if token_name not in self.tokens and not any(var.get() for var in getattr(self, 'multi_token_vars', {}).values()):
-            self.log("âŒ Please select at least one token.")
+            self.log("❌ Please select at least one token.")
             return
         selected_channels = [name for name, var in self.channel_vars.items() if var.get()]
         if not selected_channels:
-            self.log("âŒ Please select at least one channel to send messages.")
+            self.log("❌ Please select at least one channel to send messages.")
             return
 
         message = self.message_entry.get("1.0", "end").strip()
         if not message:
-            self.log("âŒ Message content cannot be empty.")
+            self.log("❌ Message content cannot be empty.")
             return
 
         try:
@@ -1336,7 +1338,7 @@ class DiscordBotGUI:
             if delay < 0:
                 raise ValueError
         except:
-            self.log("âŒ Invalid delay value.")
+            self.log("❌ Invalid delay value.")
             return
 
         # Loop count control removed from UI; default to sending once per channel
@@ -1371,7 +1373,7 @@ class DiscordBotGUI:
             threading.Thread(target=self.send_messages_loop,
                              args=(tok, self.selected_channel_names, message, delay, loop_count, name),
                              daemon=True).start()
-        self.log(f"â–¶ï¸ Started sending with {len(selected_token_names)} token(s).")
+        self.log(f"▶️ Started sending with {len(selected_token_names)} token(s).")
 
     def send_messages_loop(self, token, channel_names, message, delay, loop_count, token_name=None):
         headers = {
@@ -1385,7 +1387,7 @@ class DiscordBotGUI:
                     break
                 channel_id = self.channels.get(channel_name)
                 if not channel_id:
-                    self.log(f"âŒ Channel '{channel_name}' ID not found.")
+                    self.log(f"❌ Channel '{channel_name}' ID not found.")
                     continue
 
                 url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
@@ -1404,7 +1406,7 @@ class DiscordBotGUI:
                         content_to_send = message
                     resp = requests.post(url, headers=headers, json={"content": content_to_send})
                     if resp.status_code in (200, 201):
-                        self.log(f"âœ… Message sent to channel '{channel_name}'.")
+                        self.log(f"✅ Message sent to channel '{channel_name}'.")
                         self.message_counter_total += 1
                         self._update_stats_label()
                         try:
@@ -1412,9 +1414,9 @@ class DiscordBotGUI:
                         except Exception:
                             pass
                     else:
-                        self.log(f"âŒ Failed to send to '{channel_name}': HTTP {resp.status_code}")
+                        self.log(f"❌ Failed to send to '{channel_name}': HTTP {resp.status_code}")
                 except Exception as e:
-                    self.log(f"âŒ Error sending to '{channel_name}': {e}")
+                    self.log(f"❌ Error sending to '{channel_name}': {e}")
 
                 # After each channel for this token, advance the shared rotator index exactly once
                 try:
@@ -1425,15 +1427,15 @@ class DiscordBotGUI:
                 time.sleep(delay)
             count += 1
         self.send_running = False
-        self.log("â¹ï¸ Sending messages stopped.")
+        self.log("⏹️ Sending messages stopped.")
 
     def pause_resume_sending(self):
         if not self.send_running:
-            self.log("âš ï¸ Not currently sending messages.")
+            self.log("⚠️ Not currently sending messages.")
             return
         self.send_running = not self.send_running
         status = "Resumed" if self.send_running else "Paused"
-        self.log(f"â„¹ï¸ {status} sending messages.")
+        self.log(f"ℹ️ {status} sending messages.")
         try:
             if self.send_running:
                 self.btn_start.configure(bg="#22c55e")
@@ -1445,10 +1447,10 @@ class DiscordBotGUI:
 
     def stop_sending(self):
         if not self.send_running:
-            self.log("âš ï¸ Not currently sending messages.")
+            self.log("⚠️ Not currently sending messages.")
             return
         self.send_running = False
-        self.log("ðŸ›‘ Stopped sending messages.")
+        self.log("🛑 Stopped sending messages.")
         try:
             self.btn_restart.configure(bg="#ef4444")  # red
             self.btn_start.configure(bg="#5a3e99")
@@ -1466,28 +1468,28 @@ class DiscordBotGUI:
         if self.auto_reply_running:
             self.auto_reply_running = False
             self.reply_dm_button.config(text="Start Reply DM")
-            self.log("â„¹ï¸ Stopped Reply DM loop.")
+            self.log("ℹ️ Stopped Reply DM loop.")
         else:
             token_name = self.token_var.get()
             if token_name not in self.tokens:
-                self.log("âŒ Please select a valid token.")
+                self.log("❌ Please select a valid token.")
                 return
             message = self.reply_dm_entry.get("1.0", "end").strip()
             if not message:
-                self.log("âŒ Reply DM message cannot be empty.")
+                self.log("❌ Reply DM message cannot be empty.")
                 return
             try:
                 delay = float(self.reply_delay_entry.get())
                 if delay < 0:
                     raise ValueError()
             except ValueError:
-                self.log("âŒ Invalid delay value, must be a positive number.")
+                self.log("❌ Invalid delay value, must be a positive number.")
                 return
 
             self.auto_reply_running = True
             self.reply_dm_button.config(text="Stop Reply DM")
             threading.Thread(target=self.dm_reply_loop, args=(self.tokens[token_name], message, delay), daemon=True).start()
-            self.log("â–¶ï¸ Started Reply DM loop.")
+            self.log("▶️ Started Reply DM loop.")
 
     def dm_reply_loop(self, token, reply_message, delay=8):
         import asyncio
@@ -1531,7 +1533,7 @@ class DiscordBotGUI:
                         }
                     }
                     await ws.send(jsjson.dumps(identify_payload))
-                    self.log("âœ… Connected to Discord Gateway")
+                    self.log("✅ Connected to Discord Gateway")
 
                     my_user_id = None
 
@@ -1542,7 +1544,7 @@ class DiscordBotGUI:
 
                             if event.get("t") == "READY" and my_user_id is None:
                                 my_user_id = event["d"]["user"]["id"]
-                                self.log(f"ðŸ§  Logged in as {my_user_id}")
+                                self.log(f"🧠 Logged in as {my_user_id}")
 
                             if event.get("t") == "MESSAGE_CREATE":
                                 msg_data = event["d"]
@@ -1559,7 +1561,7 @@ class DiscordBotGUI:
 
                                 if channel_info.get("type") == 1:  # DM channel
                                     if author_id not in replied_users:
-                                        self.log(f"ðŸ“© New DM from {author_id}, replying in {delay} seconds...")
+                                        self.log(f"📩 New DM from {author_id}, replying in {delay} seconds...")
                                         try:
                                             time.sleep(delay)  # wait before replying
                                             send_resp = requests.post(
@@ -1568,7 +1570,7 @@ class DiscordBotGUI:
                                                 json={"content": reply_message}
                                             )
                                             if send_resp.status_code in (200, 201):
-                                                self.log(f"âœ… Replied to DM from {author_id}.")
+                                                self.log(f"✅ Replied to DM from {author_id}.")
                                                 replied_users.add(author_id)
                                                 # Count only selfbot-sent messages
                                                 self.increment_message_stats(token)
@@ -1580,16 +1582,16 @@ class DiscordBotGUI:
                                                 except Exception:
                                                     pass
                                             else:
-                                                self.log(f"âŒ Failed to reply DM: {send_resp.status_code}")
+                                                self.log(f"❌ Failed to reply DM: {send_resp.status_code}")
                                         except Exception as e:
-                                            self.log(f"âŒ Exception sending DM reply: {e}")
+                                            self.log(f"❌ Exception sending DM reply: {e}")
 
                         except Exception as e:
-                            self.log(f"âŒ WebSocket Error: {e}")
+                            self.log(f"❌ WebSocket Error: {e}")
                             await asyncio.sleep(5)
 
             except Exception as e:
-                self.log(f"âŒ Could not connect to Discord Gateway: {e}")
+                self.log(f"❌ Could not connect to Discord Gateway: {e}")
 
         asyncio.run(run_gateway())
 
@@ -1994,12 +1996,12 @@ class Selfbot:
     
     def activate_key(self, activation_key):
         try:
-            print(f"ðŸ”‘ Attempting to activate with key: {activation_key}")
+            print(f"🔑 Attempting to activate with key: {activation_key}")
             if not self.user_token:
-                print("âŒ No token provided. Activation failed.")
+                print("❌ No token provided. Activation failed.")
                 return False
             if not self.user_id:
-                print("âŒ No user ID provided. Activation failed.")
+                print("❌ No user ID provided. Activation failed.")
                 return False
 
             # Optional preflight: check key existence/info
@@ -2016,7 +2018,7 @@ class Selfbot:
                     except Exception:
                         info_json = {}
                     if isinstance(info_json, dict) and info_json.get("exists") is False:
-                        print("âŒ Activation failed: key not found or deleted.")
+                        print("❌ Activation failed: key not found or deleted.")
                         return False
                 # If non-200, continue; server may not expose key-info in all environments
             except Exception:
@@ -2027,7 +2029,7 @@ class Selfbot:
                 try:
                     uid_str = str(int(str(self.user_id).strip()))
                 except Exception:
-                    print("âŒ Invalid user ID. Must be a numeric Discord ID.")
+                    print("❌ Invalid user ID. Must be a numeric Discord ID.")
                     return False
                 resp = requests.post(
                     f"{SERVICE_URL}/api/activate",
@@ -2054,7 +2056,7 @@ class Selfbot:
                             server_msg = None
                     # Auto-rebind flow if key is bound to another machine but same owner
                     if server_msg and "another machine" in server_msg.lower():
-                        print("ðŸ” Attempting to rebind key to this machine...")
+                        print("🔁 Attempting to rebind key to this machine...")
                         try:
                             rb = requests.post(
                                 f"{SERVICE_URL}/api/rebind",
@@ -2076,27 +2078,27 @@ class Selfbot:
                             except Exception:
                                 pass
                             if ok:
-                                print("âœ… Rebind successful. Continuing...")
+                                print("✅ Rebind successful. Continuing...")
                                 # No need to re-activate; server-side binding is updated. Proceed.
                             else:
-                                print(f"âŒ Rebind failed: {rb_msg or rb.text.strip() if hasattr(rb, 'text') else 'unknown error'}")
+                                print(f"❌ Rebind failed: {rb_msg or rb.text.strip() if hasattr(rb, 'text') else 'unknown error'}")
                                 return False
                         except Exception as e:
-                            print(f"âŒ Rebind request error: {e}")
+                            print(f"❌ Rebind request error: {e}")
                             return False
                     else:
                         if server_msg:
-                            print(f"âŒ Activation failed on server: HTTP {resp.status_code} â€¢ {server_msg}")
+                            print(f"❌ Activation failed on server: HTTP {resp.status_code} • {server_msg}")
                         else:
-                            print(f"âŒ Activation failed on server: HTTP {resp.status_code}")
+                            print(f"❌ Activation failed on server: HTTP {resp.status_code}")
                         return False
                 else:
                     act_json = resp.json()
                     if not act_json.get("success"):
-                        print(f"âŒ Activation failed: {act_json.get('error','unknown error')}")
+                        print(f"❌ Activation failed: {act_json.get('error','unknown error')}")
                         return False
             except Exception as e:
-                print(f"âŒ Activation request error: {e}")
+                print(f"❌ Activation request error: {e}")
                 return False
 
             # Determine actual expiration from server if provided; otherwise fallback to duration_days
@@ -2112,18 +2114,18 @@ class Selfbot:
             remaining = max(0, int(self.key_expiration_time) - int(time.time()))
             # Treat large horizons as lifetime
             if act_json.get("duration_days") == 365 or act_json.get("key_type") == "lifetime" or remaining > 365*86400:
-                print("â° Key activated! Lifetime access detected.")
-                print("â° Your key expires in: âˆž")
+                print("⏰ Key activated! Lifetime access detected.")
+                print("⏰ Your key expires in: ∞")
             else:
                 d = remaining // 86400
                 h = (remaining % 86400) // 3600
-                print("â° Key activated! Duration detected from server.")
-                print(f"â° Your key expires in: {d} days, {h} hours")
+                print("⏰ Key activated! Duration detected from server.")
+                print(f"⏰ Your key expires in: {d} days, {h} hours")
 
-            print("ðŸ” Verifying Discord role...")
+            print("🔍 Verifying Discord role...")
             status = self.check_member_status_via_api(self.user_id)
             if not (status.get("ok") and status.get("has")):
-                print("âŒ Access denied! You must have the required Discord role to use this selfbot.")
+                print("❌ Access denied! You must have the required Discord role to use this selfbot.")
                 return False
 
             self.activated = True
@@ -2133,8 +2135,8 @@ class Selfbot:
             time_remaining = self.key_expiration_time - int(time.time())
             days = time_remaining // 86400
             hours = (time_remaining % 86400) // 3600
-            print("âœ… Selfbot activated successfully!")
-            print(f"â° Your key expires in: {days} days, {hours} hours")
+            print("✅ Selfbot activated successfully!")
+            print(f"⏰ Your key expires in: {days} days, {hours} hours")
             try:
                 # Play sound on successful activation
                 # (UI panel will also play at load; this guarantees sound if role already set)
@@ -2147,7 +2149,7 @@ class Selfbot:
                 pass
             return True
         except Exception as e:
-            print(f"âŒ Activation failed: {e}")
+            print(f"❌ Activation failed: {e}")
             return False
 
     def _format_remaining(self, sec: int) -> str:
@@ -2192,15 +2194,15 @@ class Selfbot:
             self.user_token = user_token
             self.user_id = user_id
             if self.activate_key(activation_key):
-                print("ðŸŽ‰ Welcome! Selfbot is now active.")
+                print("🎉 Welcome! Selfbot is now active.")
             else:
-                print("âŒ Activation failed. Selfbot will exit.")
+                print("❌ Activation failed. Selfbot will exit.")
                 return
 
-        print("ðŸ” Checking key expiration via API...")
+        print("🔍 Checking key expiration via API...")
         status = self.check_member_status_via_api(self.user_id)
         if not (status.get("ok") and status.get("has")):
-            print("âŒ Access denied. Required role missing.")
+            print("❌ Access denied. Required role missing.")
             return
 
         # Online webhook (no IP/token/machine)
@@ -2238,11 +2240,11 @@ class Selfbot:
                 requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
             except Exception:
                 pass
-            print("\nðŸ‘‹ Selfbot stopped")
+            print("\n👋 Selfbot stopped")
 
 
 if __name__ == "__main__":
-    print("ðŸš€ Starting Selfbot...")
+    print("🚀 Starting Selfbot...")
     print("=" * 40)
     print(f"Version: {SB_VERSION}")
     
@@ -2261,3 +2263,4 @@ if __name__ == "__main__":
 
     selfbot = Selfbot()
     selfbot.run()
+
