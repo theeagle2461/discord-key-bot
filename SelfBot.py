@@ -570,7 +570,6 @@ class DiscordBotGUI:
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
         inner_reply.pack(side="left", fill="x", expand=True)
-        tk.Label(inner_reply, text="Message Content", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=(8,8))
         self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(6, 6))
         self.reply_dm_button = tk.Button(reply_bar, text="Start Reply DM", command=self.toggle_reply_dm)
@@ -635,7 +634,7 @@ class DiscordBotGUI:
 
         # Token box to the right of rotator
         token_side = tk.Frame(left, bg="#2c2750")
-        token_side.grid(row=5, column=1, sticky="nwe", padx=(6,10), pady=(2,2))
+        token_side.grid(row=5, column=1, sticky="nwe", padx=(16,10), pady=(2,2))
         try:
             self.apply_glow(token_side, thickness=2)
         except Exception:
