@@ -1824,7 +1824,16 @@ class DiscordBotGUI:
             return
         # Try to post announcement; rely on server to enforce owner permission
         try:
-            r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg}, timeout=8)
+            # Ensure we have our user id resolved so the server can authorize
+            if not getattr(self, '_me_user_id', None):
+                try:
+                    uid_res, _, _ = self._resolve_me_user(self.user_token)
+                    if uid_res:
+                        self._me_user_id = uid_res
+                except Exception:
+                    pass
+            uid = self._me_user_id or ''
+            r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
                 self.ann_entry.delete(0, 'end')
             else:
