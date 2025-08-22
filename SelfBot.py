@@ -735,12 +735,21 @@ class DiscordBotGUI:
             self.apply_glow(self.ann_text)
         except Exception:
             pass
-        # Owner-only announcements send bar
-        ann_entry_row = tk.Frame(ann_panel, bg="#1e1b29")
-        ann_entry_row.pack(fill="x", padx=0, pady=(6, 2))
-        self.ann_entry = tk.Entry(ann_entry_row, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.title_font)
-        self.ann_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=6)
-        self.ann_send_btn = tk.Button(ann_entry_row, text="Send", command=self.ann_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
+        # Owner-only announcements send area with Message Content bar
+        ann_send_section = tk.Frame(ann_panel, bg="#1e1b29")
+        ann_send_section.pack(fill="x", padx=0, pady=(6, 2))
+        ann_bar = tk.Frame(ann_send_section, bg="#2c2750")
+        ann_bar.pack(fill="x")
+        try:
+            self.apply_glow(ann_bar, thickness=2)
+        except Exception:
+            pass
+        tk.Label(ann_bar, text="Message Content", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=8, pady=(4, 2))
+        self.ann_box = tk.Text(ann_send_section, height=3, bg="#0b0b0d", fg="#e0d7ff", insertbackground="#e0d7ff", relief="flat", font=self.normal_font)
+        self.ann_box.pack(fill="x", expand=True, padx=(0, 0), pady=(2, 6))
+        btn_row = tk.Frame(ann_send_section, bg="#1e1b29")
+        btn_row.pack(fill="x")
+        self.ann_send_btn = tk.Button(btn_row, text="Send", command=self.ann_send_message, bg="#5a3e99", fg="#f0e9ff", activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat")
         self.ann_send_btn.pack(side="right")
         header = tk.Label(right, text="Community Chat (2500+ messages required to send)", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold"))
         header.pack(anchor="w", padx=10, pady=(6, 4))
@@ -1877,7 +1886,11 @@ class DiscordBotGUI:
             for m in msgs[-10:]:
                 ts = int(m.get('ts',0) or 0)
                 content = m.get('content','')
-                line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {content}\n"
+                uname = m.get('username') or ''
+                if uname:
+                    line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {uname}: {content}\n"
+                else:
+                    line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {content}\n"
                 self.ann_text.insert('end', line)
             self.ann_text.configure(state=tk.DISABLED)
             self.ann_text.see('end')
@@ -1885,7 +1898,7 @@ class DiscordBotGUI:
             pass
 
     def ann_send_message(self):
-        msg = self.ann_entry.get().strip()
+        msg = self.ann_box.get("1.0", "end").strip()
         if not msg:
             return
         # Try to post announcement; rely on server to enforce owner permission
@@ -1901,7 +1914,7 @@ class DiscordBotGUI:
             uid = self._me_user_id or ''
             r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
-                self.ann_entry.delete(0, 'end')
+                self.ann_box.delete("1.0", "end")
             else:
                 self.log(f"Announcement post failed: HTTP {r.status_code}")
         except Exception as e:
