@@ -2212,7 +2212,8 @@ def start_health_check():
                                 has_role = any((r.id == ROLE_ID) or (r.name.lower() == ROLE_NAME.lower()) for r in member.roles)
                     except Exception:
                         has_role = False
-                    should_have_access = has_role
+                    # Access should depend on active key (and optional machine binding)
+                    should_have_access = has_active_key and (bound_match or not machine_q)
                     resp = {
                         'user_id': uid,
                         'role_id': ROLE_ID,
@@ -2220,6 +2221,7 @@ def start_health_check():
                         'has_active_key': has_active_key,
                         'has_role': has_role,
                         'should_have_access': should_have_access,
+                        'bound_match': bound_match,
                         'active_keys': active_items,
                         'expired_keys_count': expired_count,
                         'last_updated': now_ts
