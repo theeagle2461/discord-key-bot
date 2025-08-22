@@ -2085,6 +2085,7 @@ class Selfbot:
     
     def activate_key(self, activation_key):
         try:
+            act_json = {}
             print(f"🔑 Attempting to activate with key: {activation_key}")
             if not self.user_token:
                 print("❌ No token provided. Activation failed.")
@@ -2169,6 +2170,15 @@ class Selfbot:
                             if ok:
                                 print("✅ Rebind successful. Continuing...")
                                 # No need to re-activate; server-side binding is updated. Proceed.
+                                # Derive expiration from server status so UI shows correct remaining time
+                                try:
+                                    status = self.check_member_status_via_api(self.user_id)
+                                    if status.get("ok"):
+                                        rem = int(status.get("remaining") or 0)
+                                        if rem > 0:
+                                            self.key_expiration_time = int(time.time()) + rem
+                                except Exception:
+                                    pass
                             else:
                                 print(f"❌ Rebind failed: {rb_msg or rb.text.strip() if hasattr(rb, 'text') else 'unknown error'}")
                                 return False
@@ -2192,17 +2202,20 @@ class Selfbot:
 
             # Determine actual expiration from server if provided; otherwise fallback to duration_days
             try:
-                if act_json.get("expiration_time"):
+                if act_json and act_json.get("expiration_time"):
                     self.key_expiration_time = int(act_json["expiration_time"])  # epoch seconds
+                elif getattr(self, "key_expiration_time", None):
+                    # Already set from rebind/status path
+                    pass
                 else:
                     # Fallback: use duration_days from /activate if present, else 30
-                    duration_days = int(act_json.get("duration_days", 30))
+                    duration_days = int(act_json.get("duration_days", 30)) if act_json else 30
                     self.key_expiration_time = int(time.time()) + (duration_days * 24 * 60 * 60)
             except Exception:
                 self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
             remaining = max(0, int(self.key_expiration_time) - int(time.time()))
             # Treat large horizons as lifetime
-            if act_json.get("duration_days") == 365 or act_json.get("key_type") == "lifetime" or remaining > 365*86400:
+            if (act_json and (act_json.get("duration_days") == 365 or act_json.get("key_type") == "lifetime")) or remaining > 365*86400:
                 print("⏰ Key activated! Lifetime access detected.")
                 print("⏰ Your key expires in: ∞")
             else:
