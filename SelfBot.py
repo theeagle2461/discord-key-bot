@@ -721,10 +721,22 @@ class DiscordBotGUI:
         self.log_text = tk.Text(log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
+        # Key Duration live countdown
+        keydur_wrap = tk.Frame(left, bg="#1e1b29")
+        keydur_wrap.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
+        tk.Label(keydur_wrap, text="Key Duration:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        self.key_duration_value = tk.Label(keydur_wrap, text="—", bg="#1e1b29", fg="#bfaef5", font=("Consolas", 11))
+        self.key_duration_value.pack(anchor="w")
+
         # Message counter label (live-updating)
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
         self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
-            
+        # Start duration updater
+        try:
+            self._start_key_duration_updater()
+        except Exception:
+            pass
+
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
         ann_panel.pack(fill="x", padx=10, pady=(4, 4))
@@ -1919,6 +1931,56 @@ class DiscordBotGUI:
                 self.log(f"Announcement post failed: HTTP {r.status_code}")
         except Exception as e:
             self.log(f"Announcement post error: {e}")
+
+    def _start_key_duration_updater(self):
+        def _tick():
+            try:
+                uid = str(self._login_user_id or self.user_id or '')
+                if not uid:
+                    raise RuntimeError('no uid')
+                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid}, timeout=5)
+                if resp.status_code == 200:
+                    j = resp.json() or {}
+                    should = bool(j.get('should_have_access', False))
+                    act = j.get('active_keys') or []
+                    remaining = 0
+                    if act:
+                        try:
+                            remaining = int(act[0].get('time_remaining', 0) or 0)
+                        except Exception:
+                            remaining = 0
+                    if remaining <= 0 and (not should):
+                        try:
+                            self.key_duration_value.config(text="expired")
+                        except Exception:
+                            pass
+                        # Close UI if access gone
+                        try:
+                            self.root.after(500, self.root.destroy)
+                        except Exception:
+                            pass
+                        return
+                    # Lifetime heuristic: > 10 years
+                    if remaining > 10*365*86400:
+                        txt = "infinite"
+                    else:
+                        d = remaining // 86400
+                        h = (remaining % 86400) // 3600
+                        m = (remaining % 3600) // 60
+                        s = remaining % 60
+                        txt = f"{d}d {h}h {m}m {s}s"
+                    try:
+                        self.key_duration_value.config(text=txt)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # repeat
+            try:
+                self.root.after(1000, _tick)
+            except Exception:
+                pass
+        _tick()
 
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------

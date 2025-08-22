@@ -1858,7 +1858,9 @@ def start_health_check():
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    def fmt_rem(sec:int, not_activated: bool) -> str:
+                    def fmt_rem(sec:int, not_activated: bool, key_type: str) -> str:
+                        if key_type == 'lifetime':
+                            return '∞'
                         if not_activated:
                             return 'Not activated yet'
                         d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
@@ -1866,14 +1868,15 @@ def start_health_check():
                     table_rows = []
                     for r in rows:
                         safe_key = html.escape(r['key'])
+                        exp_cell = ('<t:'+str(r['expires'])+':R>') if r['expires'] else ('∞' if r['type']=='lifetime' else '—')
                         table_rows.append(f"""
                         <tr>
                           <td><code>{safe_key}</code></td>
                           <td>{html.escape(r['type'])}</td>
                           <td>{html.escape(r['status'].capitalize())}</td>
                           <td>{r['user']}</td>
-                          <td>{fmt_rem(r['remaining'], r['not_activated'])}</td>
-                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else '—'}</td>
+                          <td>{fmt_rem(r['remaining'], r['not_activated'], r['type'])}</td>
+                          <td>{exp_cell}</td>
                           <td style='display:flex;gap:6px'>
                             <form method='POST' action='/revoke' onsubmit="return confirm('Revoke this key?')">
                               <input type='hidden' name='key' value='{safe_key}'/>
