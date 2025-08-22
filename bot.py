@@ -109,7 +109,7 @@ if not BOT_TOKEN:
                 pass
 
 if not BOT_TOKEN:
-    print("âŒ ERROR: BOT_TOKEN not found!")
+    print("❌ ERROR: BOT_TOKEN not found!")
     print("Please set it as an environment variable, in .env file, or config.json")
     print("For hosting: Set BOT_TOKEN environment variable")
     print("For local: Create .env file with BOT_TOKEN=your_token")
@@ -608,7 +608,7 @@ class KeyManager:
                 return
             
             embed = {
-                "title": "ðŸ”‘ Key Activated",
+                "title": "🔑 Key Activated",
                 "color": 0x00ff00,
                 "fields": [
                     {
@@ -658,7 +658,7 @@ class KeyManager:
                 return
             
             embed = {
-                "title": "ðŸ”‘ New Key Generated",
+                "title": "🔑 New Key Generated",
                 "color": 0x00ff00,
                 "fields": [
                     {
@@ -678,7 +678,7 @@ class KeyManager:
                     },
                     {
                         "name": "Status",
-                        "value": "âœ… Available for use",
+                        "value": "✅ Available for use",
                         "inline": False
                     },
                     {
@@ -787,14 +787,14 @@ def normalize_key(raw: str | None) -> str:
 
 @bot.event
 async def on_ready():
-    print(f'âœ… {bot.user} has connected to Discord!')
-    print(f'ðŸ†” Bot ID: {bot.user.id}')
-    print(f'ðŸŒ Connected to {len(bot.guilds)} guild(s)')
+    print(f'✅ {bot.user} has connected to Discord!')
+    print(f'🆔 Bot ID: {bot.user.id}')
+    print(f'🌐 Connected to {len(bot.guilds)} guild(s)')
     
     # Set bot status
     await bot.change_presence(activity=discord.Game(name="Managing Keys | /help"))
     
-    print("ðŸ¤– Bot is now ready and online!")
+    print("🤖 Bot is now ready and online!")
     try:
         if not reconcile_roles_task.is_running():
             reconcile_roles_task.start()
@@ -814,14 +814,14 @@ async def on_ready():
     try:
         guild_obj = discord.Object(id=GUILD_ID)
         synced = await bot.tree.sync(guild=guild_obj)
-        print(f"âœ… Synced {len(synced)} commands to guild {GUILD_ID}")
+        print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
         try:
             names = [c.name for c in bot.tree.get_commands()]
-            print(f"ðŸ”Ž Commands in tree: {names}")
+            print(f"🔎 Commands in tree: {names}")
         except Exception:
             pass
     except Exception as e:
-        print(f"âš ï¸ Failed to sync commands in on_ready: {e}")
+        print(f"⚠️ Failed to sync commands in on_ready: {e}")
     # Auto-restore from the most recent JSON attachment in backup channel
     if AUTO_RESTORE_ON_START and BACKUP_CHANNEL_ID > 0:
         try:
@@ -835,7 +835,7 @@ async def on_ready():
                                     b = await att.read()
                                     payload = json.loads(b.decode('utf-8'))
                                     if isinstance(payload, dict) and key_manager.restore_from_payload(payload):
-                                        print("â™»ï¸ Restored keys from channel backup")
+                                        print("♻️ Restored keys from channel backup")
                                         raise StopAsyncIteration
                                 except Exception:
                                     pass
@@ -854,16 +854,16 @@ async def on_disconnect():
 async def check_permissions(interaction) -> bool:
     """Check if user has permission to use bot commands"""
     if not interaction.guild:
-        await interaction.response.send_message("âŒ This bot can only be used in a server.", ephemeral=True)
+        await interaction.response.send_message("❌ This bot can only be used in a server.", ephemeral=True)
         return False
     
     if interaction.guild.id != GUILD_ID:
-        await interaction.response.send_message("âŒ This bot is not configured for this server.", ephemeral=True)
+        await interaction.response.send_message("❌ This bot is not configured for this server.", ephemeral=True)
         return False
     
     member = interaction.guild.get_member(interaction.user.id)
     if not member:
-        await interaction.response.send_message("âŒ Unable to verify your permissions.", ephemeral=True)
+        await interaction.response.send_message("❌ Unable to verify your permissions.", ephemeral=True)
         return False
 
     # Special admins always allowed
@@ -887,7 +887,7 @@ async def check_permissions(interaction) -> bool:
     # For all other commands, require admin role
     has_admin_role = ADMIN_ROLE_ID in [role.id for role in member.roles]
     if not has_admin_role:
-        await interaction.response.send_message("âŒ You don't have permission to use this bot.", ephemeral=True)
+        await interaction.response.send_message("❌ You don't have permission to use this bot.", ephemeral=True)
         return False
     
     return True
@@ -899,7 +899,7 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
         return
     
     if duration_days < 1 or duration_days > 365:
-        await interaction.response.send_message("âŒ Duration must be between 1 and 365 days.", ephemeral=True)
+        await interaction.response.send_message("❌ Duration must be between 1 and 365 days.", ephemeral=True)
         return
     
     # Generate the key
@@ -910,7 +910,7 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
     
     # Create embed
     embed = discord.Embed(
-        title="ðŸ”‘ New Key Generated",
+        title="🔑 New Key Generated",
         color=0x00ff00
     )
     
@@ -922,7 +922,7 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
     if channel_id:
         embed.add_field(name="Channel Locked", value=f"<#{channel_id}>", inline=True)
     
-    embed.add_field(name="ðŸ“± Webhook", value="âœ… Key sent to webhook for distribution", inline=False)
+    embed.add_field(name="📱 Webhook", value="✅ Key sent to webhook for distribution", inline=False)
     embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
     embed.set_footer(text=f"Generated by {interaction.user.display_name}")
     
@@ -945,9 +945,9 @@ async def activate_key(interaction: discord.Interaction, key: str):
             role = interaction.guild.get_role(ROLE_ID)
             if role and role not in interaction.user.roles:
                 await interaction.user.add_roles(role)
-                role_message = f"âœ… Role **{role.name}** has been assigned to you!"
+                role_message = f"✅ Role **{role.name}** has been assigned to you!"
             else:
-                role_message = f"âœ… You already have the **{role.name}** role!"
+                role_message = f"✅ You already have the **{role.name}** role!"
             
             # Get key duration info
             key_data = key_manager.get_key_info(key)
@@ -955,7 +955,7 @@ async def activate_key(interaction: discord.Interaction, key: str):
             
             # Send success message
             embed = discord.Embed(
-                title="ðŸ”‘ Key Activated Successfully!",
+                title="🔑 Key Activated Successfully!",
                 description=f"Your key has been activated and you now have access to the selfbot.",
                 color=0x00ff00
             )
@@ -967,7 +967,7 @@ async def activate_key(interaction: discord.Interaction, key: str):
                 embed.add_field(name="Channel Locked", value=f"<#{result['channel_id']}>", inline=True)
             
             # Add SelfBot instructions
-            embed.add_field(name="ðŸ“± SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {duration_days} days duration!", inline=False)
+            embed.add_field(name="📱 SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {duration_days} days duration!", inline=False)
             
             await interaction.response.send_message(embed=embed)
             
@@ -981,10 +981,10 @@ async def activate_key(interaction: discord.Interaction, key: str):
             await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
             
         else:
-            await interaction.response.send_message(f"âŒ **Activation Failed:** {result['error']}", ephemeral=True)
+            await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
             
     except Exception as e:
-        await interaction.response.send_message(f"âŒ **Error during activation:** {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ **Error during activation:** {str(e)}", ephemeral=True)
 
 # Removed duplicate sync command name to avoid conflicts
 @bot.tree.command(name="syncduration", description="Sync your key duration with SelfBot")
@@ -993,16 +993,16 @@ async def sync_key(interaction: discord.Interaction, key: str):
     try:
         key_data = key_manager.get_key_info(key)
         if not key_data:
-            await interaction.response.send_message("âŒ Key not found.", ephemeral=True)
+            await interaction.response.send_message("❌ Key not found.", ephemeral=True)
             return
         
         if not key_data["is_active"]:
-            await interaction.response.send_message("âŒ Key has been revoked.", ephemeral=True)
+            await interaction.response.send_message("❌ Key has been revoked.", ephemeral=True)
             return
         
         # Check if user owns this key
         if key_data["user_id"] != interaction.user.id:
-            await interaction.response.send_message("âŒ This key doesn't belong to you.", ephemeral=True)
+            await interaction.response.send_message("❌ This key doesn't belong to you.", ephemeral=True)
             return
         
         duration_days = key_data.get("duration_days", 30)
@@ -1010,7 +1010,7 @@ async def sync_key(interaction: discord.Interaction, key: str):
         time_remaining = expiration_time - int(time.time())
         
         if time_remaining <= 0:
-            await interaction.response.send_message("âŒ This key has expired.", ephemeral=True)
+            await interaction.response.send_message("❌ This key has expired.", ephemeral=True)
             return
         
         days = time_remaining // 86400
@@ -1018,7 +1018,7 @@ async def sync_key(interaction: discord.Interaction, key: str):
         minutes = (time_remaining % 3600) // 60
         
         embed = discord.Embed(
-            title="ðŸ”„ Key Sync Information",
+            title="🔄 Key Sync Information",
             description="Use this information in your SelfBot",
             color=0x00ff00
         )
@@ -1030,7 +1030,7 @@ async def sync_key(interaction: discord.Interaction, key: str):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
     except Exception as e:
-        await interaction.response.send_message(f"âŒ Error syncing key: {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error syncing key: {str(e)}", ephemeral=True)
 
 @bot.tree.command(name="revoke", description="Revoke a specific key")
 async def revoke_key(interaction: discord.Interaction, key: str):
@@ -1040,13 +1040,13 @@ async def revoke_key(interaction: discord.Interaction, key: str):
     
     if key_manager.revoke_key(key):
         embed = discord.Embed(
-            title="ðŸ—‘ï¸ Key Revoked",
+            title="🗑️ Key Revoked",
             description=f"Key `{key}` has been successfully revoked.",
             color=0xff0000
         )
         await interaction.response.send_message(embed=embed)
     else:
-        await interaction.response.send_message("âŒ Key not found or already revoked.", ephemeral=True)
+        await interaction.response.send_message("❌ Key not found or already revoked.", ephemeral=True)
 
 @bot.tree.command(name="keys", description="Show all keys for a user")
 async def show_keys(interaction: discord.Interaction, user: Optional[discord.Member] = None):
@@ -1058,17 +1058,17 @@ async def show_keys(interaction: discord.Interaction, user: Optional[discord.Mem
     user_keys = key_manager.get_user_keys(target_user.id)
     
     if not user_keys:
-        await interaction.response.send_message(f"ðŸ” No keys found for {target_user.display_name}.", ephemeral=True)
+        await interaction.response.send_message(f"🔍 No keys found for {target_user.display_name}.", ephemeral=True)
         return
     
     embed = discord.Embed(
-        title=f"ðŸ”‘ Keys for {target_user.display_name}",
+        title=f"🔑 Keys for {target_user.display_name}",
         color=0x2d6cdf
     )
     
     for key_data in user_keys[:10]:  # Limit to 10 keys to avoid embed limits
         key = key_data["key"]
-        status = "âœ… Active" if key_data["is_active"] else "âŒ Revoked"
+        status = "✅ Active" if key_data["is_active"] else "❌ Revoked"
         exp_ts = key_data.get('expiration_time')
         expires = "Not activated yet" if not exp_ts else f"<t:{exp_ts}:R>"
         
@@ -1092,11 +1092,11 @@ async def key_info(interaction: discord.Interaction, key: str):
     
     key_data = key_manager.get_key_info(key)
     if not key_data:
-        await interaction.response.send_message("âŒ Key not found.", ephemeral=True)
+        await interaction.response.send_message("❌ Key not found.", ephemeral=True)
         return
     
     embed = discord.Embed(
-        title=f"ðŸ” Key Information",
+        title=f"🔍 Key Information",
         color=0x2d6cdf
     )
     
@@ -1105,7 +1105,7 @@ async def key_info(interaction: discord.Interaction, key: str):
     user_name = user.display_name if user else "Unknown User"
     
     embed.add_field(name="Created By", value=user_name, inline=True)
-    embed.add_field(name="Status", value="âœ… Active" if key_data["is_active"] else "âŒ Revoked", inline=True)
+    embed.add_field(name="Status", value="✅ Active" if key_data["is_active"] else "❌ Revoked", inline=True)
     embed.add_field(name="Created", value=("Not activated yet" if not key_data.get('activation_time') else f"<t:{key_data['activation_time']}:R>"), inline=True)
     embed.add_field(name="Expires", value=("Not activated yet" if not key_data.get('expiration_time') else f"<t:{key_data['expiration_time']}:R>"), inline=True)
     
@@ -1129,7 +1129,7 @@ async def backup_keys(interaction: discord.Interaction):
     backup_file = key_manager.backup_keys()
     
     embed = discord.Embed(
-        title="ðŸ’¾ Backup Created",
+        title="💾 Backup Created",
         description=f"Keys backup saved to `{backup_file}`",
         color=0x00ff00
     )
@@ -1146,12 +1146,12 @@ async def restore_keys(interaction: discord.Interaction, backup_file: str):
         return
     
     if not os.path.exists(backup_file):
-        await interaction.response.send_message("âŒ Backup file not found.", ephemeral=True)
+        await interaction.response.send_message("❌ Backup file not found.", ephemeral=True)
         return
     
     if key_manager.restore_from_backup(backup_file):
         embed = discord.Embed(
-            title="ðŸ”„ Backup Restored",
+            title="🔄 Backup Restored",
             description="Keys have been successfully restored from backup.",
             color=0x00ff00
         )
@@ -1161,7 +1161,7 @@ async def restore_keys(interaction: discord.Interaction, backup_file: str):
         
         await interaction.response.send_message(embed=embed)
     else:
-        await interaction.response.send_message("âŒ Failed to restore from backup.", ephemeral=True)
+        await interaction.response.send_message("❌ Failed to restore from backup.", ephemeral=True)
 
 @bot.tree.command(name="status", description="Show bot status and statistics")
 async def bot_status(interaction: discord.Interaction):
@@ -1177,7 +1177,7 @@ async def bot_status(interaction: discord.Interaction):
     total_usage = sum(k.get("usage_count", 0) for k in key_manager.key_usage.values())
     
     embed = discord.Embed(
-        title="ðŸ“Š Bot Status",
+        title="📊 Bot Status",
         color=0x2d6cdf
     )
     
@@ -1196,15 +1196,15 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
     """Generate multiple keys of different types - Special Admin Only"""
     # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("âŒ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
         return
     
     if daily_count < 0 or weekly_count < 0 or monthly_count < 0 or lifetime_count < 0:
-        await interaction.response.send_message("âŒ **Invalid Input:** All counts must be 0 or positive numbers.", ephemeral=True)
+        await interaction.response.send_message("❌ **Invalid Input:** All counts must be 0 or positive numbers.", ephemeral=True)
         return
     
     if daily_count == 0 and weekly_count == 0 and monthly_count == 0 and lifetime_count == 0:
-        await interaction.response.send_message("âŒ **Invalid Input:** At least one key type must have a count greater than 0.", ephemeral=True)
+        await interaction.response.send_message("❌ **Invalid Input:** At least one key type must have a count greater than 0.", ephemeral=True)
         return
     
     # Generate the keys
@@ -1212,18 +1212,18 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
     
     # Create embed showing what was generated
     embed = discord.Embed(
-        title="ðŸ”‘ Bulk Keys Generated Successfully!",
+        title="🔑 Bulk Keys Generated Successfully!",
         description="Keys have been generated and saved to the system.",
         color=0x00ff00
     )
     
-    embed.add_field(name="ðŸ“… Daily Keys (1 day)", value=f"Generated: {len(generated_keys['daily'])}", inline=True)
-    embed.add_field(name="ðŸ“… Weekly Keys (7 days)", value=f"Generated: {len(generated_keys['weekly'])}", inline=True)
-    embed.add_field(name="ðŸ“… Monthly Keys (30 days)", value=f"Generated: {len(generated_keys['monthly'])}", inline=True)
-    embed.add_field(name="ðŸ“… Lifetime Keys (365 days)", value=f"Generated: {len(generated_keys['lifetime'])}", inline=True)
+    embed.add_field(name="📅 Daily Keys (1 day)", value=f"Generated: {len(generated_keys['daily'])}", inline=True)
+    embed.add_field(name="📅 Weekly Keys (7 days)", value=f"Generated: {len(generated_keys['weekly'])}", inline=True)
+    embed.add_field(name="📅 Monthly Keys (30 days)", value=f"Generated: {len(generated_keys['monthly'])}", inline=True)
+    embed.add_field(name="📅 Lifetime Keys (365 days)", value=f"Generated: {len(generated_keys['lifetime'])}", inline=True)
     
-    embed.add_field(name="ðŸ’¾ Status", value="âœ… All keys saved to database and website", inline=False)
-    embed.add_field(name="ðŸ“± Website", value="Keys are now available on your website!", inline=False)
+    embed.add_field(name="💾 Status", value="✅ All keys saved to database and website", inline=False)
+    embed.add_field(name="📱 Website", value="Keys are now available on your website!", inline=False)
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -1233,7 +1233,7 @@ async def view_available_keys(interaction: discord.Interaction):
     """View all available keys grouped by type - Special Admin Only"""
     # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("âŒ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
         return
     
     # Get available keys by type
@@ -1241,7 +1241,7 @@ async def view_available_keys(interaction: discord.Interaction):
     
     # Create embed showing available keys
     embed = discord.Embed(
-        title="ðŸ”‘ Available Keys by Type",
+        title="🔑 Available Keys by Type",
         description="All unassigned keys currently in the system",
         color=0x2d6cdf
     )
@@ -1266,22 +1266,22 @@ async def view_available_keys(interaction: discord.Interaction):
     daily_keys = available_keys["daily"]
     for idx, chunk in enumerate(list_block(daily_keys), start=1):
         suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"ðŸ“… Daily Keys ({len(daily_keys)}){suffix}", value=chunk, inline=False)
+        embed.add_field(name=f"📅 Daily Keys ({len(daily_keys)}){suffix}", value=chunk, inline=False)
 
     weekly_keys = available_keys["weekly"]
     for idx, chunk in enumerate(list_block(weekly_keys), start=1):
         suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"ðŸ“… Weekly Keys ({len(weekly_keys)}){suffix}", value=chunk, inline=False)
+        embed.add_field(name=f"📅 Weekly Keys ({len(weekly_keys)}){suffix}", value=chunk, inline=False)
 
     monthly_keys = available_keys["monthly"]
     for idx, chunk in enumerate(list_block(monthly_keys), start=1):
         suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"ðŸ“… Monthly Keys ({len(monthly_keys)}){suffix}", value=chunk, inline=False)
+        embed.add_field(name=f"📅 Monthly Keys ({len(monthly_keys)}){suffix}", value=chunk, inline=False)
 
     lifetime_keys = available_keys["lifetime"]
     for idx, chunk in enumerate(list_block(lifetime_keys), start=1):
         suffix = f" (part {idx})" if idx > 1 else ""
-        embed.add_field(name=f"ðŸ“… Lifetime Keys ({len(lifetime_keys)}){suffix}", value=chunk, inline=False)
+        embed.add_field(name=f"📅 Lifetime Keys ({len(lifetime_keys)}){suffix}", value=chunk, inline=False)
     
     embed.set_footer(text="Use /generatekeys to create more keys")
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1291,39 +1291,39 @@ async def delete_key(interaction: discord.Interaction, key: str):
     """Completely delete a key - Special Admin Only"""
     # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("âŒ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
         return
     
     if key_manager.delete_key(key):
         embed = discord.Embed(
-            title="ðŸ—‘ï¸ Key Deleted",
+            title="🗑️ Key Deleted",
             description=f"Key `{key}` has been completely deleted and moved to deleted database.",
             color=0xff0000
         )
-        embed.add_field(name="Status", value="âœ… Key removed from active keys", inline=True)
-        embed.add_field(name="Database", value="ðŸ“ Moved to deleted keys", inline=True)
-        embed.add_field(name="SelfBot Access", value="âŒ No access, deleted key", inline=False)
+        embed.add_field(name="Status", value="✅ Key removed from active keys", inline=True)
+        embed.add_field(name="Database", value="📁 Moved to deleted keys", inline=True)
+        embed.add_field(name="SelfBot Access", value="❌ No access, deleted key", inline=False)
         
         await interaction.response.send_message(embed=embed)
     else:
-        await interaction.response.send_message("âŒ Key not found or already deleted.", ephemeral=True)
+        await interaction.response.send_message("❌ Key not found or already deleted.", ephemeral=True)
 
 @bot.tree.command(name="deletedkeys", description="View all deleted keys (Special Admin Only)")
 async def view_deleted_keys(interaction: discord.Interaction):
     """View all deleted keys - Special Admin Only"""
     # Check if user is a special admin
     if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("âŒ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
         return
     
     deleted_keys = key_manager.deleted_keys
     
     if not deleted_keys:
-        await interaction.response.send_message("ðŸ“­ No deleted keys found.", ephemeral=True)
+        await interaction.response.send_message("📭 No deleted keys found.", ephemeral=True)
         return
     
     embed = discord.Embed(
-        title="ðŸ—‘ï¸ Deleted Keys Database",
+        title="🗑️ Deleted Keys Database",
         description=f"Total deleted keys: {len(deleted_keys)}",
         color=0xff0000
     )
@@ -1340,7 +1340,7 @@ async def view_deleted_keys(interaction: discord.Interaction):
             f"Deleted: {deleted_time}",
         ]
         embed.add_field(
-            name=f"ðŸ—‘ï¸ {key}",
+            name=f"🗑️ {key}",
             value="\n".join(lines_val),
             inline=True
         )
@@ -1367,7 +1367,7 @@ async def active_keys(interaction: discord.Interaction):
             active_items.append((key, remaining, user_display))
 
     if not active_items:
-        await interaction.response.send_message("ðŸ“­ No active keys found.", ephemeral=True)
+        await interaction.response.send_message("📭 No active keys found.", ephemeral=True)
         return
 
     # Sort by soonest expiration
@@ -1379,10 +1379,10 @@ async def active_keys(interaction: discord.Interaction):
         minutes = (seconds % 3600) // 60
         return f"{days}d {hours}h {minutes}m"
 
-    lines = [f"`{k}` â€” {fmt_duration(rem)} left â€” {user}" for k, rem, user in active_items[:20]]
+    lines = [f"`{k}` — {fmt_duration(rem)} left — {user}" for k, rem, user in active_items[:20]]
 
     embed = discord.Embed(
-        title="ðŸ”‘ Active Keys",
+        title="🔑 Active Keys",
         description="\n".join(lines),
         color=0x00AAFF
     )
@@ -1405,14 +1405,14 @@ async def expired_keys(interaction: discord.Interaction):
             items.append((key, expires, user_display))
 
     if not items:
-        await interaction.response.send_message("âœ… No expired keys.", ephemeral=True)
+        await interaction.response.send_message("✅ No expired keys.", ephemeral=True)
         return
 
     items.sort(key=lambda x: x[1], reverse=True)
-    lines = [f"`{k}` â€” expired <t:{ts}:R> â€” {user}" for k, ts, user in items[:20]]
+    lines = [f"`{k}` — expired <t:{ts}:R> — {user}" for k, ts, user in items[:20]]
 
     embed = discord.Embed(
-        title="ðŸ—“ï¸ Expired Keys",
+        title="🗓️ Expired Keys",
         description="\n".join(lines),
         color=0xFF5555
     )
@@ -1424,7 +1424,7 @@ async def expired_keys(interaction: discord.Interaction):
 @bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
 async def sync_commands(interaction: discord.Interaction):
     if not interaction.guild or interaction.guild.id != GUILD_ID:
-        await interaction.response.send_message("âŒ Wrong server.", ephemeral=True)
+        await interaction.response.send_message("❌ Wrong server.", ephemeral=True)
         return
     try:
         await interaction.response.defer(ephemeral=True)
@@ -1434,13 +1434,13 @@ async def sync_commands(interaction: discord.Interaction):
             names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
         except Exception:
             names = []
-        await interaction.followup.send(f"âœ… Synced {len(synced)} commands. Available: {', '.join(names) or '(none)'}")
+        await interaction.followup.send(f"✅ Synced {len(synced)} commands. Available: {', '.join(names) or '(none)'}")
     except Exception as e:
         try:
             if interaction.response.is_done():
-                await interaction.followup.send(f"âŒ Sync failed: {e}")
+                await interaction.followup.send(f"❌ Sync failed: {e}")
             else:
-                await interaction.response.send_message(f"âŒ Sync failed: {e}", ephemeral=True)
+                await interaction.response.send_message(f"❌ Sync failed: {e}", ephemeral=True)
         except Exception:
             pass
 
@@ -1456,34 +1456,34 @@ async def on_member_join(member):
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
     if isinstance(error, discord.app_commands.CommandOnCooldown):
         try:
-            await interaction.response.send_message(f"âŒ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+            await interaction.response.send_message(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
         except Exception:
             try:
-                await interaction.followup.send(f"âŒ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.")
+                await interaction.followup.send(f"❌ Command is on cooldown. Try again in {error.retry_after:.2f} seconds.")
             except Exception:
                 pass
     elif isinstance(error, discord.app_commands.MissingPermissions):
         try:
-            await interaction.response.send_message("âŒ You don't have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
         except Exception:
             try:
-                await interaction.followup.send("âŒ You don't have permission to use this command.")
+                await interaction.followup.send("❌ You don't have permission to use this command.")
             except Exception:
                 pass
     elif isinstance(error, discord.app_commands.BotMissingPermissions):
         try:
-            await interaction.response.send_message("âŒ I don't have the required permissions to execute this command.", ephemeral=True)
+            await interaction.response.send_message("❌ I don't have the required permissions to execute this command.", ephemeral=True)
         except Exception:
             try:
-                await interaction.followup.send("âŒ I don't have the required permissions to execute this command.")
+                await interaction.followup.send("❌ I don't have the required permissions to execute this command.")
             except Exception:
                 pass
     else:
         try:
-            await interaction.response.send_message(f"âŒ An error occurred: {str(error)}", ephemeral=True)
+            await interaction.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
         except Exception:
             try:
-                await interaction.followup.send(f"âŒ An error occurred: {str(error)}")
+                await interaction.followup.send(f"❌ An error occurred: {str(error)}")
             except Exception:
                 pass
 
@@ -1491,13 +1491,13 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"âŒ Missing required argument: {error.param}")
+        await ctx.send(f"❌ Missing required argument: {error.param}")
     elif isinstance(error, commands.BadArgument):
-        await ctx.send("âŒ Invalid argument provided.")
+        await ctx.send("❌ Invalid argument provided.")
     elif isinstance(error, commands.CommandNotFound):
-        await ctx.send("âŒ Command not found. Use `!help` to see available commands.")
+        await ctx.send("❌ Command not found. Use `!help` to see available commands.")
     else:
-        await ctx.send(f"âŒ An error occurred: {str(error)}")
+        await ctx.send(f"❌ An error occurred: {str(error)}")
 
 # Coinbase Commerce webhook handler
 from aiohttp import web
@@ -1858,22 +1858,25 @@ def start_health_check():
                     self.send_response(200)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    def fmt_rem(sec:int, not_activated: bool) -> str:
+                    def fmt_rem(sec:int, not_activated: bool, key_type: str) -> str:
+                        if key_type == 'lifetime':
+                            return '∞'
                         if not_activated:
                             return 'Not activated yet'
                         d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
-                        return f"{d}d {h}h {m}m" if sec>0 else 'â€”'
+                        return f"{d}d {h}h {m}m" if sec>0 else '—'
                     table_rows = []
                     for r in rows:
                         safe_key = html.escape(r['key'])
+                        exp_cell = ('<t:'+str(r['expires'])+':R>') if r['expires'] else ('∞' if r['type']=='lifetime' else '—')
                         table_rows.append(f"""
                         <tr>
                           <td><code>{safe_key}</code></td>
                           <td>{html.escape(r['type'])}</td>
                           <td>{html.escape(r['status'].capitalize())}</td>
                           <td>{r['user']}</td>
-                          <td>{fmt_rem(r['remaining'], r['not_activated'])}</td>
-                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else 'â€”'}</td>
+                          <td>{fmt_rem(r['remaining'], r['not_activated'], r['type'])}</td>
+                          <td>{exp_cell}</td>
                           <td style='display:flex;gap:6px'>
                             <form method='POST' action='/revoke' onsubmit="return confirm('Revoke this key?')">
                               <input type='hidden' name='key' value='{safe_key}'/>
@@ -2041,7 +2044,7 @@ def start_health_check():
                         if not_activated:
                             return 'Not activated yet'
                         d=sec//86400; h=(sec%86400)//3600; m=(sec%3600)//60
-                        return f"{d}d {h}h {m}m" if sec>0 else 'â€”'
+                        return f"{d}d {h}h {m}m" if sec>0 else '—'
                     table_rows = []
                     for r in rows:
                         safe_key = html.escape(r['key'])
@@ -2051,7 +2054,7 @@ def start_health_check():
                           <td>{html.escape(r['type'])}</td>
                           <td>{html.escape(r['status'].capitalize())}</td>
                           <td>{fmt_rem(r['remaining'], False)}</td>
-                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else 'â€”'}</td>
+                          <td>{('<t:'+str(r['expires'])+':R>') if r['expires'] else '—'}</td>
                         </tr>
                         """)
                     page = f"""
@@ -2522,7 +2525,7 @@ def start_health_check():
                               </div>
                             </div>
                             <div class='muted' style='margin-top:10px'>
-                              Status: Online â€¢ {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} â€¢ Bot: {bot.user.name if bot.user else 'Starting...'}
+                              Status: Online • {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} • Bot: {bot.user.name if bot.user else 'Starting...'}
                             </div>
                           </div>
                         </main>
@@ -2989,6 +2992,15 @@ def start_health_check():
                         with open(tmp, 'w') as f:
                             json.dump(msgs, f, indent=2)
                         os.replace(tmp, CHAT_FILE)
+                        # Mirror to webhook (best-effort)
+                        try:
+                            if CHAT_MIRROR_WEBHOOK:
+                                payload = {
+                                    'content': f"[{username}] {content}"
+                                }
+                                requests.post(CHAT_MIRROR_WEBHOOK, json=payload, timeout=5)
+                        except Exception:
+                            pass
                         self.send_response(200)
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
@@ -3056,7 +3068,7 @@ def start_health_check():
         port = int(os.getenv('PORT', 8080))
         from http.server import ThreadingHTTPServer
         server = ThreadingHTTPServer(("", port), HealthCheckHandler)
-        print(f"ðŸŒ Health check server started on port {port}")
+        print(f"🌐 Health check server started on port {port}")
         # Start aiohttp app for webhooks
         async def _run_aiohttp():
             app = web.Application()
@@ -3075,49 +3087,49 @@ def start_health_check():
         loop.create_task(_run_aiohttp())
         server.serve_forever()
     except Exception as e:
-        print(f"âŒ Health check server failed: {e}")
+        print(f"❌ Health check server failed: {e}")
 
 # Error handling
 @bot.event
 async def on_error(event, *args, **kwargs):
-    print(f"âŒ Error in {event}: {args}")
+    print(f"❌ Error in {event}: {args}")
 
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return  # Ignore unknown commands
     elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("âŒ You don't have permission to use this command.")
+        await ctx.send("❌ You don't have permission to use this command.")
     elif isinstance(error, commands.BotMissingPermissions):
-        await ctx.send("âŒ I don't have the required permissions to execute this command.")
+        await ctx.send("❌ I don't have the required permissions to execute this command.")
     else:
-        print(f"âŒ Command error: {error}")
-        await ctx.send(f"âŒ An error occurred: {str(error)}")
+        print(f"❌ Command error: {error}")
+        await ctx.send(f"❌ An error occurred: {str(error)}")
 
 # Run the bot
 if __name__ == "__main__":
-    print("ðŸš€ Starting Discord Bot...")
+    print("🚀 Starting Discord Bot...")
     print("=" * 40)
     
     # Start health check server in a separate thread
     health_thread = threading.Thread(target=start_health_check, daemon=True)
     health_thread.start()
-    print("âœ… Health check server started")
+    print("✅ Health check server started")
 
     async def start_with_backoff():
         delay_seconds = 60
         max_delay = 900
         while True:
             try:
-                print("ðŸ”— Connecting to Discord...")
+                print("🔗 Connecting to Discord...")
                 await bot.start(BOT_TOKEN)
             except Exception as e:
                 # If Discord is rate-limiting or network issue, back off and retry
                 msg = str(e)
                 if "429" in msg or "Too Many Requests" in msg:
-                    print(f"âš ï¸ 429/Rate limited. Retrying in {delay_seconds}s...")
+                    print(f"⚠️ 429/Rate limited. Retrying in {delay_seconds}s...")
                 else:
-                    print(f"âš ï¸ Startup error: {e}. Retrying in {delay_seconds}s...")
+                    print(f"⚠️ Startup error: {e}. Retrying in {delay_seconds}s...")
                 await asyncio.sleep(delay_seconds)
                 delay_seconds = min(delay_seconds * 2, max_delay)
             else:
@@ -3126,9 +3138,9 @@ if __name__ == "__main__":
     try:
         asyncio.run(start_with_backoff())
     except KeyboardInterrupt:
-        print("\nðŸ‘‹ Bot stopped by user")
+        print("\n👋 Bot stopped by user")
     except Exception as e:
-        print(f"âŒ Fatal error: {e}")
+        print(f"❌ Fatal error: {e}")
         exit(1)
 
 async def purge_global_commands():
@@ -3136,9 +3148,9 @@ async def purge_global_commands():
         app_id = (bot.user.id if bot.user else None)
         if app_id:
             await bot.http.bulk_upsert_global_commands(app_id, [])
-            print("ðŸ§¹ Purged all global application commands")
+            print("🧹 Purged all global application commands")
     except Exception as e:
-        print(f"âš ï¸ Failed to purge global commands: {e}")
+        print(f"⚠️ Failed to purge global commands: {e}")
 
 @bot.tree.command(name="keylogs", description="Show recent key logs (last 15)")
 async def keylogs(interaction: discord.Interaction):
@@ -3146,7 +3158,7 @@ async def keylogs(interaction: discord.Interaction):
         return
     logs = list(reversed(key_manager.key_logs[-15:]))
     if not logs:
-        await interaction.response.send_message("ðŸ“­ No logs yet.", ephemeral=True)
+        await interaction.response.send_message("📭 No logs yet.", ephemeral=True)
         return
     lines = []
     for e in logs:
@@ -3154,8 +3166,8 @@ async def keylogs(interaction: discord.Interaction):
         event = e.get('event','?')
         key = e.get('key','')
         uid = e.get('user_id')
-        lines.append(f"{when} â€” {event.upper()} â€” `{key}` â€” {('<@'+str(uid)+'>') if uid else ''}")
-    embed = discord.Embed(title="ðŸ“ Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
+        lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
+    embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @tasks.loop(seconds=60)
@@ -3255,7 +3267,7 @@ async def leaderboard_command(interaction: discord.Interaction):
                 name = f"{user.name}#{user.discriminator}" if user else uid
             except Exception:
                 name = uid
-            desc_lines.append(f"**{rank}.** {name} â€” {cnt}")
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
             rank += 1
         em.description = "\n".join(desc_lines)
         await interaction.followup.send(embed=em)
@@ -3416,14 +3428,14 @@ async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: 
     try:
         CONFIG['STATUS_WEBHOOK_URL'] = webhook_url.strip()
         save_config()
-        await interaction.response.send_message("âœ… Status webhook set.", ephemeral=True)
+        await interaction.response.send_message("✅ Status webhook set.", ephemeral=True)
         # Send a test online ping
         try:
             await send_status_webhook('online')
         except Exception:
             pass
     except Exception as e:
-        await interaction.response.send_message(f"âŒ Failed to set webhook: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Failed to set webhook: {e}", ephemeral=True)
 
 @bot.tree.command(name="backupchannel", description="Set the channel to auto-backup keys and auto-restore on deploy")
 async def set_backup_channel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
@@ -3432,7 +3444,7 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
         BACKUP_CHANNEL_ID = int(channel.id)
         CONFIG['BACKUP_CHANNEL_ID'] = BACKUP_CHANNEL_ID
         save_config()
-        await interaction.response.send_message(f"âœ… Backup channel set to {channel.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Backup channel set to {channel.mention}.", ephemeral=True)
         # Ensure backup loop is running
         try:
             if not periodic_backup_task.is_running():
@@ -3448,7 +3460,7 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
         except Exception:
             pass
     except Exception as e:
-        await interaction.response.send_message(f"âŒ Failed to set backup channel: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
 
 # ---------------------- TEXT COMMAND FALLBACKS ----------------------
 @bot.command(name="leaderboard")
@@ -3482,7 +3494,7 @@ async def leaderboard_text(ctx: commands.Context):
                 name = f"{user.name}#{user.discriminator}" if user else uid
             except Exception:
                 name = uid
-            desc_lines.append(f"**{rank}.** {name} â€” {cnt}")
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
             rank += 1
         em.description = "\n".join(desc_lines)
         await ctx.reply(embed=em)
