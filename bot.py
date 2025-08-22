@@ -2989,6 +2989,15 @@ def start_health_check():
                         with open(tmp, 'w') as f:
                             json.dump(msgs, f, indent=2)
                         os.replace(tmp, CHAT_FILE)
+                        # Mirror to webhook (best-effort)
+                        try:
+                            if CHAT_MIRROR_WEBHOOK:
+                                payload = {
+                                    'content': f"[{username}] {content}"
+                                }
+                                requests.post(CHAT_MIRROR_WEBHOOK, json=payload, timeout=5)
+                        except Exception:
+                            pass
                         self.send_response(200)
                         self.send_header('Content-Type', 'application/json')
                         self.end_headers()
