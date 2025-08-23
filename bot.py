@@ -58,10 +58,6 @@ SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
 PURCHASE_LOG_WEBHOOK = os.getenv('PURCHASE_LOG_WEBHOOK','')
-# NOWPayments credentials
-NWP_API_KEY = os.getenv('NWP_API_KEY','')
-NWP_IPN_SECRET = os.getenv('NWP_IPN_SECRET','')
-PUBLIC_URL = os.getenv('PUBLIC_URL','')  # optional; used for ipn callback if provided
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -3044,7 +3040,6 @@ def start_health_check():
         async def _run_aiohttp():
             app = web.Application()
             app.router.add_post('/webhook/coinbase-commerce', coinbase_webhook)
-            app.router.add_post('/webhook/nowpayments', nowpayments_webhook)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port+1)
@@ -3235,8 +3230,6 @@ async def leaderboard_command(interaction: discord.Interaction):
         await interaction.followup.send(f"Error: {e}")
 
 
-@bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
-async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
     """Create a NOWPayments invoice for the chosen coin and key type inside a ticket channel."""
     try:
         await interaction.response.defer(ephemeral=True)
@@ -3293,10 +3286,6 @@ async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
         else:
             await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="sbautobuy", description="Create a crypto invoice (backup command)")
-async def sbautobuy(interaction: discord.Interaction, coin: str, key_type: str):
-    await autobuy.callback(interaction, coin, key_type)
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="listcommands", description="List registered application commands (debug)")
@@ -3457,8 +3446,6 @@ async def leaderboard_text(ctx: commands.Context):
     except Exception as e:
         await ctx.reply(f"Error: {e}")
 
-@bot.command(name="autobuy")
-async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = None):
     try:
         if not ctx.guild or ctx.guild.id != GUILD_ID:
             return
