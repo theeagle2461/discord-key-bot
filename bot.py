@@ -3228,9 +3228,6 @@ async def periodic_backup_task():
     except Exception:
         pass
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="leaderboard", description="Show top selfbot senders (by message count)")
-async def leaderboard_command(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=False)
         # Load latest from file to avoid stale memory
@@ -3450,8 +3447,6 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
         await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
 
 # ---------------------- TEXT COMMAND FALLBACKS ----------------------
-@bot.command(name="leaderboard")
-async def leaderboard_text(ctx: commands.Context):
     try:
         # Only allow in the configured guild
         if not ctx.guild or ctx.guild.id != GUILD_ID:
@@ -3542,10 +3537,6 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
     except Exception as e:
         await ctx.reply(f"Error: {e}")
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="swapmachineid", description="Swap bound machine_id for a user's active key (Admin)")
-async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
-    if not await check_permissions(interaction):
         return
     try:
         # Find the user's active key
