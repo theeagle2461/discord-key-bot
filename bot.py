@@ -3096,17 +3096,6 @@ def start_health_check():
 async def on_error(event, *args, **kwargs):
     print(f"❌ Error in {event}: {args}")
 
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        return  # Ignore unknown commands
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ You don't have permission to use this command.")
-    elif isinstance(error, commands.BotMissingPermissions):
-        await ctx.send("❌ I don't have the required permissions to execute this command.")
-    else:
-        print(f"❌ Command error: {error}")
-        await ctx.send(f"❌ An error occurred: {str(error)}")
 
 # Run the bot
 if __name__ == "__main__":
@@ -3276,10 +3265,6 @@ async def leaderboard_command(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"Error: {e}")
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="sbleaderboard", description="Show top selfbot senders (backup command)")
-async def sbleaderboard_command(interaction: discord.Interaction):
-    await leaderboard_command.callback(interaction)  # reuse
 
 @bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
 async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
@@ -3557,6 +3542,7 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
     except Exception as e:
         await ctx.reply(f"Error: {e}")
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="swapmachineid", description="Swap bound machine_id for a user's active key (Admin)")
 async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
     if not await check_permissions(interaction):
