@@ -3556,3 +3556,30 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
         await ctx.reply(embed=em)
     except Exception as e:
         await ctx.reply(f"Error: {e}")
+
+@bot.tree.command(name="swapmachineid", description="Swap bound machine_id for a user's active key (Admin)")
+async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
+    if not await check_permissions(interaction):
+        return
+    try:
+        # Find the user's active key
+        key = None
+        for k, data in key_manager.keys.items():
+            if data.get('user_id') == user.id and data.get('is_active', False):
+                key = k
+                break
+        if not key:
+            await interaction.response.send_message("❌ No active key found for that user.", ephemeral=True)
+            return
+        # Update the machine_id
+        data = key_manager.keys[key]
+        data['machine_id'] = new_machine_id
+        # Save
+        key_manager.save_data()
+        try:
+            key_manager.add_log('rebind', key, user_id=str(user.id), details={'machine_id': new_machine_id})
+        except Exception:
+            pass
+        await interaction.response.send_message(f"✅ Machine ID swapped for user {user.mention}.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Failed: {e}", ephemeral=True)
