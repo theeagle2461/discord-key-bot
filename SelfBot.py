@@ -2168,45 +2168,8 @@ class Selfbot:
                             server_msg = None
                     # Auto-rebind flow if key is bound to another machine but same owner
                     if server_msg and "another machine" in server_msg.lower():
-                        print("🔁 Attempting to rebind key to this machine...")
-                        try:
-                            rb = requests.post(
-                                f"{SERVICE_URL}/api/rebind",
-                                data={
-                                    "key": activation_key,
-                                    "user_id": uid_str,
-                                    "machine_id": machine_id(),
-                                },
-                                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                                timeout=8,
-                            )
-                            ok = (rb.status_code == 200)
-                            rb_msg = None
-                            try:
-                                j2 = rb.json()
-                                if isinstance(j2, dict):
-                                    rb_msg = j2.get("error") or j2.get("message")
-                                    ok = ok and bool(j2.get("success"))
-                            except Exception:
-                                pass
-                            if ok:
-                                print("✅ Rebind successful. Continuing...")
-                                # No need to re-activate; server-side binding is updated. Proceed.
-                                # Derive expiration from server status so UI shows correct remaining time
-                                try:
-                                    status = self.check_member_status_via_api(self.user_id)
-                                    if status.get("ok"):
-                                        rem = int(status.get("remaining") or 0)
-                                        if rem > 0:
-                                            self.key_expiration_time = int(time.time()) + rem
-                                except Exception:
-                                    pass
-                            else:
-                                print(f"❌ Rebind failed: {rb_msg or rb.text.strip() if hasattr(rb, 'text') else 'unknown error'}")
-                                return False
-                        except Exception as e:
-                            print(f"❌ Rebind request error: {e}")
-                            return False
+                        print("❌ Activation failed: key is bound to another machine. Ask admin to run /swapmachineid.")
+                        return False
                     else:
                         if server_msg:
                             print(f"❌ Activation failed on server: HTTP {resp.status_code} • {server_msg}")
