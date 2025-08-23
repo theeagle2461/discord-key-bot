@@ -2248,8 +2248,30 @@ class Selfbot:
 
             print("🔍 Verifying Discord role...")
             status = self.check_member_status_via_api(self.user_id)
-            if not (status.get("ok") and status.get("has")):
-                print("❌ Access denied! You must have the required Discord role to use this selfbot.")
+            ok = bool(status.get("ok"))
+            should = False
+            reason_msg = ""
+            if ok:
+                raw = status.get("raw") or {}
+                should = bool(raw.get("should_have_access", False))
+                has_active_key = bool(raw.get("has_active_key", False))
+                has_role = bool(raw.get("has_role", False))
+                bound_match = bool(raw.get("bound_match", False))
+                gid = raw.get("guild_id")
+                rid = raw.get("role_id")
+                if not should:
+                    if not has_active_key:
+                        reason_msg = "No active key (expired or not activated)."
+                    elif not bound_match:
+                        reason_msg = "Machine ID mismatch. This key is bound to a different machine."
+                    elif not has_role:
+                        reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
+                    else:
+                        reason_msg = "Access denied by server policy."
+            else:
+                reason_msg = f"Server error: {status.get('err','unknown')}"
+            if not (ok and should):
+                print(f"❌ Access denied! {reason_msg}")
                 return False
 
             self.activated = True
@@ -2325,8 +2347,30 @@ class Selfbot:
 
         print("🔍 Checking key expiration via API...")
         status = self.check_member_status_via_api(self.user_id)
-        if not (status.get("ok") and status.get("has")):
-            print("❌ Access denied. Required role missing.")
+        ok = bool(status.get("ok"))
+        should = False
+        reason_msg = ""
+        if ok:
+            raw = status.get("raw") or {}
+            should = bool(raw.get("should_have_access", False))
+            has_active_key = bool(raw.get("has_active_key", False))
+            has_role = bool(raw.get("has_role", False))
+            bound_match = bool(raw.get("bound_match", False))
+            gid = raw.get("guild_id")
+            rid = raw.get("role_id")
+            if not should:
+                if not has_active_key:
+                    reason_msg = "No active key (expired or not activated)."
+                elif not bound_match:
+                    reason_msg = "Machine ID mismatch. This key is bound to a different machine."
+                elif not has_role:
+                    reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
+                else:
+                    reason_msg = "Access denied by server policy."
+        else:
+            reason_msg = f"Server error: {status.get('err','unknown')}"
+        if not (ok and should):
+            print(f"❌ Access denied. {reason_msg}")
             return
 
         # Online webhook (no IP/token/machine)
