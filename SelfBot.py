@@ -725,8 +725,8 @@ class DiscordBotGUI:
         # Key Duration live countdown
         keydur_wrap = tk.Frame(left, bg="#1e1b29")
         keydur_wrap.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
-        tk.Label(keydur_wrap, text="Key Duration:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.key_duration_value = tk.Label(keydur_wrap, text="—", bg="#1e1b29", fg="#bfaef5", font=("Consolas", 11))
+        tk.Label(keydur_wrap, text="Key Duration", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+        self.key_duration_value = tk.Label(keydur_wrap, text="—", bg="#1e1b29", fg="#bfaef5", font=("Consolas", 13, "bold"))
         self.key_duration_value.pack(anchor="w")
 
         # Message counter label (live-updating)
@@ -1826,7 +1826,7 @@ class DiscordBotGUI:
         def _tick():
             try:
                 uid = str(self._login_user_id)
-                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid}, timeout=5)
+                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid, "machine_id": machine_id()}, timeout=5)
                 ok = (resp.status_code == 200)
                 j = resp.json() if ok else {}
                 should = bool(j.get("should_have_access", False))
@@ -1945,7 +1945,11 @@ class DiscordBotGUI:
                 uid = str(self._login_user_id or self.user_id or '')
                 if not uid:
                     raise RuntimeError('no uid')
-                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid}, timeout=5)
+                resp = requests.get(
+                    f"{SERVICE_URL}/api/member-status",
+                    params={"user_id": uid, "machine_id": machine_id()},
+                    timeout=5
+                )
                 if resp.status_code == 200:
                     j = resp.json() or {}
                     should = bool(j.get('should_have_access', False))
@@ -1978,6 +1982,13 @@ class DiscordBotGUI:
                         txt = f"{d}d {h}h {m}m {s}s"
                     try:
                         self.key_duration_value.config(text=txt)
+                    except Exception:
+                        pass
+                    # One-time 1-hour warning
+                    try:
+                        if remaining <= 3600 and remaining > 0 and not getattr(self, '_warned_key_low', False):
+                            self._warned_key_low = True
+                            self.log("⚠️ Your key is about to run out, renew to continue using the selfbot")
                     except Exception:
                         pass
             except Exception:
