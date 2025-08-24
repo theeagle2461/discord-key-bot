@@ -330,7 +330,7 @@ class DiscordBotGUI:
         self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
 
         self.particles = []
-        self.create_particles(48)
+        self.create_particles(16)
         self.animate_particles()
         self.root.bind("<Configure>", self._on_root_resize)
 
@@ -748,9 +748,9 @@ class DiscordBotGUI:
             tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
             tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
-            # Run buttons placed under the credit box
-            run = tk.Frame(delays, bg="#1e1b29")
-            run.pack(fill="x", padx=0, pady=(16, 2))
+            # Run buttons moved to middle between rotator and SYS
+            run = tk.Frame(left, bg="#1e1b29")
+            run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(2,2))
             self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
             self.btn_start.pack(fill="x", pady=(0, 6))
             self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
@@ -1001,12 +1001,9 @@ class DiscordBotGUI:
         uid_txt = (self._login_user_id or "—")
         self._edex_right = tk.Label(right, text=f"User: {uid_txt}  |  Key: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
         self._edex_right.pack()
-        # Scanlines overlay
+        # Scanlines/grid overlays disabled to reduce visual noise and CPU
         self._edex_scanlines = []
-        self._create_scanlines()
-        # Grid overlay
         self._edex_grid_lines = []
-        self._create_grid()
         # Start ticker
         self._edex_tick()
 
