@@ -535,9 +535,9 @@ class DiscordBotGUI:
         self._selected_avatar_photos = []
         self.root.after(800, self._refresh_selected_avatars)
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
-        self.avatar_label.pack(side="left", padx=(4, 8), pady=6)
+        self.avatar_label.pack(side="left", padx=(4, 8), pady=(8,6))
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
-        self.username_label.pack(side="left", pady=6)
+        self.username_label.pack(side="left", pady=(8,6))
 
         # Left column for controls (below user header)
         left = tk.Frame(frame, bg="#1e1b29")
