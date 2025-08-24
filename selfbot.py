@@ -764,7 +764,7 @@ class DiscordBotGUI:
             tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
             # Run buttons moved to middle between rotator and SYS
             run = tk.Frame(left, bg="#1e1b29")
-            run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(2,2))
+            run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(20,8))
             self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
             self.btn_start.pack(fill="x", pady=(0, 6))
             self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
@@ -1034,7 +1034,13 @@ class DiscordBotGUI:
                 (self.main_frame, "KS USER PANEL"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
-                bar.pack(fill="x", side="top")
+                try:
+                    if pane is getattr(self, 'log_panel', None) and hasattr(self, 'log_text'):
+                        bar.pack(fill="x", side="top", before=self.log_text)
+                    else:
+                        bar.pack(fill="x", side="top")
+                except Exception:
+                    bar.pack(fill="x", side="top")
                 try:
                     self.apply_glow(bar, thickness=2)
                 except Exception:
