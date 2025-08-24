@@ -1347,6 +1347,7 @@ class DiscordBotGUI:
     def _update_stats_label(self):
         try:
             # stats_label removed; HUD updates message count
+            pass
         except Exception:
             pass
 
