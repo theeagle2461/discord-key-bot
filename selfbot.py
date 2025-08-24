@@ -757,7 +757,7 @@ class DiscordBotGUI:
         # Credit box under reply delay (moved slightly further down)
         try:
             credit = tk.Frame(delays, bg="#2c2750")
-            credit.pack(fill="x", padx=0, pady=(12, 0))
+            credit.pack(fill="x", padx=0, pady=(20, 4))
             self.apply_glow(credit, thickness=2)
             tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
@@ -779,21 +779,7 @@ class DiscordBotGUI:
         # Activity Log next to message content (taller)
         self.log_panel = tk.Frame(left, bg="#1e1b29")
         self.log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        # eDEX-style header at top of log panel
-        try:
-            log_bar = tk.Frame(self.log_panel, bg="#0b1020")
-            log_bar.pack(fill="x", side="top")
-            try:
-                self.apply_glow(log_bar, thickness=2)
-            except Exception:
-                pass
-            tk.Label(log_bar, text="TERMINAL: LOG", bg="#0b1020", fg="#b799ff", font=("Consolas", 10, "bold")).pack(side="left", padx=8)
-            for color in ("#22c55e", "#f59e0b", "#ef4444"):
-                c = tk.Canvas(log_bar, width=10, height=10, bg="#0b1020", highlightthickness=0)
-                c.pack(side="right", padx=3)
-                c.create_oval(2, 2, 8, 8, fill=color, outline=color)
-        except Exception:
-            pass
+        # eDEX log header is added centrally in _add_edex_terminal_headers()
         self.log_text = tk.Text(self.log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
