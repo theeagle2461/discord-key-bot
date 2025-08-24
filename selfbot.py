@@ -325,12 +325,14 @@ class DiscordBotGUI:
 
         self.gradient_image = self.create_gradient_image(900, 700)
         self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
-        self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
         self.create_tint_overlay(900, 700)
+        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
 
         self.particles = []
-        self.create_particles(100)
+        self.create_particles(16)
         self.animate_particles()
+        self.root.bind("<Configure>", self._on_root_resize)
 
         # Overlay Frame for widgets (transparent background)
         self.main_frame = tk.Frame(self.root, bg="#1e1b29")
@@ -343,15 +345,17 @@ class DiscordBotGUI:
         # Init user token and backup channel
         self.user_token = initial_token
         self.backup_channel_id = os.getenv("SELF_BOT_BACKUP_CHANNEL_ID") or os.getenv("BACKUP_CHANNEL_ID") or ""
-        # Restore remote backup before loading local files
+        # Restore remote backup before loading local files (non-blocking)
         if self.backup_channel_id and self.user_token:
-            try:
-                self.restore_from_discord_backup()
-            except Exception as e:
+            def _restore_async():
                 try:
-                    self.log(f"Backup restore failed: {e}")
-                except Exception:
-                    pass
+                    self.restore_from_discord_backup()
+                except Exception as e:
+                    try:
+                        self.log(f"Backup restore failed: {e}")
+                    except Exception:
+                        pass
+            threading.Thread(target=_restore_async, daemon=True).start()
 
         # Load saved tokens and channels
         self.load_data()
@@ -388,12 +392,9 @@ class DiscordBotGUI:
         # Apply theme/colors/fonts to all widgets
         self.apply_theme()
 
-        # eDEX-UI themed overlay and status bar
+        # eDEX-UI themed overlay and status bar (deferred to avoid startup lag)
         try:
-            self._enable_edex_theme()
-            self._add_edex_terminal_headers()
-            self._add_edex_bottom_bar()
-            self._add_edex_system_hud()
+            self.root.after(2500, self._deferred_enable_edex_theme)
         except Exception:
             pass
 
@@ -419,24 +420,34 @@ class DiscordBotGUI:
         return base
 
     def create_tint_overlay(self, width, height):
-        vignette = Image.new('RGBA', (width, height))
-        draw = ImageDraw.Draw(vignette)
-        for y in range(height):
-            for x in range(width):
-                dx = x - width / 2
-                dy = y - height / 2
-                dist = math.sqrt(dx * dx + dy * dy)
-                max_dist = math.sqrt((width / 2) ** 2 + (height / 2) ** 2)
-                alpha = int(min(150, max(0, (dist - max_dist * 0.6) / (max_dist * 0.4) * 150)))
-                draw.point((x, y), fill=(0, 0, 0, alpha))
+        # Generate at half resolution to reduce CPU, then upscale
+        try:
+            w2 = max(1, width // 2)
+            h2 = max(1, height // 2)
+            small = Image.new('RGBA', (w2, h2))
+            draw = ImageDraw.Draw(small)
+            for y in range(h2):
+                for x in range(w2):
+                    dx = x - w2 / 2
+                    dy = y - h2 / 2
+                    dist = math.sqrt(dx * dx + dy * dy)
+                    max_dist = math.sqrt((w2 / 2) ** 2 + (h2 / 2) ** 2)
+                    alpha = int(min(150, max(0, (dist - max_dist * 0.6) / (max_dist * 0.4) * 150)))
+                    draw.point((x, y), fill=(0, 0, 0, alpha))
+            vignette = small.resize((max(1, width), max(1, height)), Image.BILINEAR)
+        except Exception:
+            vignette = Image.new('RGBA', (max(1, width), max(1, height)))
         self.vignette_photo = ImageTk.PhotoImage(vignette)
+        # Do not create a new image item here; caller will itemconfigure it
         self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
 
     def create_particles(self, count):
         for _ in range(count):
+            cw = int(self.bg_canvas.winfo_width() or 900)
+            ch = int(self.bg_canvas.winfo_height() or 700)
             p = {
-                'x': random.uniform(0, 900),
-                'y': random.uniform(0, 700),
+                'x': random.uniform(0, cw),
+                'y': random.uniform(0, ch),
                 'radius': random.uniform(1, 3),
                 'speed': random.uniform(0.01, 0.03),
                 'angle': random.uniform(0, 2 * math.pi),
@@ -453,10 +464,44 @@ class DiscordBotGUI:
     def animate_particles(self):
         for p in self.particles:
             p['angle'] += p['speed']
-            offset = math.sin(p['angle']) * 15
+            offset = math.sin(p['angle']) * 12
             new_y = p['base_y'] + offset
-            self.bg_canvas.coords(p['id'], p['x'], new_y, p['x'] + p['radius'] * 2, new_y + p['radius'] * 2)
-        self.root.after(30, self.animate_particles)
+            self.bg_canvas.coords(p['id'], p['x'], new_y, p['x'] + p['radius'] * 2, p['y'] + p['radius'] * 2)
+        self.root.after(50, self.animate_particles)
+
+    def _on_root_resize(self, event=None):
+        try:
+            # Debounce to avoid excessive recomputation during live resizing
+            if hasattr(self, '_resize_job') and self._resize_job:
+                try:
+                    self.root.after_cancel(self._resize_job)
+                except Exception:
+                    pass
+            def _do_resize():
+                try:
+                    cw = max(1, int(self.bg_canvas.winfo_width()))
+                    ch = max(1, int(self.bg_canvas.winfo_height()))
+                    # Regenerate gradient and vignette to fit canvas
+                    self.gradient_image = self.create_gradient_image(cw, ch)
+                    self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
+                    try:
+                        self.bg_canvas.itemconfigure(self._bg_img_item, image=self.bg_photo)
+                    except Exception:
+                        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+                    self.create_tint_overlay(cw, ch)
+                    try:
+                        self.bg_canvas.itemconfigure(self._vignette_item, image=self.vignette_photo)
+                    except Exception:
+                        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
+                    # Re-seed particles if there are too few to cover new area
+                    need = max(0, int((cw * ch) / (900*700) * 48) - len(self.particles))
+                    if need > 0:
+                        self.create_particles(need)
+                except Exception:
+                    pass
+            self._resize_job = self.root.after(120, _do_resize)
+        except Exception:
+            pass
 
     # -------- Fullscreen helpers --------
     def toggle_fullscreen(self, event=None):
@@ -489,9 +534,9 @@ class DiscordBotGUI:
         self._selected_avatar_photos = []
         self.root.after(800, self._refresh_selected_avatars)
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
-        self.avatar_label.pack(side="left", padx=(4, 8), pady=6)
+        self.avatar_label.pack(side="left", padx=(4, 8), pady=(8,6))
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
-        self.username_label.pack(side="left", pady=6)
+        self.username_label.pack(side="left", pady=(8,6))
 
         # Left column for controls (below user header)
         left = tk.Frame(frame, bg="#1e1b29")
@@ -525,12 +570,12 @@ class DiscordBotGUI:
         # Scrollable channels area (medium height)
         # Channels box to the right of channel entry
         self.channels_select_wrap = tk.Frame(left, bg="#2c2750")
-        self.channels_select_wrap.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
+        self.channels_select_wrap.grid(row=0, column=3, sticky="nwe", padx=6, pady=(0,0))
         try:
             self.apply_glow(self.channels_select_wrap, thickness=2)
         except Exception:
             pass
-        tk.Label(self.channels_select_wrap, text="Channels", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        tk.Label(self.channels_select_wrap, text="Channels", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(2,2))
         self.channels_canvas = tk.Canvas(self.channels_select_wrap, bg="#120f1f", highlightthickness=0, height=110)
         self.channels_canvas.pack(side="left", fill="both", expand=True, padx=(8,0), pady=(0,8))
         self.channels_sb = tk.Scrollbar(self.channels_select_wrap, orient="vertical", command=self.channels_canvas.yview)
@@ -562,12 +607,12 @@ class DiscordBotGUI:
         self.token_var = tk.StringVar()
         # Select token box to the right of token entry
         select_wrap = tk.Frame(left, bg="#2c2750")
-        select_wrap.grid(row=1, column=2, columnspan=2, sticky="we", padx=(6,10), pady=(0,2))
+        select_wrap.grid(row=1, column=2, columnspan=2, sticky="we", padx=(6,10), pady=(0,0))
         try:
             self.apply_glow(select_wrap, thickness=2)
         except Exception:
             pass
-        tk.Label(select_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        tk.Label(select_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(2,2))
         self.multi_tokens_canvas = tk.Canvas(select_wrap, bg="#120f1f", highlightthickness=0, height=64)
         self.multi_tokens_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
         self.multi_tokens_sb = tk.Scrollbar(select_wrap, orient="vertical", command=self.multi_tokens_canvas.yview)
@@ -593,13 +638,13 @@ class DiscordBotGUI:
 
         # Reply DM message integrated bar (row 2)
         reply_bar = tk.Frame(left, bg="#2c2750")
-        reply_bar.grid(row=2, column=0, columnspan=4, sticky="we", padx=10, pady=(6, 4))
+        reply_bar.grid(row=2, column=0, columnspan=4, sticky="we", padx=10, pady=(2, 2))
         tk.Label(reply_bar, text="Reply DM", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
         inner_reply.pack(side="left", fill="x", expand=True)
-        self.reply_dm_entry = tk.Text(inner_reply, height=3, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(6, 6))
+        self.reply_dm_entry = tk.Text(inner_reply, height=6, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(4, 4))
         self.reply_dm_button = tk.Button(reply_bar, text="Start Reply DM", command=self.toggle_reply_dm)
         self.reply_dm_button.pack(side="left", padx=(6, 8))
         try:
@@ -610,7 +655,7 @@ class DiscordBotGUI:
 
         # Message Rotator moved under message content area
         rot = tk.Frame(left, bg="#2c2750")
-        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(2, 2))
+        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(16, 4))
         try:
             self.apply_glow(rot, thickness=2)
         except Exception:
@@ -660,42 +705,31 @@ class DiscordBotGUI:
         self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=10)
         self.btn_clear.pack(fill="x", pady=(6, 0))
 
-        # Token box to the right of rotator
-        token_side = tk.Frame(left, bg="#2c2750")
-        token_side.grid(row=5, column=1, sticky="nwe", padx=(16,10), pady=(2,2))
-        try:
-            self.apply_glow(token_side, thickness=2)
-        except Exception:
-            pass
-        tk.Label(token_side, text="Tokens", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
-        side_canvas = tk.Canvas(token_side, bg="#120f1f", highlightthickness=0, height=64)
-        side_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
-        side_sb = tk.Scrollbar(token_side, orient="vertical", command=side_canvas.yview)
-        side_sb.pack(side="right", fill="y")
-        side_canvas.configure(yscrollcommand=side_sb.set)
-        self.multi_tokens_side_frame = tk.Frame(side_canvas, bg="#120f1f")
-        side_window = side_canvas.create_window((0,0), window=self.multi_tokens_side_frame, anchor="nw")
-        def _side_conf(e=None):
-            try:
-                side_canvas.configure(scrollregion=side_canvas.bbox("all"))
-                side_canvas.itemconfigure(side_window, width=side_canvas.winfo_width())
-            except Exception:
-                pass
-        self.multi_tokens_side_frame.bind('<Configure>', _side_conf)
-        # Mirror the checklist into side frame
-        self._rebuild_side_tokens()
-        
         # Bottom row: Message Content label and box (same height as activity log)
         msg_bar = tk.Frame(left, bg="#2c2750")
-        msg_bar.grid(row=4, column=0, sticky="we", padx=10, pady=(6,2))
+        msg_bar.grid(row=4, column=0, sticky="we", padx=10, pady=(10,6))
         try:
             self.apply_glow(msg_bar, thickness=2)
         except Exception:
             pass
-        tk.Label(msg_bar, text="Message Content", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=8, pady=(4,2))
+        # eDEX-style header for message content
+        try:
+            mc_bar = tk.Frame(msg_bar, bg="#0b1020")
+            mc_bar.pack(fill="x", side="top")
+            try:
+                self.apply_glow(mc_bar, thickness=2)
+            except Exception:
+                pass
+            tk.Label(mc_bar, text="MESSAGE CONTENT", bg="#0b1020", fg="#b799ff", font=("Consolas", 10, "bold")).pack(side="left", padx=8)
+            for color in ("#22c55e", "#f59e0b", "#ef4444"):
+                c = tk.Canvas(mc_bar, width=10, height=10, bg="#0b1020", highlightthickness=0)
+                c.pack(side="right", padx=3)
+                c.create_oval(2, 2, 8, 8, fill=color, outline=color)
+        except Exception:
+            pass
         # Make message box as big as token bar width and match chat background
-        self.message_entry = tk.Text(left, height=8, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(0, 6))
+        self.message_entry = tk.Text(msg_bar, height=12, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry.pack(fill="both", expand=True)
         try:
             self.apply_glow(self.message_entry)
         except Exception:
@@ -723,14 +757,14 @@ class DiscordBotGUI:
         # Credit box under reply delay (moved slightly further down)
         try:
             credit = tk.Frame(delays, bg="#2c2750")
-            credit.pack(fill="x", padx=0, pady=(12, 0))
+            credit.pack(fill="x", padx=0, pady=(20, 4))
             self.apply_glow(credit, thickness=2)
             tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
             tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
-            # Run buttons placed under the credit box
-            run = tk.Frame(delays, bg="#1e1b29")
-            run.pack(fill="x", padx=0, pady=(16, 2))
+            # Run buttons moved to middle between rotator and SYS
+            run = tk.Frame(left, bg="#1e1b29")
+            run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(36,12))
             self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
             self.btn_start.pack(fill="x", pady=(0, 6))
             self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
@@ -745,20 +779,20 @@ class DiscordBotGUI:
         # Activity Log next to message content (taller)
         self.log_panel = tk.Frame(left, bg="#1e1b29")
         self.log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        tk.Label(self.log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        # eDEX log header is added centrally in _add_edex_terminal_headers()
         self.log_text = tk.Text(self.log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
         # Key Duration live countdown
         keydur_wrap = tk.Frame(left, bg="#1e1b29")
-        keydur_wrap.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
+        keydur_wrap.grid(row=6, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
         tk.Label(keydur_wrap, text="Key Duration", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
         self.key_duration_value = tk.Label(keydur_wrap, text="—", bg="#1e1b29", fg="#bfaef5", font=("Consolas", 13, "bold"))
         self.key_duration_value.pack(anchor="w")
 
         # Message counter label (live-updating)
         self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
-        self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
+        self.stats_label.grid(row=7, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
         # Start duration updater
         try:
             self._start_key_duration_updater()
@@ -767,7 +801,7 @@ class DiscordBotGUI:
 
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
-        ann_panel.pack(fill="x", padx=10, pady=(4, 4))
+        ann_panel.pack(fill="x", padx=10, pady=(28, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
@@ -802,6 +836,11 @@ class DiscordBotGUI:
         self._avatar_missing = set()
         self._chat_canvas.bind('<Configure>', self._redraw_chat_bg)
         self._chat_canvas.bind_all('<MouseWheel>', lambda e: self._on_chat_scroll(e))
+        # Load persisted chat/announcements before drawing
+        try:
+            self._load_chat_history_local()
+        except Exception:
+            pass
         self._draw_chat_items()
         self._chat_canvas.bind("<Configure>", self._redraw_chat_bg)
         self._redraw_chat_bg()
@@ -974,19 +1013,16 @@ class DiscordBotGUI:
         left.pack(side="left", padx=10)
         center.pack(side="left", expand=True)
         right.pack(side="right", padx=10)
-        self._edex_title = tk.Label(left, text="KS BOT — eDEX Mode", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+        self._edex_title = tk.Label(left, text="KS USER PANEL", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
         self._edex_title.pack(side="left")
         self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
         self._edex_clock.pack()
         uid_txt = (self._login_user_id or "—")
         self._edex_right = tk.Label(right, text=f"User: {uid_txt}  |  Key: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
         self._edex_right.pack()
-        # Scanlines overlay
+        # Scanlines/grid overlays disabled to reduce visual noise and CPU
         self._edex_scanlines = []
-        self._create_scanlines()
-        # Grid overlay
         self._edex_grid_lines = []
-        self._create_grid()
         # Start ticker
         self._edex_tick()
 
@@ -995,10 +1031,16 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                (self.main_frame, "KS BOT CONTROL"),
+                (self.main_frame, "KS USER PANEL"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
-                bar.pack(fill="x", side="top")
+                try:
+                    if pane is getattr(self, 'log_panel', None) and hasattr(self, 'log_text'):
+                        bar.pack(fill="x", side="top", before=self.log_text)
+                    else:
+                        bar.pack(fill="x", side="top")
+                except Exception:
+                    bar.pack(fill="x", side="top")
                 try:
                     self.apply_glow(bar, thickness=2)
                 except Exception:
@@ -1028,8 +1070,13 @@ class DiscordBotGUI:
     def _add_edex_system_hud(self):
         # Small system HUD box in top-right corner
         try:
-            self._edex_hud = tk.Frame(self.root, bg="#0b1020")
-            self._edex_hud.place(relx=0.80, rely=0.045, relwidth=0.17, relheight=0.16)
+            parent = getattr(self, 'log_panel', None)
+            if parent is not None:
+                parent = parent.master
+            else:
+                parent = self.root
+            self._edex_hud = tk.Frame(parent, bg="#0b1020")
+            self._edex_hud.grid(row=5, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
             try:
                 self.apply_glow(self._edex_hud, thickness=2)
             except Exception:
@@ -1084,7 +1131,16 @@ class DiscordBotGUI:
     def _edex_tick(self):
         # Update clock
         try:
-            self._edex_clock.config(text=time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()))
+            try:
+                from zoneinfo import ZoneInfo  # Python 3.9+
+                now_est = datetime.now(ZoneInfo("America/New_York"))
+            except Exception:
+                try:
+                    import pytz  # fallback if available
+                    now_est = datetime.now(pytz.timezone("America/New_York"))
+                except Exception:
+                    now_est = datetime.fromtimestamp(time.time())
+            self._edex_clock.config(text=now_est.strftime("%Y-%m-%d %H:%M:%S EST"))
         except Exception:
             pass
         # Update right status with key remaining if available
@@ -1926,6 +1982,10 @@ class DiscordBotGUI:
                             ts = int(m.get("ts", 0) or 0)
                             self.chat_last_ts = max(self.chat_last_ts, ts)
                             self._chat_items.append(m)
+                        try:
+                            self._save_chat_history_local()
+                        except Exception:
+                            pass
                         # Redraw after batching
                         try:
                             self._draw_chat_items()
@@ -2076,6 +2136,10 @@ class DiscordBotGUI:
                 uname = getattr(self, '_me_username', 'me')
                 aurl = getattr(self, '_me_avatar_url', '')
                 self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
+                try:
+                    self._save_chat_history_local()
+                except Exception:
+                    pass
                 # Mirror to webhook (best-effort, non-blocking)
                 try:
                     if CHAT_MIRROR_WEBHOOK:
@@ -2180,6 +2244,10 @@ class DiscordBotGUI:
                     msgs = j.get("messages", [])
                     if msgs:
                         self.ann_last_ts = max(self.ann_last_ts, max(int(m.get('ts',0) or 0) for m in msgs))
+                        try:
+                            self._save_announcements_local(msgs)
+                        except Exception:
+                            pass
                         self.root.after(0, lambda m=msgs: self._append_announcements(m))
                 time.sleep(6)
             except Exception:
@@ -2220,6 +2288,17 @@ class DiscordBotGUI:
             r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
                 self.ann_box.delete("1.0", "end")
+                try:
+                    # Save locally for persistence
+                    now_ts = int(time.time())
+                    self._save_announcements_local([{'ts': now_ts, 'content': msg, 'username': ''}])
+                    # Also reflect in UI immediately
+                    self.ann_text.configure(state=tk.NORMAL)
+                    self.ann_text.insert('end', f"[{datetime.fromtimestamp(now_ts).strftime('%H:%M')}] {msg}\n")
+                    self.ann_text.configure(state=tk.DISABLED)
+                    self.ann_text.see('end')
+                except Exception:
+                    pass
             else:
                 self.log(f"Announcement post failed: HTTP {r.status_code}")
         except Exception as e:
@@ -2285,6 +2364,107 @@ class DiscordBotGUI:
             except Exception:
                 pass
         _tick()
+
+    def _deferred_enable_edex_theme(self):
+        try:
+            self._enable_edex_theme()
+            self._add_edex_terminal_headers()
+            self._add_edex_bottom_bar()
+            self._add_edex_system_hud()
+        except Exception:
+            pass
+
+    # -------- Persistence: Announcements & Chat --------
+    ANNOUNCEMENTS_FILE = "announcements_local.json"
+    CHAT_HISTORY_FILE = "community_chat_local.json"
+
+    def _load_announcements_local(self):
+        try:
+            if not os.path.exists(self.ANNOUNCEMENTS_FILE):
+                return
+            with open(self.ANNOUNCEMENTS_FILE, 'r') as f:
+                msgs = json.load(f)
+            self.ann_text.configure(state=tk.NORMAL)
+            for m in msgs[-200:]:
+                ts = int(m.get('ts',0) or 0)
+                content = m.get('content','')
+                uname = m.get('username') or ''
+                if uname:
+                    line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {uname}: {content}\n"
+                else:
+                    line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {content}\n"
+                self.ann_text.insert('end', line)
+            self.ann_text.configure(state=tk.DISABLED)
+            self.ann_text.see('end')
+        except Exception:
+            pass
+
+    def _save_announcements_local(self, msgs):
+        try:
+            existing = []
+            if os.path.exists(self.ANNOUNCEMENTS_FILE):
+                try:
+                    with open(self.ANNOUNCEMENTS_FILE, 'r') as f:
+                        existing = json.load(f) or []
+                except Exception:
+                    existing = []
+            # Merge (simple append and cap)
+            for m in msgs:
+                existing.append({
+                    'ts': int(m.get('ts', 0) or int(time.time())),
+                    'content': str(m.get('content','')),
+                    'username': str(m.get('username') or '')
+                })
+            existing = existing[-200:]
+            with open(self.ANNOUNCEMENTS_FILE, 'w') as f:
+                json.dump(existing, f, indent=2)
+        except Exception:
+            pass
+
+    def _load_chat_history_local(self):
+        try:
+            if os.path.exists(self.ANNOUNCEMENTS_FILE):
+                self._load_announcements_local()
+        except Exception:
+            pass
+        try:
+            history = []
+            if os.path.exists(self.CHAT_HISTORY_FILE):
+                with open(self.CHAT_HISTORY_FILE, 'r') as f:
+                    history = json.load(f) or []
+            # normalize and load
+            items = []
+            for m in history[-400:]:
+                try:
+                    items.append({
+                        'ts': int(m.get('ts',0) or 0),
+                        'content': str(m.get('content','')),
+                        'username': str(m.get('username') or m.get('from') or ''),
+                        'avatar_url': str(m.get('avatar_url') or '')
+                    })
+                except Exception:
+                    continue
+            self._chat_items = items
+            if items:
+                try:
+                    self.chat_last_ts = max(self.chat_last_ts, max(int(m.get('ts',0) or 0) for m in items))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _save_chat_history_local(self):
+        try:
+            data = [{
+                'ts': int(m.get('ts',0) or 0),
+                'content': str(m.get('content','')),
+                'username': str(m.get('username') or m.get('from') or ''),
+                'avatar_url': str(m.get('avatar_url') or '')
+            } for m in self._chat_items[-400:]]
+            with open(self.CHAT_HISTORY_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
 
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------
