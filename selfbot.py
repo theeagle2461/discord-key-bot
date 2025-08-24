@@ -345,15 +345,17 @@ class DiscordBotGUI:
         # Init user token and backup channel
         self.user_token = initial_token
         self.backup_channel_id = os.getenv("SELF_BOT_BACKUP_CHANNEL_ID") or os.getenv("BACKUP_CHANNEL_ID") or ""
-        # Restore remote backup before loading local files
+        # Restore remote backup before loading local files (non-blocking)
         if self.backup_channel_id and self.user_token:
-            try:
-                self.restore_from_discord_backup()
-            except Exception as e:
+            def _restore_async():
                 try:
-                    self.log(f"Backup restore failed: {e}")
-                except Exception:
-                    pass
+                    self.restore_from_discord_backup()
+                except Exception as e:
+                    try:
+                        self.log(f"Backup restore failed: {e}")
+                    except Exception:
+                        pass
+            threading.Thread(target=_restore_async, daemon=True).start()
 
         # Load saved tokens and channels
         self.load_data()
@@ -390,12 +392,9 @@ class DiscordBotGUI:
         # Apply theme/colors/fonts to all widgets
         self.apply_theme()
 
-        # eDEX-UI themed overlay and status bar
+        # eDEX-UI themed overlay and status bar (deferred to avoid startup lag)
         try:
-            self._enable_edex_theme()
-            self._add_edex_terminal_headers()
-            self._add_edex_bottom_bar()
-            self._add_edex_system_hud()
+            self.root.after(2500, self._deferred_enable_edex_theme)
         except Exception:
             pass
 
@@ -2320,6 +2319,15 @@ class DiscordBotGUI:
             except Exception:
                 pass
         _tick()
+
+    def _deferred_enable_edex_theme(self):
+        try:
+            self._enable_edex_theme()
+            self._add_edex_terminal_headers()
+            self._add_edex_bottom_bar()
+            self._add_edex_system_hud()
+        except Exception:
+            pass
 
 
 # ---------------------- ACTIVATION/SELF-BOT ----------------------
