@@ -368,14 +368,17 @@ class DiscordBotGUI:
         # Play opening sound if available
         self.play_opening_sound()
 
+        # Apply theme/colors/fonts to all widgets
+        self.apply_theme()
+
         # eDEX-UI themed overlay and status bar
         try:
             self._enable_edex_theme()
+            self._add_edex_terminal_headers()
+            self._add_edex_bottom_bar()
+            self._add_edex_system_hud()
         except Exception:
             pass
-
-        # Apply theme/colors/fonts to all widgets
-        self.apply_theme()
 
         # Credits overlay removed; credit will be shown under the reply delay section
 
@@ -723,10 +726,10 @@ class DiscordBotGUI:
             pass
 
         # Activity Log next to message content (taller)
-        log_panel = tk.Frame(left, bg="#1e1b29")
-        log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        tk.Label(log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
-        self.log_text = tk.Text(log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
+        self.log_panel = tk.Frame(left, bg="#1e1b29")
+        self.log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
+        tk.Label(self.log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        self.log_text = tk.Text(self.log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
         # Key Duration live countdown
@@ -970,6 +973,58 @@ class DiscordBotGUI:
         # Start ticker
         self._edex_tick()
 
+    def _add_edex_terminal_headers(self):
+        # Add neon headers to key content areas to mimic terminal panes
+        try:
+            for pane, title in [
+                (self.log_panel, "TERMINAL: LOG"),
+                (self.main_frame, "KS BOT CONTROL"),
+            ]:
+                bar = tk.Frame(pane, bg="#0b1020")
+                bar.pack(fill="x", side="top")
+                try:
+                    self.apply_glow(bar, thickness=2)
+                except Exception:
+                    pass
+                tk.Label(bar, text=title, bg="#0b1020", fg="#b799ff", font=("Consolas", 10, "bold")).pack(side="left", padx=8)
+                # Status LEDs
+                for color in ("#22c55e", "#f59e0b", "#ef4444"):
+                    c = tk.Canvas(bar, width=10, height=10, bg="#0b1020", highlightthickness=0)
+                    c.pack(side="right", padx=3)
+                    c.create_oval(2, 2, 8, 8, fill=color, outline=color)
+        except Exception:
+            pass
+
+    def _add_edex_bottom_bar(self):
+        try:
+            self._edex_cmd = tk.Frame(self.root, bg="#0b1020")
+            self._edex_cmd.place(relx=0.0, rely=0.965, relwidth=1.0, relheight=0.035)
+            try:
+                self.apply_glow(self._edex_cmd, thickness=2)
+            except Exception:
+                pass
+            lbl = tk.Label(self._edex_cmd, text="> press F11 to toggle fullscreen • Esc to exit • KS Bot", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
+            lbl.pack(side="left", padx=10)
+        except Exception:
+            pass
+
+    def _add_edex_system_hud(self):
+        # Small system HUD box in top-right corner
+        try:
+            self._edex_hud = tk.Frame(self.root, bg="#0b1020")
+            self._edex_hud.place(relx=0.80, rely=0.045, relwidth=0.17, relheight=0.10)
+            try:
+                self.apply_glow(self._edex_hud, thickness=2)
+            except Exception:
+                pass
+            tk.Label(self._edex_hud, text="SYS", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(anchor="w", padx=8, pady=(6,2))
+            self._hud_time = tk.Label(self._edex_hud, text="time: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
+            self._hud_time.pack(anchor="w", padx=8)
+            self._hud_msgs = tk.Label(self._edex_hud, text="msgs: 0", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
+            self._hud_msgs.pack(anchor="w", padx=8)
+        except Exception:
+            pass
+
     def _create_scanlines(self):
         try:
             h = self.bg_canvas.winfo_height() or 700
@@ -1016,6 +1071,12 @@ class DiscordBotGUI:
                     self.bg_canvas.itemconfigure(line, fill="#1c2b5b")
                 else:
                     self.bg_canvas.itemconfigure(line, fill="#16234a")
+        except Exception:
+            pass
+        # HUD updates
+        try:
+            self._hud_time.config(text=f"time: {time.strftime('%H:%M:%S')}" )
+            self._hud_msgs.config(text=f"msgs: {self.message_counter_total}")
         except Exception:
             pass
         # Re-schedule
