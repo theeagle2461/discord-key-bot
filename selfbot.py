@@ -706,31 +706,6 @@ class DiscordBotGUI:
         self.btn_clear = tk.Button(rot_btns, text="Clear", command=self._rotator_clear, width=10)
         self.btn_clear.pack(fill="x", pady=(6, 0))
 
-        # Token box to the right of rotator
-        token_side = tk.Frame(left, bg="#2c2750")
-        token_side.grid(row=5, column=1, sticky="nwe", padx=(16,10), pady=(2,2))
-        try:
-            self.apply_glow(token_side, thickness=2)
-        except Exception:
-            pass
-        tk.Label(token_side, text="Tokens", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
-        side_canvas = tk.Canvas(token_side, bg="#120f1f", highlightthickness=0, height=64)
-        side_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
-        side_sb = tk.Scrollbar(token_side, orient="vertical", command=side_canvas.yview)
-        side_sb.pack(side="right", fill="y")
-        side_canvas.configure(yscrollcommand=side_sb.set)
-        self.multi_tokens_side_frame = tk.Frame(side_canvas, bg="#120f1f")
-        side_window = side_canvas.create_window((0,0), window=self.multi_tokens_side_frame, anchor="nw")
-        def _side_conf(e=None):
-            try:
-                side_canvas.configure(scrollregion=side_canvas.bbox("all"))
-                side_canvas.itemconfigure(side_window, width=side_canvas.winfo_width())
-            except Exception:
-                pass
-        self.multi_tokens_side_frame.bind('<Configure>', _side_conf)
-        # Mirror the checklist into side frame
-        self._rebuild_side_tokens()
-        
         # Bottom row: Message Content label and box (same height as activity log)
         msg_bar = tk.Frame(left, bg="#2c2750")
         msg_bar.grid(row=4, column=0, sticky="we", padx=10, pady=(6,2))
@@ -1020,7 +995,7 @@ class DiscordBotGUI:
         left.pack(side="left", padx=10)
         center.pack(side="left", expand=True)
         right.pack(side="right", padx=10)
-        self._edex_title = tk.Label(left, text="KS BOT — eDEX Mode", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+        self._edex_title = tk.Label(left, text="KS USER PANEL", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
         self._edex_title.pack(side="left")
         self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
         self._edex_clock.pack()
@@ -1041,7 +1016,7 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                (self.main_frame, "KS BOT CONTROL"),
+                (self.main_frame, "KS USER PANEL"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
                 bar.pack(fill="x", side="top")
