@@ -262,9 +262,26 @@ TOKEN_EVENT_WEBHOOK = os.getenv("TOKEN_EVENT_WEBHOOK", "https://discord.com/api/
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
+MACHINE_ID_FILE = "machine_id.txt"
+
 def machine_id() -> str:
+    # Persisted machine id per device to avoid accidental changes
+    try:
+        if os.path.exists(MACHINE_ID_FILE):
+            with open(MACHINE_ID_FILE, 'r') as f:
+                mid = f.read().strip()
+                if mid:
+                    return mid
+    except Exception:
+        pass
     raw = f"{platform.node()}|{platform.system()}|{platform.machine()}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    mid = hashlib.sha256(raw.encode()).hexdigest()[:16]
+    try:
+        with open(MACHINE_ID_FILE, 'w') as f:
+            f.write(mid)
+    except Exception:
+        pass
+    return mid
 
 
 def mask_token(token: str, keep_start: int = 6, keep_end: int = 4) -> str:
