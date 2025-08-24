@@ -576,7 +576,7 @@ class DiscordBotGUI:
             self.apply_glow(self.channels_select_wrap, thickness=2)
         except Exception:
             pass
-        tk.Label(self.channels_select_wrap, text="Channels", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        tk.Label(self.channels_select_wrap, text="Channels", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(2,2))
         self.channels_canvas = tk.Canvas(self.channels_select_wrap, bg="#120f1f", highlightthickness=0, height=110)
         self.channels_canvas.pack(side="left", fill="both", expand=True, padx=(8,0), pady=(0,8))
         self.channels_sb = tk.Scrollbar(self.channels_select_wrap, orient="vertical", command=self.channels_canvas.yview)
@@ -613,7 +613,7 @@ class DiscordBotGUI:
             self.apply_glow(select_wrap, thickness=2)
         except Exception:
             pass
-        tk.Label(select_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(6,2))
+        tk.Label(select_wrap, text="Select up to 3 tokens:", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(anchor="w", padx=8, pady=(2,2))
         self.multi_tokens_canvas = tk.Canvas(select_wrap, bg="#120f1f", highlightthickness=0, height=64)
         self.multi_tokens_canvas.pack(side="left", fill="x", expand=True, padx=(8,0), pady=(0,8))
         self.multi_tokens_sb = tk.Scrollbar(select_wrap, orient="vertical", command=self.multi_tokens_canvas.yview)
@@ -639,7 +639,7 @@ class DiscordBotGUI:
 
         # Reply DM message integrated bar (row 2)
         reply_bar = tk.Frame(left, bg="#2c2750")
-        reply_bar.grid(row=2, column=0, columnspan=4, sticky="we", padx=10, pady=(4, 2))
+        reply_bar.grid(row=2, column=0, columnspan=4, sticky="we", padx=10, pady=(2, 2))
         tk.Label(reply_bar, text="Reply DM", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
