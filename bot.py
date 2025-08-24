@@ -3604,3 +3604,40 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
         await interaction.response.send_message(f"✅ Machine ID swapped for user {user.mention}.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ Failed: {e}", ephemeral=True)
+
+@bot.tree.command(name="swapmachineid", description="Admin: Rebind a key to a new machine id")
+@app_commands.checks.has_role(ADMIN_ROLE_ID)
+async def swapmachineid(interaction: discord.Interaction, key: str, new_machine_id: str):
+    try:
+        result = key_manager.rebind_key(key, int(interaction.user.id), new_machine_id)
+        if result.get('success'):
+            await interaction.response.send_message(f"✅ Rebound key to machine `{new_machine_id}`.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Failed: {result.get('error','unknown')}", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
+@bot.tree.command(name="leaderboard", description="Show top message senders tracked by the selfbot")
+async def leaderboard(interaction: discord.Interaction):
+    try:
+        # Load stats
+        data = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                with open(STATS_FILE, 'r') as f:
+                    data = json.load(f) or {}
+        except Exception:
+            data = {}
+        items = sorted(data.items(), key=lambda kv: int(kv[1] or 0), reverse=True)[:10]
+        if not items:
+            await interaction.response.send_message("No stats yet.", ephemeral=True)
+            return
+        desc_lines = []
+        rank = 1
+        for uid, cnt in items:
+            desc_lines.append(f"{rank}. <@{uid}> — {cnt}")
+            rank += 1
+        em = discord.Embed(title="Selfbot Leaderboard", description="\n".join(desc_lines), color=0x6c4af2)
+        await interaction.response.send_message(embed=em)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
