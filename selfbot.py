@@ -643,7 +643,7 @@ class DiscordBotGUI:
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
         inner_reply.pack(side="left", fill="x", expand=True)
-        self.reply_dm_entry = tk.Text(inner_reply, height=2, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.reply_dm_entry = tk.Text(inner_reply, height=6, width=64, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_dm_entry.pack(fill="x", expand=True, padx=(8, 8), pady=(4, 4))
         self.reply_dm_button = tk.Button(reply_bar, text="Start Reply DM", command=self.toggle_reply_dm)
         self.reply_dm_button.pack(side="left", padx=(6, 8))
@@ -655,7 +655,7 @@ class DiscordBotGUI:
 
         # Message Rotator moved under message content area
         rot = tk.Frame(left, bg="#2c2750")
-        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(10, 2))
+        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(16, 4))
         try:
             self.apply_glow(rot, thickness=2)
         except Exception:
@@ -728,8 +728,8 @@ class DiscordBotGUI:
         except Exception:
             pass
         # Make message box as big as token bar width and match chat background
-        self.message_entry = tk.Text(left, height=12, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(0, 6))
+        self.message_entry = tk.Text(msg_bar, height=12, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry.pack(fill="both", expand=True)
         try:
             self.apply_glow(self.message_entry)
         except Exception:
@@ -1030,6 +1030,7 @@ class DiscordBotGUI:
         # Add neon headers to key content areas to mimic terminal panes
         try:
             for pane, title in [
+                (self.log_panel, "TERMINAL: LOG"),
                 (self.main_frame, "KS USER PANEL"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
