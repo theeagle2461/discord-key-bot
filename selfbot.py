@@ -714,7 +714,7 @@ class DiscordBotGUI:
             pass
         tk.Label(msg_bar, text="Message Content", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=8, pady=(4,2))
         # Make message box as big as token bar width and match chat background
-        self.message_entry = tk.Text(left, height=8, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry = tk.Text(left, height=6, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(0, 6))
         try:
             self.apply_glow(self.message_entry)
@@ -787,7 +787,7 @@ class DiscordBotGUI:
 
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
-        ann_panel.pack(fill="x", padx=10, pady=(16, 4))
+        ann_panel.pack(fill="x", padx=10, pady=(22, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
