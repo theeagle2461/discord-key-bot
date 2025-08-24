@@ -571,7 +571,7 @@ class DiscordBotGUI:
         # Scrollable channels area (medium height)
         # Channels box to the right of channel entry
         self.channels_select_wrap = tk.Frame(left, bg="#2c2750")
-        self.channels_select_wrap.grid(row=0, column=3, sticky="nwe", padx=6, pady=2)
+        self.channels_select_wrap.grid(row=0, column=3, sticky="nwe", padx=6, pady=(0,0))
         try:
             self.apply_glow(self.channels_select_wrap, thickness=2)
         except Exception:
@@ -608,7 +608,7 @@ class DiscordBotGUI:
         self.token_var = tk.StringVar()
         # Select token box to the right of token entry
         select_wrap = tk.Frame(left, bg="#2c2750")
-        select_wrap.grid(row=1, column=2, columnspan=2, sticky="we", padx=(6,10), pady=(0,2))
+        select_wrap.grid(row=1, column=2, columnspan=2, sticky="we", padx=(6,10), pady=(0,0))
         try:
             self.apply_glow(select_wrap, thickness=2)
         except Exception:
@@ -639,7 +639,7 @@ class DiscordBotGUI:
 
         # Reply DM message integrated bar (row 2)
         reply_bar = tk.Frame(left, bg="#2c2750")
-        reply_bar.grid(row=2, column=0, columnspan=4, sticky="we", padx=10, pady=(6, 4))
+        reply_bar.grid(row=2, column=0, columnspan=4, sticky="we", padx=10, pady=(4, 2))
         tk.Label(reply_bar, text="Reply DM", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(side="left", padx=(8, 4))
         tk.Label(reply_bar, text="|", bg="#2c2750", fg="#bfaef5").pack(side="left")
         inner_reply = tk.Frame(reply_bar, bg="#2c2750")
