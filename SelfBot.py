@@ -327,7 +327,7 @@ class DiscordBotGUI:
 
         # Overlay Frame for widgets (transparent background)
         self.main_frame = tk.Frame(self.root, bg="#1e1b29")
-        self.main_frame.place(relx=0.03, rely=0.03, relwidth=0.94, relheight=0.94)
+        self.main_frame.place(relx=0.03, rely=0.08, relwidth=0.94, relheight=0.89)
 
         # Setup GUI widgets on main_frame
         self.setup_gui()
@@ -367,6 +367,12 @@ class DiscordBotGUI:
 
         # Play opening sound if available
         self.play_opening_sound()
+
+        # eDEX-UI themed overlay and status bar
+        try:
+            self._enable_edex_theme()
+        except Exception:
+            pass
 
         # Apply theme/colors/fonts to all widgets
         self.apply_theme()
@@ -932,6 +938,91 @@ class DiscordBotGUI:
 
         self.username_label.configure(bg=bg_color, fg=fg_color)
         self.avatar_label.configure(bg=bg_color)
+
+    # ===== eDEX-UI THEME ENHANCEMENTS =====
+    def _enable_edex_theme(self):
+        # Top status bar
+        self._edex_bar = tk.Frame(self.root, bg="#0b1020")
+        self._edex_bar.place(relx=0.0, rely=0.0, relwidth=1.0, height=36)
+        try:
+            self.apply_glow(self._edex_bar, thickness=2)
+        except Exception:
+            pass
+        left = tk.Frame(self._edex_bar, bg="#0b1020")
+        center = tk.Frame(self._edex_bar, bg="#0b1020")
+        right = tk.Frame(self._edex_bar, bg="#0b1020")
+        left.pack(side="left", padx=10)
+        center.pack(side="left", expand=True)
+        right.pack(side="right", padx=10)
+        self._edex_title = tk.Label(left, text="KS BOT — eDEX Mode", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+        self._edex_title.pack(side="left")
+        self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
+        self._edex_clock.pack()
+        uid_txt = (self._login_user_id or "—")
+        self._edex_right = tk.Label(right, text=f"User: {uid_txt}  |  Key: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
+        self._edex_right.pack()
+        # Scanlines overlay
+        self._edex_scanlines = []
+        self._create_scanlines()
+        # Grid overlay
+        self._edex_grid_lines = []
+        self._create_grid()
+        # Start ticker
+        self._edex_tick()
+
+    def _create_scanlines(self):
+        try:
+            h = self.bg_canvas.winfo_height() or 700
+            w = self.bg_canvas.winfo_width() or 900
+            step = 6
+            for y in range(0, h, step):
+                line = self.bg_canvas.create_line(0, y, w, y, fill="#000000", stipple="gray25")
+                self._edex_scanlines.append(line)
+        except Exception:
+            pass
+
+    def _create_grid(self):
+        try:
+            h = self.bg_canvas.winfo_height() or 700
+            w = self.bg_canvas.winfo_width() or 900
+            gap = 48
+            color = "#1c2b5b"
+            for x in range(0, w + gap, gap):
+                self._edex_grid_lines.append(self.bg_canvas.create_line(x, 0, x, h, fill=color))
+            for y in range(0, h + gap, gap):
+                self._edex_grid_lines.append(self.bg_canvas.create_line(0, y, w, y, fill=color))
+        except Exception:
+            pass
+
+    def _edex_tick(self):
+        # Update clock
+        try:
+            self._edex_clock.config(text=time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()))
+        except Exception:
+            pass
+        # Update right status with key remaining if available
+        try:
+            remaining_txt = self.key_duration_value.cget("text") if hasattr(self, "key_duration_value") else "—"
+            uid_txt = (self._login_user_id or "—")
+            self._edex_right.config(text=f"User: {uid_txt}  |  Key: {remaining_txt}")
+        except Exception:
+            pass
+        # Subtle grid pulse
+        try:
+            for i, line in enumerate(self._edex_grid_lines):
+                if i % 3 == 0:
+                    self.bg_canvas.itemconfigure(line, fill="#243a7a")
+                elif i % 3 == 1:
+                    self.bg_canvas.itemconfigure(line, fill="#1c2b5b")
+                else:
+                    self.bg_canvas.itemconfigure(line, fill="#16234a")
+        except Exception:
+            pass
+        # Re-schedule
+        try:
+            self.root.after(500, self._edex_tick)
+        except Exception:
+            pass
 
     # -------- Token & Channel Save/Load --------
     def save_token(self):
