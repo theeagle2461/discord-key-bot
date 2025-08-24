@@ -655,7 +655,7 @@ class DiscordBotGUI:
 
         # Message Rotator moved under message content area
         rot = tk.Frame(left, bg="#2c2750")
-        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(2, 2))
+        rot.grid(row=5, column=0, columnspan=1, sticky="we", padx=10, pady=(10, 2))
         try:
             self.apply_glow(rot, thickness=2)
         except Exception:
@@ -707,7 +707,7 @@ class DiscordBotGUI:
 
         # Bottom row: Message Content label and box (same height as activity log)
         msg_bar = tk.Frame(left, bg="#2c2750")
-        msg_bar.grid(row=4, column=0, sticky="we", padx=10, pady=(6,2))
+        msg_bar.grid(row=4, column=0, sticky="we", padx=10, pady=(10,6))
         try:
             self.apply_glow(msg_bar, thickness=2)
         except Exception:
@@ -787,7 +787,7 @@ class DiscordBotGUI:
 
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
-        ann_panel.pack(fill="x", padx=10, pady=(4, 4))
+        ann_panel.pack(fill="x", padx=10, pady=(10, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
