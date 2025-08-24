@@ -764,7 +764,7 @@ class DiscordBotGUI:
             tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
             # Run buttons moved to middle between rotator and SYS
             run = tk.Frame(left, bg="#1e1b29")
-            run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(20,8))
+            run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(36,12))
             self.btn_start = tk.Button(run, text="Start", command=self.start_sending, width=12)
             self.btn_start.pack(fill="x", pady=(0, 6))
             self.btn_pause = tk.Button(run, text="Pause", command=self.pause_resume_sending, width=12)
@@ -779,7 +779,21 @@ class DiscordBotGUI:
         # Activity Log next to message content (taller)
         self.log_panel = tk.Frame(left, bg="#1e1b29")
         self.log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        # Header label removed; eDEX header will be used
+        # eDEX-style header at top of log panel
+        try:
+            log_bar = tk.Frame(self.log_panel, bg="#0b1020")
+            log_bar.pack(fill="x", side="top")
+            try:
+                self.apply_glow(log_bar, thickness=2)
+            except Exception:
+                pass
+            tk.Label(log_bar, text="TERMINAL: LOG", bg="#0b1020", fg="#b799ff", font=("Consolas", 10, "bold")).pack(side="left", padx=8)
+            for color in ("#22c55e", "#f59e0b", "#ef4444"):
+                c = tk.Canvas(log_bar, width=10, height=10, bg="#0b1020", highlightthickness=0)
+                c.pack(side="right", padx=3)
+                c.create_oval(2, 2, 8, 8, fill=color, outline=color)
+        except Exception:
+            pass
         self.log_text = tk.Text(self.log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
