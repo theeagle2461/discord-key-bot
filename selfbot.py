@@ -1089,7 +1089,16 @@ class DiscordBotGUI:
     def _edex_tick(self):
         # Update clock
         try:
-            self._edex_clock.config(text=time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()))
+            try:
+                from zoneinfo import ZoneInfo  # Python 3.9+
+                now_est = datetime.now(ZoneInfo("America/New_York"))
+            except Exception:
+                try:
+                    import pytz  # fallback if available
+                    now_est = datetime.now(pytz.timezone("America/New_York"))
+                except Exception:
+                    now_est = datetime.fromtimestamp(time.time())
+            self._edex_clock.config(text=now_est.strftime("%Y-%m-%d %H:%M:%S EST"))
         except Exception:
             pass
         # Update right status with key remaining if available
