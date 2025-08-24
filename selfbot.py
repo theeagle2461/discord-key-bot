@@ -325,12 +325,14 @@ class DiscordBotGUI:
 
         self.gradient_image = self.create_gradient_image(900, 700)
         self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
-        self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
         self.create_tint_overlay(900, 700)
+        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
 
         self.particles = []
         self.create_particles(100)
         self.animate_particles()
+        self.root.bind("<Configure>", self._on_root_resize)
 
         # Overlay Frame for widgets (transparent background)
         self.main_frame = tk.Frame(self.root, bg="#1e1b29")
@@ -434,9 +436,11 @@ class DiscordBotGUI:
 
     def create_particles(self, count):
         for _ in range(count):
+            cw = int(self.bg_canvas.winfo_width() or 900)
+            ch = int(self.bg_canvas.winfo_height() or 700)
             p = {
-                'x': random.uniform(0, 900),
-                'y': random.uniform(0, 700),
+                'x': random.uniform(0, cw),
+                'y': random.uniform(0, ch),
                 'radius': random.uniform(1, 3),
                 'speed': random.uniform(0.01, 0.03),
                 'angle': random.uniform(0, 2 * math.pi),
@@ -457,6 +461,29 @@ class DiscordBotGUI:
             new_y = p['base_y'] + offset
             self.bg_canvas.coords(p['id'], p['x'], new_y, p['x'] + p['radius'] * 2, new_y + p['radius'] * 2)
         self.root.after(30, self.animate_particles)
+
+    def _on_root_resize(self, event=None):
+        try:
+            cw = max(1, int(self.bg_canvas.winfo_width()))
+            ch = max(1, int(self.bg_canvas.winfo_height()))
+            # Regenerate gradient and vignette to fit canvas
+            self.gradient_image = self.create_gradient_image(cw, ch)
+            self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
+            try:
+                self.bg_canvas.itemconfigure(self._bg_img_item, image=self.bg_photo)
+            except Exception:
+                self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+            self.create_tint_overlay(cw, ch)
+            try:
+                self.bg_canvas.itemconfigure(self._vignette_item, image=self.vignette_photo)
+            except Exception:
+                self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
+            # Re-seed particles if there are too few to cover new area
+            need = max(0, int((cw * ch) / (900*700) * 100) - len(self.particles))
+            if need > 0:
+                self.create_particles(need)
+        except Exception:
+            pass
 
     # -------- Fullscreen helpers --------
     def toggle_fullscreen(self, event=None):
