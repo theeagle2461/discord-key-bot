@@ -369,6 +369,13 @@ class DiscordBotGUI:
         
         # Initially hide main UI; it will be placed after welcome finishes
         self.main_frame.place_forget()
+        # Show terminal welcome immediately with placeholder
+        try:
+            if not getattr(self, "_welcomed", False):
+                self._welcomed = True
+                self._show_terminal_welcome("...")
+        except Exception:
+            pass
 
         # Bind token selection event
         self.token_var.trace_add("write", lambda *a: self.on_token_change())
