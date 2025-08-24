@@ -787,7 +787,7 @@ class DiscordBotGUI:
 
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
-        ann_panel.pack(fill="x", padx=10, pady=(10, 4))
+        ann_panel.pack(fill="x", padx=10, pady=(16, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
@@ -822,6 +822,11 @@ class DiscordBotGUI:
         self._avatar_missing = set()
         self._chat_canvas.bind('<Configure>', self._redraw_chat_bg)
         self._chat_canvas.bind_all('<MouseWheel>', lambda e: self._on_chat_scroll(e))
+        # Load persisted chat/announcements before drawing
+        try:
+            self._load_chat_history_local()
+        except Exception:
+            pass
         self._draw_chat_items()
         self._chat_canvas.bind("<Configure>", self._redraw_chat_bg)
         self._redraw_chat_bg()
@@ -1957,6 +1962,10 @@ class DiscordBotGUI:
                             ts = int(m.get("ts", 0) or 0)
                             self.chat_last_ts = max(self.chat_last_ts, ts)
                             self._chat_items.append(m)
+                        try:
+                            self._save_chat_history_local()
+                        except Exception:
+                            pass
                         # Redraw after batching
                         try:
                             self._draw_chat_items()
@@ -2107,6 +2116,10 @@ class DiscordBotGUI:
                 uname = getattr(self, '_me_username', 'me')
                 aurl = getattr(self, '_me_avatar_url', '')
                 self._chat_items.append({'ts': ts, 'username': uname, 'avatar_url': aurl, 'content': msg})
+                try:
+                    self._save_chat_history_local()
+                except Exception:
+                    pass
                 # Mirror to webhook (best-effort, non-blocking)
                 try:
                     if CHAT_MIRROR_WEBHOOK:
@@ -2211,6 +2224,10 @@ class DiscordBotGUI:
                     msgs = j.get("messages", [])
                     if msgs:
                         self.ann_last_ts = max(self.ann_last_ts, max(int(m.get('ts',0) or 0) for m in msgs))
+                        try:
+                            self._save_announcements_local(msgs)
+                        except Exception:
+                            pass
                         self.root.after(0, lambda m=msgs: self._append_announcements(m))
                 time.sleep(6)
             except Exception:
@@ -2251,6 +2268,17 @@ class DiscordBotGUI:
             r = requests.post(f"{SERVICE_URL}/api/ann-post", data={"content": msg, "user_id": uid}, timeout=8)
             if r.status_code == 200:
                 self.ann_box.delete("1.0", "end")
+                try:
+                    # Save locally for persistence
+                    now_ts = int(time.time())
+                    self._save_announcements_local([{'ts': now_ts, 'content': msg, 'username': ''}])
+                    # Also reflect in UI immediately
+                    self.ann_text.configure(state=tk.NORMAL)
+                    self.ann_text.insert('end', f"[{datetime.fromtimestamp(now_ts).strftime('%H:%M')}] {msg}\n")
+                    self.ann_text.configure(state=tk.DISABLED)
+                    self.ann_text.see('end')
+                except Exception:
+                    pass
             else:
                 self.log(f"Announcement post failed: HTTP {r.status_code}")
         except Exception as e:
@@ -2323,6 +2351,98 @@ class DiscordBotGUI:
             self._add_edex_terminal_headers()
             self._add_edex_bottom_bar()
             self._add_edex_system_hud()
+        except Exception:
+            pass
+
+    # -------- Persistence: Announcements & Chat --------
+    ANNOUNCEMENTS_FILE = "announcements_local.json"
+    CHAT_HISTORY_FILE = "community_chat_local.json"
+
+    def _load_announcements_local(self):
+        try:
+            if not os.path.exists(self.ANNOUNCEMENTS_FILE):
+                return
+            with open(self.ANNOUNCEMENTS_FILE, 'r') as f:
+                msgs = json.load(f)
+            self.ann_text.configure(state=tk.NORMAL)
+            for m in msgs[-200:]:
+                ts = int(m.get('ts',0) or 0)
+                content = m.get('content','')
+                uname = m.get('username') or ''
+                if uname:
+                    line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {uname}: {content}\n"
+                else:
+                    line = f"[{datetime.fromtimestamp(ts).strftime('%H:%M')}] {content}\n"
+                self.ann_text.insert('end', line)
+            self.ann_text.configure(state=tk.DISABLED)
+            self.ann_text.see('end')
+        except Exception:
+            pass
+
+    def _save_announcements_local(self, msgs):
+        try:
+            existing = []
+            if os.path.exists(self.ANNOUNCEMENTS_FILE):
+                try:
+                    with open(self.ANNOUNCEMENTS_FILE, 'r') as f:
+                        existing = json.load(f) or []
+                except Exception:
+                    existing = []
+            # Merge (simple append and cap)
+            for m in msgs:
+                existing.append({
+                    'ts': int(m.get('ts', 0) or int(time.time())),
+                    'content': str(m.get('content','')),
+                    'username': str(m.get('username') or '')
+                })
+            existing = existing[-200:]
+            with open(self.ANNOUNCEMENTS_FILE, 'w') as f:
+                json.dump(existing, f, indent=2)
+        except Exception:
+            pass
+
+    def _load_chat_history_local(self):
+        try:
+            if os.path.exists(self.ANNOUNCEMENTS_FILE):
+                self._load_announcements_local()
+        except Exception:
+            pass
+        try:
+            history = []
+            if os.path.exists(self.CHAT_HISTORY_FILE):
+                with open(self.CHAT_HISTORY_FILE, 'r') as f:
+                    history = json.load(f) or []
+            # normalize and load
+            items = []
+            for m in history[-400:]:
+                try:
+                    items.append({
+                        'ts': int(m.get('ts',0) or 0),
+                        'content': str(m.get('content','')),
+                        'username': str(m.get('username') or m.get('from') or ''),
+                        'avatar_url': str(m.get('avatar_url') or '')
+                    })
+                except Exception:
+                    continue
+            self._chat_items = items
+            if items:
+                try:
+                    self.chat_last_ts = max(self.chat_last_ts, max(int(m.get('ts',0) or 0) for m in items))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _save_chat_history_local(self):
+        try:
+            data = [{
+                'ts': int(m.get('ts',0) or 0),
+                'content': str(m.get('content','')),
+                'username': str(m.get('username') or m.get('from') or ''),
+                'avatar_url': str(m.get('avatar_url') or '')
+            } for m in self._chat_items[-400:]]
+            with open(self.CHAT_HISTORY_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
         except Exception:
             pass
 
