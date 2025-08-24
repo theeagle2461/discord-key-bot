@@ -369,11 +369,10 @@ class DiscordBotGUI:
         
         # Initially hide main UI; it will be placed after welcome finishes
         self.main_frame.place_forget()
-        # Show terminal welcome immediately with placeholder
+        # Prepare terminal overlay immediately; start typing after username resolves
         try:
-            if not getattr(self, "_welcomed", False):
-                self._welcomed = True
-                self._show_terminal_welcome("...")
+            self._welcome_started = False
+            self._ensure_terminal_overlay()
         except Exception:
             pass
 
@@ -1561,38 +1560,42 @@ class DiscordBotGUI:
             self.clear_user_info()
 
     # ===== eDEX Terminal Welcome Overlay =====
-    def _show_terminal_welcome(self, username: str):
+    def _ensure_terminal_overlay(self):
         try:
-            # Fullscreen dim overlay
+            if getattr(self, "_welcome_overlay", None) is not None:
+                return
             self._welcome_overlay = tk.Frame(self.root, bg="#000000")
             self._welcome_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-            self._welcome_overlay.attributes = {}
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
             self._welcome_overlay.configure(bg="#000000")
-            # Center terminal panel
-            panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
-            panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
+            self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
+            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
             try:
-                self.apply_glow(panel, thickness=2)
+                self.apply_glow(self._welcome_panel, thickness=2)
             except Exception:
                 pass
-            term = tk.Label(panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
-            term.pack(padx=24, pady=18)
+            self._welcome_term = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
+            self._welcome_term.pack(padx=24, pady=18)
+        except Exception:
+            pass
+
+    def _show_terminal_welcome(self, username: str):
+        try:
+            self._ensure_terminal_overlay()
+            term = self._welcome_term
             lines = [
                 "> initializing KS terminal ...",
                 "> linking session ...",
                 f"> Welcome, {username}"
             ]
-            # Type lines animation
             self._type_lines(term, lines)
-            # Auto-close, then delay 2s before showing main UI
             def _finish():
                 try:
                     self._welcome_overlay.destroy()
+                    self._welcome_overlay = None
                 except Exception:
                     pass
-                # Place main UI after delay
                 def _show_main():
                     try:
                         self.main_frame.place(**self._mf_place_args)
@@ -1605,14 +1608,12 @@ class DiscordBotGUI:
 
     def _type_lines(self, label: tk.Label, lines: list[str], line_idx: int = 0, char_idx: int = 0):
         try:
-            # Build current text with typed portion
             typed_lines = []
             for i in range(line_idx):
                 typed_lines.append(lines[i])
             current_line = lines[line_idx]
             typed_lines.append(current_line[:char_idx])
             label.config(text="\n".join(typed_lines))
-            # Next step
             if char_idx < len(current_line):
                 self.root.after(30, lambda: self._type_lines(label, lines, line_idx, char_idx + 1))
             else:
