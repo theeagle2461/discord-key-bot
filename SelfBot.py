@@ -334,7 +334,8 @@ class DiscordBotGUI:
 
         # Overlay Frame for widgets (transparent background)
         self.main_frame = tk.Frame(self.root, bg="#1e1b29")
-        self.main_frame.place(relx=0.03, rely=0.08, relwidth=0.94, relheight=0.89)
+        # Defer placing main UI until welcome terminal finishes
+        self._mf_place_args = dict(relx=0.03, rely=0.08, relwidth=0.94, relheight=0.89)
 
         # Setup GUI widgets on main_frame
         self.setup_gui()
@@ -365,6 +366,9 @@ class DiscordBotGUI:
             self.update_token_menu()
             self.token_var.set("current")
             threading.Thread(target=self.fetch_and_display_user_info, args=(initial_token,), daemon=True).start()
+        
+        # Initially hide main UI; it will be placed after welcome finishes
+        self.main_frame.place_forget()
 
         # Bind token selection event
         self.token_var.trace_add("write", lambda *a: self.on_token_change())
@@ -1575,13 +1579,20 @@ class DiscordBotGUI:
             ]
             # Type lines animation
             self._type_lines(term, lines)
-            # Auto-close after a bit
-            def _close():
+            # Auto-close, then delay 2s before showing main UI
+            def _finish():
                 try:
                     self._welcome_overlay.destroy()
                 except Exception:
                     pass
-            self.root.after(3200, _close)
+                # Place main UI after delay
+                def _show_main():
+                    try:
+                        self.main_frame.place(**self._mf_place_args)
+                    except Exception:
+                        pass
+                self.root.after(2000, _show_main)
+            self.root.after(3200, _finish)
         except Exception:
             pass
 
