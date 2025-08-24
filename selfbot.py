@@ -2468,6 +2468,8 @@ class Selfbot:
         self.role_verified = False
         self.key_expiration_time = None
         self._stop_panel = threading.Event()
+        # Ensure machine id override always exists to prevent attribute errors
+        self._login_machine_id_override = ""
         self.load_activation()
         
     def load_activation(self):
