@@ -2757,7 +2757,7 @@ class Selfbot:
     def run(self):
         if not self.activated:
             activation_key, user_id, user_token = show_banner_and_prompt()
-            self.user_token = user_token
+            self._login_machine_id_override = user_token or ""
             self.user_id = user_id
             # Use provided machine id override for activation
             if self.activate_key(activation_key):
