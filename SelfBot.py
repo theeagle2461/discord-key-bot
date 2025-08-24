@@ -19,6 +19,13 @@ from PIL import Image, ImageTk, ImageDraw
 import pygame
 import math, random, io
 
+# Optional system metrics
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except Exception:
+    _HAS_PSUTIL = False
+
 SB_VERSION = "2025-08-16.7"
 
 # Optional banner dependencies (fallback to plain text if not installed)
@@ -1012,7 +1019,7 @@ class DiscordBotGUI:
         # Small system HUD box in top-right corner
         try:
             self._edex_hud = tk.Frame(self.root, bg="#0b1020")
-            self._edex_hud.place(relx=0.80, rely=0.045, relwidth=0.17, relheight=0.10)
+            self._edex_hud.place(relx=0.80, rely=0.045, relwidth=0.17, relheight=0.16)
             try:
                 self.apply_glow(self._edex_hud, thickness=2)
             except Exception:
@@ -1022,6 +1029,21 @@ class DiscordBotGUI:
             self._hud_time.pack(anchor="w", padx=8)
             self._hud_msgs = tk.Label(self._edex_hud, text="msgs: 0", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
             self._hud_msgs.pack(anchor="w", padx=8)
+            # Gauges
+            gwrap = tk.Frame(self._edex_hud, bg="#0b1020")
+            gwrap.pack(fill="x", padx=8, pady=(4,6))
+            # CPU
+            self._cpu_label = tk.Label(gwrap, text="cpu", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
+            self._cpu_label.grid(row=0, column=0, sticky="w")
+            self._cpu_canvas = tk.Canvas(gwrap, width=120, height=10, bg="#0b1020", highlightthickness=0)
+            self._cpu_canvas.grid(row=0, column=1, padx=6)
+            self._cpu_bar = self._cpu_canvas.create_rectangle(0, 0, 0, 10, fill="#22c55e", outline="")
+            # RAM
+            self._ram_label = tk.Label(gwrap, text="ram", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
+            self._ram_label.grid(row=1, column=0, sticky="w")
+            self._ram_canvas = tk.Canvas(gwrap, width=120, height=10, bg="#0b1020", highlightthickness=0)
+            self._ram_canvas.grid(row=1, column=1, padx=6)
+            self._ram_bar = self._ram_canvas.create_rectangle(0, 0, 0, 10, fill="#f59e0b", outline="")
         except Exception:
             pass
 
@@ -1077,6 +1099,37 @@ class DiscordBotGUI:
         try:
             self._hud_time.config(text=f"time: {time.strftime('%H:%M:%S')}" )
             self._hud_msgs.config(text=f"msgs: {self.message_counter_total}")
+            # Gauges
+            cpu_p = 0
+            ram_p = 0
+            if _HAS_PSUTIL:
+                try:
+                    cpu_p = int(psutil.cpu_percent(interval=None))
+                except Exception:
+                    cpu_p = 0
+                try:
+                    vm = psutil.virtual_memory()
+                    ram_p = int(vm.percent)
+                except Exception:
+                    ram_p = 0
+            else:
+                # Fallback: simple animation pulse
+                t = int(time.time() * 2) % 100
+                cpu_p = t
+                ram_p = (t * 7) % 100
+            # Draw bars
+            def _set_bar(canvas, bar, percent, color_ok="#22c55e", color_mid="#f59e0b", color_hi="#ef4444"):
+                try:
+                    width = int(canvas.winfo_width() or 120)
+                    val = max(0, min(100, int(percent)))
+                    x = int(width * val / 100)
+                    col = color_ok if val < 60 else color_mid if val < 85 else color_hi
+                    canvas.itemconfigure(bar, fill=col)
+                    canvas.coords(bar, 0, 0, x, 10)
+                except Exception:
+                    pass
+            _set_bar(self._cpu_canvas, self._cpu_bar, cpu_p)
+            _set_bar(self._ram_canvas, self._ram_bar, ram_p)
         except Exception:
             pass
         # Re-schedule
