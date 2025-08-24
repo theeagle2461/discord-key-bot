@@ -482,7 +482,8 @@ class DiscordBotGUI:
         frame = self.main_frame
         # User info header (avatar + username)
         self.user_info_frame = tk.Frame(frame, bg="#1e1b29")
-        self.user_info_frame.place(relx=0.0, rely=0.0, relwidth=0.65, relheight=0.08)
+        # Move user info slightly down to avoid overlap with panel title
+        self.user_info_frame.place(relx=0.0, rely=0.02, relwidth=0.65, relheight=0.10)
         # Strip of selected token avatars (up to 3)
         self.avatar_strip = tk.Frame(self.user_info_frame, bg="#1e1b29")
         self.avatar_strip.pack(side="left", padx=(6, 4), pady=6)
@@ -559,6 +560,8 @@ class DiscordBotGUI:
         self.token_entry = tk.Entry(token_bar, width=72, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.token_entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=4)
         tk.Button(token_bar, text="Save", command=self.save_token).pack(side="left", padx=(0, 6))
+        # move token bar slightly lower
+        token_bar.grid_configure(pady=(8, 6))
         self.token_var = tk.StringVar()
         # Select token box to the right of token entry
         select_wrap = tk.Frame(left, bg="#2c2750")
@@ -633,7 +636,7 @@ class DiscordBotGUI:
             pass
         # Rotator messages list on the right side of rotator controls, with glowing border
         rot_right = tk.Frame(rot_wrap, bg="#1e1b29")
-        rot_right.pack(side="right", fill="both", expand=False, padx=(8, 0))
+        rot_right.pack(side="right", fill="both", expand=True, padx=(8, 0))
         tk.Label(rot_right, text="Rotator Messages", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
         rot_content = tk.Frame(rot_right, bg="#1e1b29")
         rot_content.pack(fill="y")
@@ -737,6 +740,8 @@ class DiscordBotGUI:
             self.btn_pause.pack(fill="x", pady=(0, 6))
             self.btn_restart = tk.Button(run, text="Restart", command=lambda: (self._restart_sending()), width=12)
             self.btn_restart.pack(fill="x")
+            # Button flash colors
+            self._btn_default = {self.btn_start: "#5a3e99", self.btn_pause: "#5a3e99", self.btn_restart: "#5a3e99"}
             self._stateful_buttons = getattr(self, '_stateful_buttons', set())
             self._stateful_buttons.update({self.btn_start, self.btn_pause, self.btn_restart})
         except Exception:
@@ -757,8 +762,7 @@ class DiscordBotGUI:
         self.key_duration_value.pack(anchor="w")
 
         # Message counter label (live-updating)
-        self.stats_label = tk.Label(left, text=f"Messages sent: {self.message_counter_total}", bg="#1e1b29", fg="#e0d7ff")
-        self.stats_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
+        # self.stats_label removed; SYS HUD shows message count
         # Start duration updater
         try:
             self._start_key_duration_updater()
@@ -995,7 +999,7 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                (self.main_frame, "KS BOT CONTROL"),
+                (self.main_frame, "KS BOT PANEL"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
                 bar.pack(fill="x", side="top")
@@ -1026,10 +1030,10 @@ class DiscordBotGUI:
             pass
 
     def _add_edex_system_hud(self):
-        # Small system HUD box in top-right corner
+        # Small system HUD moved under Activity Log
         try:
             self._edex_hud = tk.Frame(self.root, bg="#0b1020")
-            self._edex_hud.place(relx=0.80, rely=0.045, relwidth=0.17, relheight=0.16)
+            self._edex_hud.place(relx=0.67, rely=0.62, relwidth=0.30, relheight=0.20)
             try:
                 self.apply_glow(self._edex_hud, thickness=2)
             except Exception:
@@ -1084,7 +1088,7 @@ class DiscordBotGUI:
     def _edex_tick(self):
         # Update clock
         try:
-            self._edex_clock.config(text=time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()))
+            self._edex_clock.config(text=time.strftime("%Y-%m-%d %I:%M:%S %p EST", time.localtime()))
         except Exception:
             pass
         # Update right status with key remaining if available
@@ -1107,7 +1111,7 @@ class DiscordBotGUI:
             pass
         # HUD updates
         try:
-            self._hud_time.config(text=f"time: {time.strftime('%H:%M:%S')}" )
+            self._hud_time.config(text=f"time: {time.strftime('%I:%M:%S %p EST', time.localtime())}" )
             self._hud_msgs.config(text=f"msgs: {self.message_counter_total}")
             # Gauges
             cpu_p = 0
@@ -1342,8 +1346,7 @@ class DiscordBotGUI:
 
     def _update_stats_label(self):
         try:
-            if hasattr(self, 'stats_label'):
-                self.stats_label.config(text=f"Messages sent: {self.message_counter_total}")
+            # stats_label removed; HUD updates message count
         except Exception:
             pass
 
@@ -1665,6 +1668,7 @@ class DiscordBotGUI:
         # Button color states
         try:
             self.btn_start.configure(bg="#22c55e")  # green
+            self.root.after(300, lambda: self.btn_start.configure(bg=self._btn_default.get(self.btn_start, "#5a3e99")))
             self.btn_pause.configure(bg="#5a3e99")
             self.btn_restart.configure(bg="#5a3e99")
         except Exception:
@@ -1754,6 +1758,7 @@ class DiscordBotGUI:
         try:
             if self.send_running:
                 self.btn_start.configure(bg="#22c55e")
+                self.root.after(300, lambda: self.btn_start.configure(bg=self._btn_default.get(self.btn_start, "#5a3e99")))
                 self.btn_pause.configure(bg="#5a3e99")
             else:
                 self.btn_pause.configure(bg="#eab308")  # yellow
@@ -1768,6 +1773,7 @@ class DiscordBotGUI:
         self.log("🛑 Stopped sending messages.")
         try:
             self.btn_restart.configure(bg="#ef4444")  # red
+            self.root.after(300, lambda: self.btn_restart.configure(bg=self._btn_default.get(self.btn_restart, "#5a3e99")))
             self.btn_start.configure(bg="#5a3e99")
             self.btn_pause.configure(bg="#5a3e99")
         except Exception:
