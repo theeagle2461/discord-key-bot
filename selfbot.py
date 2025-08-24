@@ -330,7 +330,7 @@ class DiscordBotGUI:
         self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
 
         self.particles = []
-        self.create_particles(100)
+        self.create_particles(48)
         self.animate_particles()
         self.root.bind("<Configure>", self._on_root_resize)
 
@@ -421,17 +421,25 @@ class DiscordBotGUI:
         return base
 
     def create_tint_overlay(self, width, height):
-        vignette = Image.new('RGBA', (width, height))
-        draw = ImageDraw.Draw(vignette)
-        for y in range(height):
-            for x in range(width):
-                dx = x - width / 2
-                dy = y - height / 2
-                dist = math.sqrt(dx * dx + dy * dy)
-                max_dist = math.sqrt((width / 2) ** 2 + (height / 2) ** 2)
-                alpha = int(min(150, max(0, (dist - max_dist * 0.6) / (max_dist * 0.4) * 150)))
-                draw.point((x, y), fill=(0, 0, 0, alpha))
+        # Generate at half resolution to reduce CPU, then upscale
+        try:
+            w2 = max(1, width // 2)
+            h2 = max(1, height // 2)
+            small = Image.new('RGBA', (w2, h2))
+            draw = ImageDraw.Draw(small)
+            for y in range(h2):
+                for x in range(w2):
+                    dx = x - w2 / 2
+                    dy = y - h2 / 2
+                    dist = math.sqrt(dx * dx + dy * dy)
+                    max_dist = math.sqrt((w2 / 2) ** 2 + (h2 / 2) ** 2)
+                    alpha = int(min(150, max(0, (dist - max_dist * 0.6) / (max_dist * 0.4) * 150)))
+                    draw.point((x, y), fill=(0, 0, 0, alpha))
+            vignette = small.resize((max(1, width), max(1, height)), Image.BILINEAR)
+        except Exception:
+            vignette = Image.new('RGBA', (max(1, width), max(1, height)))
         self.vignette_photo = ImageTk.PhotoImage(vignette)
+        # Do not create a new image item here; caller will itemconfigure it
         self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
 
     def create_particles(self, count):
@@ -457,31 +465,42 @@ class DiscordBotGUI:
     def animate_particles(self):
         for p in self.particles:
             p['angle'] += p['speed']
-            offset = math.sin(p['angle']) * 15
+            offset = math.sin(p['angle']) * 12
             new_y = p['base_y'] + offset
-            self.bg_canvas.coords(p['id'], p['x'], new_y, p['x'] + p['radius'] * 2, new_y + p['radius'] * 2)
-        self.root.after(30, self.animate_particles)
+            self.bg_canvas.coords(p['id'], p['x'], new_y, p['x'] + p['radius'] * 2, p['y'] + p['radius'] * 2)
+        self.root.after(50, self.animate_particles)
 
     def _on_root_resize(self, event=None):
         try:
-            cw = max(1, int(self.bg_canvas.winfo_width()))
-            ch = max(1, int(self.bg_canvas.winfo_height()))
-            # Regenerate gradient and vignette to fit canvas
-            self.gradient_image = self.create_gradient_image(cw, ch)
-            self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
-            try:
-                self.bg_canvas.itemconfigure(self._bg_img_item, image=self.bg_photo)
-            except Exception:
-                self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
-            self.create_tint_overlay(cw, ch)
-            try:
-                self.bg_canvas.itemconfigure(self._vignette_item, image=self.vignette_photo)
-            except Exception:
-                self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
-            # Re-seed particles if there are too few to cover new area
-            need = max(0, int((cw * ch) / (900*700) * 100) - len(self.particles))
-            if need > 0:
-                self.create_particles(need)
+            # Debounce to avoid excessive recomputation during live resizing
+            if hasattr(self, '_resize_job') and self._resize_job:
+                try:
+                    self.root.after_cancel(self._resize_job)
+                except Exception:
+                    pass
+            def _do_resize():
+                try:
+                    cw = max(1, int(self.bg_canvas.winfo_width()))
+                    ch = max(1, int(self.bg_canvas.winfo_height()))
+                    # Regenerate gradient and vignette to fit canvas
+                    self.gradient_image = self.create_gradient_image(cw, ch)
+                    self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
+                    try:
+                        self.bg_canvas.itemconfigure(self._bg_img_item, image=self.bg_photo)
+                    except Exception:
+                        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+                    self.create_tint_overlay(cw, ch)
+                    try:
+                        self.bg_canvas.itemconfigure(self._vignette_item, image=self.vignette_photo)
+                    except Exception:
+                        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
+                    # Re-seed particles if there are too few to cover new area
+                    need = max(0, int((cw * ch) / (900*700) * 48) - len(self.particles))
+                    if need > 0:
+                        self.create_particles(need)
+                except Exception:
+                    pass
+            self._resize_job = self.root.after(120, _do_resize)
         except Exception:
             pass
 
