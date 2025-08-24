@@ -712,9 +712,23 @@ class DiscordBotGUI:
             self.apply_glow(msg_bar, thickness=2)
         except Exception:
             pass
-        tk.Label(msg_bar, text="Message Content", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=8, pady=(4,2))
+        # eDEX-style header for message content
+        try:
+            mc_bar = tk.Frame(msg_bar, bg="#0b1020")
+            mc_bar.pack(fill="x", side="top")
+            try:
+                self.apply_glow(mc_bar, thickness=2)
+            except Exception:
+                pass
+            tk.Label(mc_bar, text="MESSAGE CONTENT", bg="#0b1020", fg="#b799ff", font=("Consolas", 10, "bold")).pack(side="left", padx=8)
+            for color in ("#22c55e", "#f59e0b", "#ef4444"):
+                c = tk.Canvas(mc_bar, width=10, height=10, bg="#0b1020", highlightthickness=0)
+                c.pack(side="right", padx=3)
+                c.create_oval(2, 2, 8, 8, fill=color, outline=color)
+        except Exception:
+            pass
         # Make message box as big as token bar width and match chat background
-        self.message_entry = tk.Text(left, height=6, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.message_entry = tk.Text(left, height=12, relief="flat", bg="#120f1f", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.message_entry.grid(row=4, column=0, columnspan=1, sticky="nsew", padx=10, pady=(0, 6))
         try:
             self.apply_glow(self.message_entry)
@@ -765,7 +779,7 @@ class DiscordBotGUI:
         # Activity Log next to message content (taller)
         self.log_panel = tk.Frame(left, bg="#1e1b29")
         self.log_panel.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=6, pady=(6, 10))
-        tk.Label(self.log_panel, text="Activity Log:", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
+        # Header label removed; eDEX header will be used
         self.log_text = tk.Text(self.log_panel, height=12, width=52, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.log_text.pack(fill="both", expand=True)
 
@@ -787,7 +801,7 @@ class DiscordBotGUI:
 
         # Right: Announcements + Community Chat (2500+ required to send)
         ann_panel = tk.Frame(right, bg="#1e1b29")
-        ann_panel.pack(fill="x", padx=10, pady=(22, 4))
+        ann_panel.pack(fill="x", padx=10, pady=(28, 4))
         tk.Label(ann_panel, text="Announcements", bg="#1e1b29", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w")
         self.ann_text = tk.Text(ann_panel, height=5, state=tk.DISABLED, bg="#120f1f", fg="#e0d7ff", relief="flat")
         self.ann_text.pack(fill="x", expand=False)
@@ -1016,7 +1030,6 @@ class DiscordBotGUI:
         # Add neon headers to key content areas to mimic terminal panes
         try:
             for pane, title in [
-                (self.log_panel, "TERMINAL: LOG"),
                 (self.main_frame, "KS USER PANEL"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
