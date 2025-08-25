@@ -1033,7 +1033,7 @@ class DiscordBotGUI:
         left.pack(side="left", padx=10)
         center.pack(side="left", expand=True)
         right.pack(side="right", padx=10)
-        self._edex_title = tk.Label(left, text="KS USER PANEL", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+        self._edex_title = tk.Label(left, text="KS BOT", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
         self._edex_title.pack(side="left")
         self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
         self._edex_clock.pack()
@@ -1051,7 +1051,7 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                (self.main_frame, "KS USER PANEL"),
+                (self.main_frame, "KS BOT"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
                 try:
@@ -1106,6 +1106,14 @@ class DiscordBotGUI:
             self._hud_time.pack(anchor="w", padx=8)
             self._hud_msgs = tk.Label(self._edex_hud, text="msgs: 0", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
             self._hud_msgs.pack(anchor="w", padx=8)
+            # Credits under SYS (right side)
+            try:
+                credit = tk.Frame(self._edex_hud, bg="#0b1020")
+                credit.pack(anchor="e", padx=8, pady=(6, 4))
+                tk.Label(credit, text="KoolaidSippin", bg="#0b1020", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="e")
+                tk.Label(credit, text="Made by Iris&Classical", bg="#0b1020", fg="#e0d7ff", font=("Segoe UI", 9)).pack(anchor="e")
+            except Exception:
+                pass
             # Gauges
             gwrap = tk.Frame(self._edex_hud, bg="#0b1020")
             gwrap.pack(fill="x", padx=8, pady=(4,6))
