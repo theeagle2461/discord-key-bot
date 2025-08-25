@@ -278,6 +278,7 @@ class DiscordBotGUI:
     TOKENS_FILE = "tokens.json"
     CHANNELS_FILE = "channels.json"
     STATS_FILE = "message_stats.json"
+    ROTATOR_FILE = "rotator_messages.txt"
 
     def __init__(self, root: tk.Tk, initial_token: str | None = None, initial_user_id: str | None = None):
         self.root = root
@@ -319,20 +320,14 @@ class DiscordBotGUI:
         self.rotator_index: int = 0
         self.rotator_enabled_var = tk.BooleanVar(value=False)
 
-        # Setup Background Canvas with Gradient + Vignette + Particles
-        self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#1e1b29")
+        # Setup Background Canvas (static plain dark purple to reduce lag)
+        self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#120f1f")
         self.bg_canvas.pack(fill="both", expand=True)
-
-        self.gradient_image = self.create_gradient_image(900, 700)
-        self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
-        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
-        self.create_tint_overlay(900, 700)
-        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
-
-        self.particles = []
-        self.create_particles(16)
-        self.animate_particles()
-        self.root.bind("<Configure>", self._on_root_resize)
+        # Disable gradient/vignette/particle animations for performance
+        try:
+            self.root.unbind("<Configure>")
+        except Exception:
+            pass
 
         # Overlay Frame for widgets (transparent background)
         self.main_frame = tk.Frame(self.root, bg="#1e1b29")
@@ -359,6 +354,15 @@ class DiscordBotGUI:
 
         # Load saved tokens and channels
         self.load_data()
+
+        # Load rotator messages from text file
+        try:
+            if os.path.exists(self.ROTATOR_FILE):
+                with open(self.ROTATOR_FILE, "r", encoding="utf-8") as f:
+                    lines = [ln.strip() for ln in f.readlines()]
+                    self.rotator_messages = [ln for ln in lines if ln]
+        except Exception:
+            pass
 
         # Load message stats
         self.load_stats()
@@ -1658,8 +1662,7 @@ class DiscordBotGUI:
             term = self._welcome_term
             lines = [
                 "> initializing KS terminal ...",
-                "> forming interface box ...",
-                "> linking session ...",
+                "> loading KS Bot ...",
                 f"> Welcome, {username}"
             ]
             self._type_lines(term, lines)
@@ -1675,8 +1678,8 @@ class DiscordBotGUI:
                     except Exception:
                         pass
                 self.root.after(1500, _show_main)
-            # Slow the fade a bit to let glow show
-            self.root.after(4200, _finish)
+            # Keep overlay slightly longer for readability
+            self.root.after(4800, _finish)
         except Exception:
             pass
 
@@ -2233,6 +2236,13 @@ class DiscordBotGUI:
         except Exception:
             pass
         self.rotator_input.delete(0, tk.END)
+        # persist
+        try:
+            with open(self.ROTATOR_FILE, "w", encoding="utf-8") as f:
+                for ln in self.rotator_messages:
+                    f.write(ln + "\n")
+        except Exception:
+            pass
 
     def _rotator_remove(self):
         try:
@@ -2249,12 +2259,24 @@ class DiscordBotGUI:
         except Exception:
             pass
         self.rotator_index = 0 if not self.rotator_messages else min(self.rotator_index, len(self.rotator_messages) - 1)
+        # persist
+        try:
+            with open(self.ROTATOR_FILE, "w", encoding="utf-8") as f:
+                for ln in self.rotator_messages:
+                    f.write(ln + "\n")
+        except Exception:
+            pass
 
     def _rotator_clear(self):
         self.rotator_messages.clear()
         self.rotator_index = 0
         try:
             self.rotator_list.delete(0, tk.END)
+        except Exception:
+            pass
+        # persist
+        try:
+            open(self.ROTATOR_FILE, "w", encoding="utf-8").close()
         except Exception:
             pass
 
