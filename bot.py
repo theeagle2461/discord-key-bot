@@ -1457,7 +1457,6 @@ async def expired_keys(interaction: discord.Interaction):
 
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="swapmachineid", description="Swap a user's active key to a new machine ID (Special Admin Only)")
 async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
 	# Special admin only
