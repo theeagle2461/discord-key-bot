@@ -676,6 +676,17 @@ class DiscordBotGUI:
             self.apply_glow(self.rotator_input)
         except Exception:
             pass
+        # Token switch delay control inside rotator
+        rot_delay_row = tk.Frame(rot_left, bg="#1e1b29")
+        rot_delay_row.pack(fill="x", pady=(6, 0))
+        tk.Label(rot_delay_row, text="Token Switch Delay (s):", bg="#1e1b29", fg="#e0d7ff").pack(side="left")
+        self.rotator_token_delay_entry = tk.Entry(rot_delay_row, width=6, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.rotator_token_delay_entry.insert(0, "1")
+        self.rotator_token_delay_entry.pack(side="left", padx=(8,0))
+        try:
+            self.apply_glow(self.rotator_token_delay_entry)
+        except Exception:
+            pass
         # Rotator messages list on the right side of rotator controls, with glowing border
         rot_right = tk.Frame(rot_wrap, bg="#1e1b29")
         rot_right.pack(side="right", fill="both", expand=False, padx=(8, 0))
@@ -748,9 +759,14 @@ class DiscordBotGUI:
         self.reply_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
         self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
+        tk.Label(delays, text="Loop Count (0 = ∞):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
+        self.loop_count_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.loop_count_entry.insert(0, "1")
+        self.loop_count_entry.pack(fill="x", pady=(0, 12), ipady=6)
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
+            self.apply_glow(self.loop_count_entry)
         except Exception:
             pass
 
@@ -759,9 +775,9 @@ class DiscordBotGUI:
             credit = tk.Frame(delays, bg="#2c2750")
             credit.pack(fill="x", padx=0, pady=(20, 4))
             self.apply_glow(credit, thickness=2)
-            tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
+            tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 16, "bold")).pack(padx=12, pady=(8, 2), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
-            tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
+            tk.Label(credit, text="Iris&Classical", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(0, 10), anchor="w")
             # Run buttons moved to middle between rotator and SYS
             run = tk.Frame(left, bg="#1e1b29")
             run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(36,12))
@@ -1642,6 +1658,7 @@ class DiscordBotGUI:
             term = self._welcome_term
             lines = [
                 "> initializing KS terminal ...",
+                "> forming interface box ...",
                 "> linking session ...",
                 f"> Welcome, {username}"
             ]
@@ -1657,8 +1674,9 @@ class DiscordBotGUI:
                         self.main_frame.place(**self._mf_place_args)
                     except Exception:
                         pass
-                self.root.after(2000, _show_main)
-            self.root.after(3200, _finish)
+                self.root.after(1500, _show_main)
+            # Slow the fade a bit to let glow show
+            self.root.after(4200, _finish)
         except Exception:
             pass
 
@@ -1712,8 +1730,13 @@ class DiscordBotGUI:
             self.log("❌ Invalid delay value.")
             return
 
-        # Loop count control removed from UI; default to sending once per channel
-        loop_count = 1
+        # Loop count (0 = infinite)
+        try:
+            loop_count = int(self.loop_count_entry.get()) if hasattr(self, 'loop_count_entry') else 1
+            if loop_count < 0:
+                loop_count = 0
+        except Exception:
+            loop_count = 1
 
         self.selected_channel_names = selected_channels
         self.send_running = True
@@ -1739,11 +1762,18 @@ class DiscordBotGUI:
         # Assign rotator indices per token to avoid same content simultaneously
         self._per_token_rotator_offsets = {name: idx for idx, name in enumerate(selected_token_names)}
 
-        for name in selected_token_names:
+        # Stagger token starts according to rotator token switch delay
+        try:
+            token_switch_delay = float(self.rotator_token_delay_entry.get()) if hasattr(self, 'rotator_token_delay_entry') else 0.0
+        except Exception:
+            token_switch_delay = 0.0
+        for idx, name in enumerate(selected_token_names):
             tok = self.tokens.get(name)
-            threading.Thread(target=self.send_messages_loop,
-                             args=(tok, self.selected_channel_names, message, delay, loop_count, name),
-                             daemon=True).start()
+            def _launch(n=name, t=tok):
+                threading.Thread(target=self.send_messages_loop,
+                                 args=(t, self.selected_channel_names, message, delay, loop_count, n),
+                                 daemon=True).start()
+            self.root.after(int(max(0.0, token_switch_delay) * 1000 * idx), _launch)
         self.log(f"▶️ Started sending with {len(selected_token_names)} token(s).")
 
     def send_messages_loop(self, token, channel_names, message, delay, loop_count, token_name=None):
@@ -1765,14 +1795,15 @@ class DiscordBotGUI:
                 try:
                     # Choose content from rotator if enabled, using per-token offset to avoid duplicates
                     if self.rotator_enabled_var.get() and self.rotator_messages:
-                        msgs = self.rotator_messages
+                        msgs = self.rotator_messages[:]
+                        random.shuffle(msgs)
                         if token_name is not None:
                             base_index = getattr(self, 'rotator_index', 0)
                             offset = getattr(self, '_per_token_rotator_offsets', {}).get(token_name, 0)
                             content_to_send = msgs[(base_index + offset) % len(msgs)]
                             # Only advance base index once per full round (handled below after each channel)
                         else:
-                            content_to_send = self._rotator_next()
+                            content_to_send = msgs[getattr(self, 'rotator_index', 0) % len(msgs)]
                     else:
                         content_to_send = message
                     resp = requests.post(url, headers=headers, json={"content": content_to_send})
