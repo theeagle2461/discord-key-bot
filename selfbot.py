@@ -380,8 +380,22 @@ class DiscordBotGUI:
         except Exception:
             pass
 
+        # Fallback: if no session info arrives, proceed with guest welcome
+        try:
+            self.root.after(4000, self._fallback_session_welcome)
+        except Exception:
+            pass
+
         # Bind token selection event
         self.token_var.trace_add("write", lambda *a: self.on_token_change())
+
+        # Auto-select first saved token if none selected (triggers on_token_change)
+        try:
+            if not self.token_var.get() and self.tokens:
+                first_name = sorted(self.tokens.keys())[0]
+                self.token_var.set(first_name)
+        except Exception:
+            pass
 
         # Protocol handler for graceful shutdown
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -1635,6 +1649,17 @@ class DiscordBotGUI:
             self._welcome_term.pack(padx=24, pady=18)
         except Exception:
             pass
+
+    def _fallback_session_welcome(self):
+        try:
+            if not getattr(self, "_welcomed", False):
+                self._welcomed = True
+                self._show_terminal_welcome("Guest")
+        except Exception:
+            try:
+                self.main_frame.place(**self._mf_place_args)
+            except Exception:
+                pass
 
     def _show_terminal_welcome(self, username: str):
         try:
