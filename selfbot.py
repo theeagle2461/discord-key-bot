@@ -178,20 +178,8 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
 
     token_row = tk.Frame(frm, bg="#2c2750")
     token_row.pack(fill="x", pady=6)
-    tk.Label(token_row, text="Discord User Token", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-    inner = tk.Frame(token_row, bg="#2c2750")
-    inner.pack(fill="x", pady=2)
-    token_entry = tk.Entry(inner, show="*", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
-    token_entry.pack(side="left", fill="x", expand=True)
-
-    def toggle_token():
-        current = token_entry.cget("show")
-        token_entry.config(show="" if current == "*" else "*")
-        btn.config(text="Hide" if current == "*" else "Show")
-
-    btn = tk.Button(inner, text="Show", command=toggle_token, bg="#5a3e99", fg="#f0e9ff",
-                    activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2")
-    btn.pack(side="left", padx=(8, 0))
+    tk.Label(token_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    tk.Label(token_row, text=machine_id(), bg="#1e1b29", fg="#e0d7ff", font=("Consolas", 10)).pack(fill="x", pady=2)
 
     # Login button directly under token input
     token_login = tk.Button(frm, text="Login", command=lambda: submit(), bg="#5a3e99", fg="#f0e9ff",
@@ -212,31 +200,11 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     def submit():
         a = activation_entry.get().strip()
         uid = user_id_entry.get().strip()
-        tok = token_entry.get().strip()
-        if not a or not uid or not tok:
-            status_label.config(text="All fields are required.")
+        if not a or not uid:
+            status_label.config(text="Activation key and User ID are required.")
             return
-        # Verify the user is a member of the Discord guild before proceeding
-        try:
-            url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
-            r = requests.get(url, headers={"Authorization": tok}, timeout=10)
-            if r.status_code != 200:
-                try:
-                    title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
-                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\\nJoin here: https://discord.gg/fEeeXAJfbF")
-                    messagebox.showerror(title, text)
-                except Exception:
-                    pass
-                return
-        except Exception:
-            try:
-                title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
-                text = os.getenv("JOIN_DIALOG_TEXT", "Could not verify Discord membership. Please join here and try again: https://discord.gg/fEeeXAJfbF")
-                messagebox.showerror(title, text)
-            except Exception:
-                pass
-            return
-        result[0], result[1], result[2] = a, uid, tok
+        # Machine-ID based login; token not required here
+        result[0], result[1], result[2] = a, uid, ""
         root.destroy()
 
     # Bottom login button
@@ -377,6 +345,15 @@ class DiscordBotGUI:
         try:
             self._welcome_started = False
             self._ensure_terminal_overlay()
+        except Exception:
+            pass
+
+        # If no initial token is provided, still proceed with a generic welcome
+        try:
+            if not initial_token and not getattr(self, "_welcomed", False):
+                self._welcomed = True
+                username = self._login_user_id or "User"
+                self.root.after(200, lambda u=username: self._show_terminal_welcome(u))
         except Exception:
             pass
 
