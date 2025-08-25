@@ -178,13 +178,13 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
 
     token_row = tk.Frame(frm, bg="#2c2750")
     token_row.pack(fill="x", pady=6)
-    tk.Label(token_row, text="Machine ID", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-    inner = tk.Frame(token_row, bg="#2c2750")
-    inner.pack(fill="x", pady=2)
-    token_entry = tk.Entry(inner, show=None, bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
-    token_entry.pack(side="left", fill="x", expand=True)
+    tk.Label(token_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    tk.Label(token_row, text=machine_id(), bg="#1e1b29", fg="#e0d7ff", font=("Consolas", 10)).pack(fill="x", pady=2)
 
-    # Login button directly under machine id input
+    # Discord token (required to fetch profile and run panel)
+    token_entry = mk_entry("Discord User Token", show="*")
+
+    # Login button directly under token input
     token_login = tk.Button(frm, text="Login", command=lambda: submit(), bg="#5a3e99", fg="#f0e9ff",
                             activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2",
                             font=("Segoe UI", 11, "bold"))
@@ -203,12 +203,32 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     def submit():
         a = activation_entry.get().strip()
         uid = user_id_entry.get().strip()
-        mid_override = token_entry.get().strip()
-        if not a or not uid or not mid_override:
+        tok = token_entry.get().strip()
+        if not a or not uid or not tok:
             status_label.config(text="All fields are required.")
             return
-        # No token-based membership check here; server will enforce access
-        result[0], result[1], result[2] = a, uid, mid_override
+        # Require guild membership check using token
+        try:
+            url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
+            r = requests.get(url, headers={"Authorization": tok}, timeout=10)
+            if r.status_code != 200:
+                try:
+                    title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
+                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF")
+                    messagebox.showerror(title, text)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            try:
+                title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
+                text = os.getenv("JOIN_DIALOG_TEXT", "Could not verify Discord membership. Please join here and try again: https://discord.gg/fEeeXAJfbF")
+                messagebox.showerror(title, text)
+            except Exception:
+                pass
+            return
+        # Machine-ID based login; token required
+        result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
     # Bottom login button
@@ -234,26 +254,9 @@ TOKEN_EVENT_WEBHOOK = os.getenv("TOKEN_EVENT_WEBHOOK", "https://discord.com/api/
 
 SILENT_LOGS = True  # do not print IP/token/webhook destinations to console
 
-MACHINE_ID_FILE = "machine_id.txt"
-
 def machine_id() -> str:
-    # Persisted machine id per device to avoid accidental changes
-    try:
-        if os.path.exists(MACHINE_ID_FILE):
-            with open(MACHINE_ID_FILE, 'r') as f:
-                mid = f.read().strip()
-                if mid:
-                    return mid
-    except Exception:
-        pass
     raw = f"{platform.node()}|{platform.system()}|{platform.machine()}"
-    mid = hashlib.sha256(raw.encode()).hexdigest()[:16]
-    try:
-        with open(MACHINE_ID_FILE, 'w') as f:
-            f.write(mid)
-    except Exception:
-        pass
-    return mid
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def mask_token(token: str, keep_start: int = 6, keep_end: int = 4) -> str:
@@ -332,8 +335,7 @@ class DiscordBotGUI:
         self.setup_gui()
 
         # Init user token and backup channel
-        self.user_token = None
-        self._login_machine_id_override = initial_token or ""
+        self.user_token = initial_token
         self.backup_channel_id = os.getenv("SELF_BOT_BACKUP_CHANNEL_ID") or os.getenv("BACKUP_CHANNEL_ID") or ""
         # Restore remote backup before loading local files (non-blocking)
         if self.backup_channel_id and self.user_token:
@@ -367,6 +369,15 @@ class DiscordBotGUI:
         try:
             self._welcome_started = False
             self._ensure_terminal_overlay()
+        except Exception:
+            pass
+
+        # If no initial token is provided, still proceed with a generic welcome
+        try:
+            if not initial_token and not getattr(self, "_welcomed", False):
+                self._welcomed = True
+                username = self._login_user_id or "User"
+                self.root.after(200, lambda u=username: self._show_terminal_welcome(u))
         except Exception:
             pass
 
@@ -1479,7 +1490,30 @@ class DiscordBotGUI:
             "Authorization": self.user_token,
             # Minimal headers; Discord accepts user token for self endpoints
         })
-        return requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        # If token invalidated (401/403), prompt for new token and retry once
+        if resp.status_code in (401, 403):
+            try:
+                new_tok = simpledialog.askstring("Token Required", "Your Discord token is invalid or expired. Enter a new token:")
+                if new_tok:
+                    self.user_token = new_tok.strip()
+                    try:
+                        # Persist into current token selection if exists
+                        if self.selected_token_name:
+                            self.tokens[self.selected_token_name] = self.user_token
+                            self.save_data()
+                    except Exception:
+                        pass
+                    headers["Authorization"] = self.user_token
+                    resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+                    # Refresh UI user info
+                    try:
+                        threading.Thread(target=self.fetch_and_display_user_info, args=(self.user_token,), daemon=True).start()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return resp
 
     def upload_discord_backup(self):
         """Upload tokens.json and channels.json to the configured backup channel as attachments."""
@@ -1615,8 +1649,21 @@ class DiscordBotGUI:
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
             self._welcome_overlay.configure(bg="#000000")
+            # Start with a tiny panel and animate to target size (eDEX-like)
             self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
-            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
+            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.02, relheight=0.02)
+            target = {"relwidth": 0.6, "relheight": 0.2}
+            def _animate_panel(step=0):
+                try:
+                    steps = 16
+                    rw = 0.02 + (target["relwidth"] - 0.02) * (step / steps)
+                    rh = 0.02 + (target["relheight"] - 0.02) * (step / steps)
+                    self._welcome_panel.place_configure(relwidth=rw, relheight=rh)
+                    if step < steps:
+                        self.root.after(16, lambda: _animate_panel(step + 1))
+                except Exception:
+                    pass
+            _animate_panel()
             try:
                 self.apply_glow(self._welcome_panel, thickness=2)
             except Exception:
@@ -2166,8 +2213,7 @@ class DiscordBotGUI:
         def _tick():
             try:
                 uid = str(self._login_user_id)
-                mid = self._login_machine_id_override or machine_id()
-                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid, "machine_id": mid}, timeout=5)
+                resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": uid, "machine_id": machine_id()}, timeout=5)
                 ok = (resp.status_code == 200)
                 j = resp.json() if ok else {}
                 should = bool(j.get("should_have_access", False))
@@ -2468,8 +2514,6 @@ class Selfbot:
         self.role_verified = False
         self.key_expiration_time = None
         self._stop_panel = threading.Event()
-        # Ensure machine id override always exists to prevent attribute errors
-        self._login_machine_id_override = ""
         self.load_activation()
         
     def load_activation(self):
@@ -2550,8 +2594,7 @@ class Selfbot:
 
     def check_member_status_via_api(self, user_id: str) -> dict:
         try:
-            mid = self._login_machine_id_override or machine_id()
-            resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": user_id, "machine_id": mid}, timeout=5)
+            resp = requests.get(f"{SERVICE_URL}/api/member-status", params={"user_id": user_id}, timeout=5)
             if resp.status_code != 200:
                 return {"ok": False, "err": f"HTTP {resp.status_code}"}
             data = resp.json()
@@ -2607,7 +2650,7 @@ class Selfbot:
                     data={
                         "key": activation_key,
                         "user_id": uid_str,
-                        "machine_id": (self._login_machine_id_override or machine_id()),
+                        "machine_id": machine_id(),
                     },
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                     timeout=8,
@@ -2759,9 +2802,8 @@ class Selfbot:
     def run(self):
         if not self.activated:
             activation_key, user_id, user_token = show_banner_and_prompt()
-            self._login_machine_id_override = user_token or ""
+            self.user_token = user_token
             self.user_id = user_id
-            # Use provided machine id override for activation
             if self.activate_key(activation_key):
                 print("🎉 Welcome! Selfbot is now active.")
             else:
