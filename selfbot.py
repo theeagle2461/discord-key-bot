@@ -1656,8 +1656,8 @@ class DiscordBotGUI:
                 # No outer glow/border on the main canvas per request
             except Exception:
                 self._welcome_canvas = None
-            # We will draw text directly inside the canvas after the box is created
-            self._welcome_term = None
+            # Prepare a label for text; it will be placed inside the canvas later
+            self._welcome_term = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
         except Exception:
             pass
 
@@ -1705,23 +1705,25 @@ class DiscordBotGUI:
                             if step < steps:
                                 self.root.after(delay_ms, lambda: animate(step + 1))
                             else:
-                                try:
-                                    # Place 'awaiting session ...' centered inside the box
-                                    c.delete('text')
-                                    cx = (x1 + x2) // 2
-                                    cy = (y1 + y2) // 2
-                                    c.create_text(cx, cy, text="> awaiting session ...", fill="#9ab0ff", font=("Consolas", 13), tags=('text',))
-                                except Exception:
-                                    pass
-                                # Wait 2 seconds before the rest
-                                self.root.after(2000, start_typing)
+                                def _show_awaiting():
+                                    try:
+                                        c.delete('text')
+                                        cx = (x1 + x2) // 2
+                                        cy = (y1 + y2) // 2
+                                        c.create_text(cx, cy, text="> awaiting session ...", fill="#9ab0ff", font=("Consolas", 13), tags=('text',))
+                                    except Exception:
+                                        pass
+                                    # After 1s, start typing the remaining lines
+                                    self.root.after(1000, start_typing)
+                                # Wait 1 second before showing 'awaiting session ...'
+                                self.root.after(1000, _show_awaiting)
                         except Exception:
                             pass
                     def start_typing():
                         try:
                             lines = [
                                 "> initializing KS terminal ...",
-                                "> loading KS Bot ...",
+                                "> starting KS Bot ...",
                                 f"> Welcome, {username}"
                             ]
                             self._type_lines(term, lines)
@@ -1730,9 +1732,15 @@ class DiscordBotGUI:
                     animate(0)
                 else:
                     # Fallback: draw text using a temporary label if canvas missing
-                    tmp = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
+                    tmp = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
                     tmp.pack(pady=(4, 2))
-                    self.root.after(2000, lambda: self._type_lines(tmp, ["> initializing KS terminal ...", "> loading KS Bot ...", f"> Welcome, {username}"]))
+                    def _fa():
+                        try:
+                            tmp.config(text="> awaiting session ...")
+                        except Exception:
+                            pass
+                        self.root.after(1000, lambda: self._type_lines(tmp, ["> initializing KS terminal ...", "> starting KS Bot ...", f"> Welcome, {username}"]))
+                    self.root.after(1000, _fa)
             except Exception:
                 pass
             def _finish():
