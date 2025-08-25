@@ -1457,6 +1457,38 @@ async def expired_keys(interaction: discord.Interaction):
 
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="swapmachineid", description="Swap a user's active key to a new machine ID (Special Admin Only)")
+async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
+	# Special admin only
+	if interaction.user.id not in SPECIAL_ADMIN_IDS:
+		await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+		return
+	if not await check_permissions(interaction):
+		return
+	try:
+		# Find the user's active key
+		key = None
+		for k, data in key_manager.keys.items():
+			if data.get('user_id') == user.id and data.get('is_active', False):
+				key = k
+				break
+		if not key:
+			await interaction.response.send_message("❌ No active key found for that user.", ephemeral=True)
+			return
+		# Update the machine_id
+		data = key_manager.keys[key]
+		data['machine_id'] = str(new_machine_id)
+		# Save
+		key_manager.save_data()
+		try:
+			key_manager.add_log('rebind', key, user_id=str(user.id), details={'machine_id': str(new_machine_id)})
+		except Exception:
+			pass
+		await interaction.response.send_message(f"✅ Machine ID swapped for user {user.mention}.", ephemeral=True)
+	except Exception as e:
+		await interaction.response.send_message(f"❌ Failed: {e}", ephemeral=True)
+
 @bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
 async def sync_commands(interaction: discord.Interaction):
     if not interaction.guild or interaction.guild.id != GUILD_ID:
@@ -3582,25 +3614,3 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
         await ctx.reply(f"Error: {e}")
 
         return
-    try:
-        # Find the user's active key
-        key = None
-        for k, data in key_manager.keys.items():
-            if data.get('user_id') == user.id and data.get('is_active', False):
-                key = k
-                break
-        if not key:
-            await interaction.response.send_message("❌ No active key found for that user.", ephemeral=True)
-            return
-        # Update the machine_id
-        data = key_manager.keys[key]
-        data['machine_id'] = new_machine_id
-        # Save
-        key_manager.save_data()
-        try:
-            key_manager.add_log('rebind', key, user_id=str(user.id), details={'machine_id': new_machine_id})
-        except Exception:
-            pass
-        await interaction.response.send_message(f"✅ Machine ID swapped for user {user.mention}.", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"❌ Failed: {e}", ephemeral=True)
