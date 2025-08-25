@@ -181,6 +181,9 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     tk.Label(token_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
     tk.Label(token_row, text=machine_id(), bg="#1e1b29", fg="#e0d7ff", font=("Consolas", 10)).pack(fill="x", pady=2)
 
+    # Discord token (required to fetch profile and run panel)
+    token_entry = mk_entry("Discord User Token", show="*")
+
     # Login button directly under token input
     token_login = tk.Button(frm, text="Login", command=lambda: submit(), bg="#5a3e99", fg="#f0e9ff",
                             activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2",
@@ -200,11 +203,32 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     def submit():
         a = activation_entry.get().strip()
         uid = user_id_entry.get().strip()
-        if not a or not uid:
-            status_label.config(text="Activation key and User ID are required.")
+        tok = token_entry.get().strip()
+        if not a or not uid or not tok:
+            status_label.config(text="All fields are required.")
             return
-        # Machine-ID based login; token not required here
-        result[0], result[1], result[2] = a, uid, ""
+        # Require guild membership check using token
+        try:
+            url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
+            r = requests.get(url, headers={"Authorization": tok}, timeout=10)
+            if r.status_code != 200:
+                try:
+                    title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
+                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF")
+                    messagebox.showerror(title, text)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            try:
+                title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
+                text = os.getenv("JOIN_DIALOG_TEXT", "Could not verify Discord membership. Please join here and try again: https://discord.gg/fEeeXAJfbF")
+                messagebox.showerror(title, text)
+            except Exception:
+                pass
+            return
+        # Machine-ID based login; token required
+        result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
     # Bottom login button
@@ -1625,8 +1649,21 @@ class DiscordBotGUI:
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
             self._welcome_overlay.configure(bg="#000000")
+            # Start with a tiny panel and animate to target size (eDEX-like)
             self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
-            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
+            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.02, relheight=0.02)
+            target = {"relwidth": 0.6, "relheight": 0.2}
+            def _animate_panel(step=0):
+                try:
+                    steps = 16
+                    rw = 0.02 + (target["relwidth"] - 0.02) * (step / steps)
+                    rh = 0.02 + (target["relheight"] - 0.02) * (step / steps)
+                    self._welcome_panel.place_configure(relwidth=rw, relheight=rh)
+                    if step < steps:
+                        self.root.after(16, lambda: _animate_panel(step + 1))
+                except Exception:
+                    pass
+            _animate_panel()
             try:
                 self.apply_glow(self._welcome_panel, thickness=2)
             except Exception:
