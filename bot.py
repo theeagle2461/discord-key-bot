@@ -818,14 +818,24 @@ async def on_ready():
         await send_status_webhook('online')
     except Exception:
         pass
-    # Force-sync application commands to this guild to ensure visibility
+    # Copy any global commands into the guild and force-sync for instant visibility
     try:
         guild_obj = discord.Object(id=GUILD_ID)
+        try:
+            globals_list = bot.tree.get_commands()
+            if globals_list:
+                try:
+                    await bot.tree.copy_global_to(guild=guild_obj)
+                    print(f"📎 Copied {len(globals_list)} global commands to guild {GUILD_ID}")
+                except Exception as e:
+                    print(f"⚠️ Failed copying globals to guild: {e}")
+        except Exception:
+            pass
         synced = await bot.tree.sync(guild=guild_obj)
         print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
         try:
-            names = [c.name for c in bot.tree.get_commands()]
-            print(f"🔎 Commands in tree: {names}")
+            names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
+            print(f"🔎 Guild commands: {names}")
         except Exception:
             pass
     except Exception as e:
@@ -1457,6 +1467,7 @@ async def expired_keys(interaction: discord.Interaction):
 
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="swapmachineid", description="Swap a user's active key to a new machine ID (Special Admin Only)")
 async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
 	# Special admin only
