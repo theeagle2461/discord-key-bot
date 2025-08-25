@@ -1738,9 +1738,9 @@ class DiscordBotGUI:
                                             if li + 1 < len(lines):
                                                 self.root.after(150, lambda: _type_canvas_lines(lines, li + 1, 0))
                                             else:
-                                                # Open UI shortly after finishing
+                                                # Keep Welcome visible longer before opening UI
                                                 try:
-                                                    self.root.after(800, _finish)
+                                                    self.root.after(2000, _finish)
                                                 except Exception:
                                                     pass
                                     except Exception:
