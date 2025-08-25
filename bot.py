@@ -25,6 +25,7 @@ import requests
 import urllib.parse
 import html
 import io
+import re
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -43,13 +44,14 @@ ROLE_NAME = os.getenv('ROLE_NAME', 'activated key')
 OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '1402650246538072094') or 0)
 CHATSEND_ROLE_ID = int(os.getenv('CHATSEND_ROLE_ID', '1406339861593591900') or 0)
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
-# Backup to Discord channel and auto-restore settings
+# Backup to Discord channel and/or webhook, and auto-restore settings
 BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
+BACKUP_WEBHOOK_URL = (os.getenv('BACKUP_WEBHOOK_URL', '') or '').strip()
 AUTO_RESTORE_ON_START = (os.getenv('AUTO_RESTORE_ON_START', 'false').lower() in ('1','true','yes'))
 try:
-	BACKUP_INTERVAL_MIN = int(os.getenv('BACKUP_INTERVAL_MIN', '60') or 60)
+	BACKUP_INTERVAL_MIN = int(os.getenv('BACKUP_INTERVAL_MIN', '10') or 10)
 except Exception:
-	BACKUP_INTERVAL_MIN = 60
+	BACKUP_INTERVAL_MIN = 10
 
 # Special admin user IDs for key generation and management
 SPECIAL_ADMIN_IDS = [1216851450844413953, 414921052968452098, 485182079923912734]  # Admin user IDs
@@ -809,7 +811,7 @@ async def on_ready():
     except Exception:
         pass
     try:
-        if BACKUP_CHANNEL_ID > 0 and not periodic_backup_task.is_running():
+        if (BACKUP_CHANNEL_ID > 0 or BACKUP_WEBHOOK_URL) and not periodic_backup_task.is_running():
             periodic_backup_task.start()
     except Exception:
         pass
@@ -840,27 +842,73 @@ async def on_ready():
             pass
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
-    # Auto-restore from the most recent JSON attachment in backup channel
-    if AUTO_RESTORE_ON_START and BACKUP_CHANNEL_ID > 0:
-        try:
-            channel = bot.get_channel(BACKUP_CHANNEL_ID)
-            if channel:
-                async for msg in channel.history(limit=50):
-                    if msg.attachments:
-                        for att in msg.attachments:
-                            if att.filename.lower().endswith('.json'):
-                                try:
-                                    b = await att.read()
-                                    payload = json.loads(b.decode('utf-8'))
-                                    if isinstance(payload, dict) and key_manager.restore_from_payload(payload):
-                                        print("♻️ Restored keys from channel backup")
-                                        raise StopAsyncIteration
-                                except Exception:
-                                    pass
-        except StopAsyncIteration:
-            pass
-        except Exception:
-            pass
+    # Auto-restore from the most recent JSON attachment in backup channel or webhook-derived channel
+    if AUTO_RESTORE_ON_START:
+        restored = False
+        # If no channel is configured, try to derive from webhook URL
+        global BACKUP_CHANNEL_ID
+        if BACKUP_CHANNEL_ID <= 0 and BACKUP_WEBHOOK_URL:
+            try:
+                m = re.search(r"/webhooks/(\d+)/", BACKUP_WEBHOOK_URL)
+                if m:
+                    wh_id = int(m.group(1))
+                    try:
+                        wh = await bot.fetch_webhook(wh_id)
+                        ch_id = getattr(wh, 'channel_id', None)
+                        if ch_id:
+                            BACKUP_CHANNEL_ID = int(ch_id)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        # Try channel history restore
+        if BACKUP_CHANNEL_ID > 0:
+            try:
+                channel = bot.get_channel(BACKUP_CHANNEL_ID)
+                if channel:
+                    async for msg in channel.history(limit=50):
+                        if msg.attachments:
+                            for att in msg.attachments:
+                                if att.filename.lower().endswith('.json'):
+                                    try:
+                                        b = await att.read()
+                                        payload = json.loads(b.decode('utf-8'))
+                                        if isinstance(payload, dict) and key_manager.restore_from_payload(payload):
+                                            print("♻️ Restored keys from channel backup")
+                                            restored = True
+                                            raise StopAsyncIteration
+                                    except Exception:
+                                        pass
+            except StopAsyncIteration:
+                pass
+            except Exception:
+                pass
+        # Fallback: restore from latest local backup snapshot
+        if not restored:
+            try:
+                backups_dir = os.path.join('.', 'backups')
+                latest_ts = -1
+                latest_path = None
+                if os.path.isdir(backups_dir):
+                    for name in os.listdir(backups_dir):
+                        if name.startswith('keys_') and name.endswith('.json'):
+                            ts_str = name[5:-5]
+                            if ts_str.isdigit():
+                                ts_val = int(ts_str)
+                                if ts_val > latest_ts:
+                                    latest_ts = ts_val
+                                    latest_path = os.path.join(backups_dir, name)
+                # Also consider KEYS backup file
+                if not latest_path and os.path.exists(BACKUP_FILE):
+                    latest_path = BACKUP_FILE
+                if latest_path:
+                    with open(latest_path, 'r') as f:
+                        payload = json.load(f)
+                    if isinstance(payload, dict) and key_manager.restore_from_payload(payload):
+                        print(f"♻️ Restored keys from local backup: {latest_path}")
+                        restored = True
+            except Exception:
+                pass
 
 @bot.event
 async def on_disconnect():
@@ -3300,53 +3348,34 @@ async def reconcile_roles_task():
 
 @tasks.loop(minutes=BACKUP_INTERVAL_MIN)
 async def periodic_backup_task():
-    """Periodically upload a JSON backup to the configured Discord channel."""
-    if BACKUP_CHANNEL_ID <= 0:
+    """Periodically upload a JSON backup to the configured Discord channel and/or webhook."""
+    if (BACKUP_CHANNEL_ID <= 0) and (not BACKUP_WEBHOOK_URL):
         return
-    try:
-        channel = bot.get_channel(BACKUP_CHANNEL_ID)
-        if not channel:
-            return
-        payload = key_manager.build_backup_payload()
-        data = json.dumps(payload, indent=2).encode()
-        file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
-        await channel.send(content="Automated backup", file=file)
-    except Exception:
-        pass
-
-    try:
-        await interaction.response.defer(ephemeral=False)
-        # Load latest from file to avoid stale memory
-        stats: dict[str, int] = {}
+    # Build payload once
+    payload = key_manager.build_backup_payload()
+    data_bytes = json.dumps(payload, indent=2).encode()
+    filename = f"backup_{int(time.time())}.json"
+    # Send to channel if configured
+    if BACKUP_CHANNEL_ID > 0:
         try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
-                    raw = await f.read()
-                import json as _json
-                stats = _json.loads(raw) or {}
-            else:
-                stats = MESSAGE_STATS
+            channel = bot.get_channel(BACKUP_CHANNEL_ID)
+            if channel:
+                file = discord.File(io.BytesIO(data_bytes), filename=filename)
+                await channel.send(content="Automated backup", file=file)
         except Exception:
-            stats = MESSAGE_STATS
-        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
-        if not top:
-            await interaction.followup.send("No stats yet.")
-            return
-        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
-        rank = 1
-        desc_lines = []
-        for uid, cnt in top:
-            try:
-                user = await bot.fetch_user(int(uid))
-                name = f"{user.name}#{user.discriminator}" if user else uid
-            except Exception:
-                name = uid
-            desc_lines.append(f"**{rank}.** {name} — {cnt}")
-            rank += 1
-        em.description = "\n".join(desc_lines)
-        await interaction.followup.send(embed=em)
-    except Exception as e:
-        await interaction.followup.send(f"Error: {e}")
+            pass
+    # Send to webhook if configured
+    if BACKUP_WEBHOOK_URL:
+        try:
+            files = {
+                'file': (filename, data_bytes, 'application/json')
+            }
+            data = {
+                'content': 'Automated backup'
+            }
+            requests.post(BACKUP_WEBHOOK_URL, data=data, files=files, timeout=10)
+        except Exception:
+            pass
 
 
 @bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
