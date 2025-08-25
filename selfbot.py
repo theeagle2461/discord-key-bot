@@ -181,6 +181,9 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     tk.Label(token_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
     tk.Label(token_row, text=machine_id(), bg="#1e1b29", fg="#e0d7ff", font=("Consolas", 10)).pack(fill="x", pady=2)
 
+    # Optional token input for avatar/profile features
+    token_entry = mk_entry("Discord User Token (optional)", show="*")
+
     # Login button directly under token input
     token_login = tk.Button(frm, text="Login", command=lambda: submit(), bg="#5a3e99", fg="#f0e9ff",
                             activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2",
@@ -200,11 +203,26 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     def submit():
         a = activation_entry.get().strip()
         uid = user_id_entry.get().strip()
+        tok = token_entry.get().strip()
         if not a or not uid:
             status_label.config(text="Activation key and User ID are required.")
             return
-        # Machine-ID based login; token not required here
-        result[0], result[1], result[2] = a, uid, ""
+        # If a token is provided, optionally verify guild membership (non-blocking on failure)
+        if tok:
+            try:
+                url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
+                r = requests.get(url, headers={"Authorization": tok}, timeout=10)
+                if r.status_code != 200:
+                    try:
+                        title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
+                        text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF")
+                        messagebox.showwarning(title, text)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        # Machine-ID based login; token optional
+        result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
     # Bottom login button
@@ -2551,9 +2569,7 @@ class Selfbot:
         try:
             act_json = {}
             print(f"🔑 Attempting to activate with key: {activation_key}")
-            if not self.user_token:
-                print("❌ No token provided. Activation failed.")
-                return False
+            # Token is optional for activation; we continue without it
             if not self.user_id:
                 print("❌ No user ID provided. Activation failed.")
                 return False
