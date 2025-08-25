@@ -1640,23 +1640,24 @@ class DiscordBotGUI:
         try:
             if getattr(self, "_welcome_overlay", None) is not None:
                 return
-            self._welcome_overlay = tk.Frame(self.root, bg="#2c2750")
+            # Make outside color the same as inside of the box
+            self._welcome_overlay = tk.Frame(self.root, bg="#0b1020")
             self._welcome_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
-            self._welcome_overlay.configure(bg="#2c2750")
+            self._welcome_overlay.configure(bg="#0b1020")
+            # Container for the main (big) box
             self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
-            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
+            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center")
+            # Single canvas representing the big box (no inner/smaller box)
             try:
-                self.apply_glow(self._welcome_panel, thickness=2)
-            except Exception:
-                pass
-            # Canvas for outline animation (smaller box)
-            try:
-                self._welcome_canvas = tk.Canvas(self._welcome_panel, width=420, height=140, bg="#0b1020", highlightthickness=0)
+                self._welcome_canvas = tk.Canvas(self._welcome_panel, width=540, height=160, bg="#0b1020", highlightthickness=0)
                 self._welcome_canvas.pack(padx=18, pady=(18, 8))
+                # Glow on the main canvas (big box)
+                self.apply_glow(self._welcome_canvas, thickness=3)
             except Exception:
                 self._welcome_canvas = None
+            # Terminal text (initially empty; we will set after outline builds)
             self._welcome_term = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
             self._welcome_term.pack(padx=24, pady=10)
         except Exception:
@@ -1666,19 +1667,19 @@ class DiscordBotGUI:
         try:
             self._ensure_terminal_overlay()
             term = self._welcome_term
-            # Draw animated outline on the canvas
+            # Draw animated outline on the big canvas (no inner small box)
             try:
                 c = getattr(self, "_welcome_canvas", None)
                 if c is not None:
-                    c.delete("all")
-                    w = int(c.winfo_reqwidth()) or 420
-                    h = int(c.winfo_reqheight()) or 140
+                    c.update_idletasks()
+                    w = int(c.winfo_width() or 540)
+                    h = int(c.winfo_height() or 160)
                     pad = 8
                     x1, y1 = pad, pad
                     x2, y2 = w - pad, h - pad
                     color = "#7d5fff"
                     width = 3
-                    # Create four line objects with zero length
+                    # Four line objects start as zero-length
                     top = c.create_line(x1, y1, x1, y1, fill=color, width=width)
                     right = c.create_line(x2, y1, x2, y1, fill=color, width=width)
                     bottom = c.create_line(x2, y2, x2, y2, fill=color, width=width)
@@ -1688,18 +1689,18 @@ class DiscordBotGUI:
                     def animate(step=0):
                         try:
                             f = step / float(steps)
-                            # top grows left -> right
+                            # top grows L->R
                             tx = x1 + int((x2 - x1) * min(1.0, f))
                             c.coords(top, x1, y1, tx, y1)
-                            # right grows top -> bottom once top completes ~25%
+                            # right grows T->B after 25%
                             rf = max(0.0, f - 0.25) / 0.75
                             ry = y1 + int((y2 - y1) * max(0.0, min(1.0, rf)))
                             c.coords(right, x2, y1, x2, ry)
-                            # bottom grows right -> left once right completes ~25%
+                            # bottom grows R->L after 50%
                             bf = max(0.0, f - 0.5) / 0.5
                             bx = x2 - int((x2 - x1) * max(0.0, min(1.0, bf)))
                             c.coords(bottom, x2, y2, bx, y2)
-                            # left grows bottom -> top once bottom completes ~50%
+                            # left grows B->T after 75%
                             lf = max(0.0, f - 0.75) / 0.25
                             ly = y2 - int((y2 - y1) * max(0.0, min(1.0, lf)))
                             c.coords(left, x1, y2, x1, ly)
@@ -1710,7 +1711,8 @@ class DiscordBotGUI:
                                     term.config(text="> awaiting session ...")
                                 except Exception:
                                     pass
-                                self.root.after(600, start_typing)
+                                # Wait 2 seconds before the rest
+                                self.root.after(2000, start_typing)
                         except Exception:
                             pass
                     def start_typing():
@@ -1725,9 +1727,9 @@ class DiscordBotGUI:
                             pass
                     animate(0)
                 else:
-                    # Fallback: no canvas, show text directly
+                    # Fallback
                     term.config(text="> awaiting session ...")
-                    self.root.after(600, lambda: self._type_lines(term, ["> initializing KS terminal ...", "> loading KS Bot ...", f"> Welcome, {username}"]))
+                    self.root.after(2000, lambda: self._type_lines(term, ["> initializing KS terminal ...", "> loading KS Bot ...", f"> Welcome, {username}"]))
             except Exception:
                 pass
             def _finish():
