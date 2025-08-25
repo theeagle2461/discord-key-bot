@@ -794,6 +794,7 @@ def normalize_key(raw: str | None) -> str:
 
 @bot.event
 async def on_ready():
+    global BACKUP_CHANNEL_ID
     print(f'✅ {bot.user} has connected to Discord!')
     print(f'🆔 Bot ID: {bot.user.id}')
     print(f'🌐 Connected to {len(bot.guilds)} guild(s)')
@@ -846,8 +847,9 @@ async def on_ready():
     if AUTO_RESTORE_ON_START:
         restored = False
         # If no channel is configured, try to derive from webhook URL
-        global BACKUP_CHANNEL_ID
-        if BACKUP_CHANNEL_ID <= 0 and BACKUP_WEBHOOK_URL:
+        # Use a local variable first, then assign to global to avoid early global usage
+        derived_backup_channel_id = BACKUP_CHANNEL_ID
+        if derived_backup_channel_id <= 0 and BACKUP_WEBHOOK_URL:
             try:
                 m = re.search(r"/webhooks/(\d+)/", BACKUP_WEBHOOK_URL)
                 if m:
@@ -856,15 +858,15 @@ async def on_ready():
                         wh = await bot.fetch_webhook(wh_id)
                         ch_id = getattr(wh, 'channel_id', None)
                         if ch_id:
-                            BACKUP_CHANNEL_ID = int(ch_id)
+                            derived_backup_channel_id = int(ch_id)
                     except Exception:
                         pass
             except Exception:
                 pass
         # Try channel history restore
-        if BACKUP_CHANNEL_ID > 0:
+        if derived_backup_channel_id > 0:
             try:
-                channel = bot.get_channel(BACKUP_CHANNEL_ID)
+                channel = bot.get_channel(derived_backup_channel_id)
                 if channel:
                     async for msg in channel.history(limit=50):
                         if msg.attachments:
@@ -883,6 +885,12 @@ async def on_ready():
                 pass
             except Exception:
                 pass
+        # If we derived a valid channel id, persist to global after usage
+        try:
+            if derived_backup_channel_id > 0:
+                BACKUP_CHANNEL_ID = derived_backup_channel_id
+        except Exception:
+            pass
         # Fallback: restore from latest local backup snapshot
         if not restored:
             try:
@@ -938,7 +946,7 @@ async def check_permissions(interaction) -> bool:
 
     # Commands that everyone can use
     public_commands = {
-        "help", "activate", "keys", "info", "status", "activekeys", "expiredkeys",
+        "help", "activate", "keys", "info", "status", "activekeys", "expiredkeys", "leaderboard",
         "sync", "synccommands"
     }
     cmd_name = None
@@ -3449,6 +3457,46 @@ async def listcommands(interaction: discord.Interaction):
         cmds = bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))
         names = [c.name for c in cmds]
         await interaction.followup.send("\n".join(names) or "(no commands)")
+    except Exception as e:
+        if interaction.response.is_done():
+            await interaction.followup.send(f"Error: {e}")
+        else:
+            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="leaderboard", description="Show the top 10 users by selfbot messages")
+async def leaderboard(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer(ephemeral=False)
+        # Load latest stats from file to avoid stale memory
+        stats: dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                import json as _json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await interaction.followup.send("No stats yet.")
+            return
+        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        rank = 1
+        desc_lines = []
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        await interaction.followup.send(embed=em)
     except Exception as e:
         if interaction.response.is_done():
             await interaction.followup.send(f"Error: {e}")
