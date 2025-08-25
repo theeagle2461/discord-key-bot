@@ -1653,13 +1653,11 @@ class DiscordBotGUI:
             try:
                 self._welcome_canvas = tk.Canvas(self._welcome_panel, width=540, height=160, bg="#0b1020", highlightthickness=0)
                 self._welcome_canvas.pack(padx=18, pady=(18, 8))
-                # Glow on the main canvas (big box)
-                self.apply_glow(self._welcome_canvas, thickness=3)
+                # No outer glow/border on the main canvas per request
             except Exception:
                 self._welcome_canvas = None
-            # Terminal text (initially empty; we will set after outline builds)
-            self._welcome_term = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
-            self._welcome_term.pack(padx=24, pady=10)
+            # We will draw text directly inside the canvas after the box is created
+            self._welcome_term = None
         except Exception:
             pass
 
@@ -1708,7 +1706,11 @@ class DiscordBotGUI:
                                 self.root.after(delay_ms, lambda: animate(step + 1))
                             else:
                                 try:
-                                    term.config(text="> awaiting session ...")
+                                    # Place 'awaiting session ...' centered inside the box
+                                    c.delete('text')
+                                    cx = (x1 + x2) // 2
+                                    cy = (y1 + y2) // 2
+                                    c.create_text(cx, cy, text="> awaiting session ...", fill="#9ab0ff", font=("Consolas", 13), tags=('text',))
                                 except Exception:
                                     pass
                                 # Wait 2 seconds before the rest
@@ -1727,9 +1729,10 @@ class DiscordBotGUI:
                             pass
                     animate(0)
                 else:
-                    # Fallback
-                    term.config(text="> awaiting session ...")
-                    self.root.after(2000, lambda: self._type_lines(term, ["> initializing KS terminal ...", "> loading KS Bot ...", f"> Welcome, {username}"]))
+                    # Fallback: draw text using a temporary label if canvas missing
+                    tmp = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
+                    tmp.pack(pady=(4, 2))
+                    self.root.after(2000, lambda: self._type_lines(tmp, ["> initializing KS terminal ...", "> loading KS Bot ...", f"> Welcome, {username}"]))
             except Exception:
                 pass
             def _finish():
