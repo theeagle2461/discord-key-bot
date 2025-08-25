@@ -1640,19 +1640,25 @@ class DiscordBotGUI:
         try:
             if getattr(self, "_welcome_overlay", None) is not None:
                 return
-            self._welcome_overlay = tk.Frame(self.root, bg="#000000")
+            self._welcome_overlay = tk.Frame(self.root, bg="#2c2750")
             self._welcome_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
-            self._welcome_overlay.configure(bg="#000000")
+            self._welcome_overlay.configure(bg="#2c2750")
             self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
             self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
             try:
                 self.apply_glow(self._welcome_panel, thickness=2)
             except Exception:
                 pass
+            # Canvas for outline animation (smaller box)
+            try:
+                self._welcome_canvas = tk.Canvas(self._welcome_panel, width=420, height=140, bg="#0b1020", highlightthickness=0)
+                self._welcome_canvas.pack(padx=18, pady=(18, 8))
+            except Exception:
+                self._welcome_canvas = None
             self._welcome_term = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
-            self._welcome_term.pack(padx=24, pady=18)
+            self._welcome_term.pack(padx=24, pady=10)
         except Exception:
             pass
 
@@ -1660,42 +1666,70 @@ class DiscordBotGUI:
         try:
             self._ensure_terminal_overlay()
             term = self._welcome_term
-            # Build a purple-glow box from nothing
+            # Draw animated outline on the canvas
             try:
-                cw = int(self.root.winfo_width() or 900)
-                target_w = max(360, int(cw * 0.6))
-                target_h = 180
-                self._welcome_panel.place_configure(relx=0.5, rely=0.45, anchor="center")
-                self._welcome_panel.configure(bg="#2c2750")
-                try:
-                    self.apply_glow(self._welcome_panel, thickness=3)
-                except Exception:
-                    pass
-                steps = 28
-                for i in range(1, steps + 1):
-                    w = int(target_w * i / steps)
-                    h = int(target_h * i / steps)
-                    self._welcome_panel.place_configure(width=w, height=h)
-                    self.root.update_idletasks()
-                    self.root.after(16)
+                c = getattr(self, "_welcome_canvas", None)
+                if c is not None:
+                    c.delete("all")
+                    w = int(c.winfo_reqwidth()) or 420
+                    h = int(c.winfo_reqheight()) or 140
+                    pad = 8
+                    x1, y1 = pad, pad
+                    x2, y2 = w - pad, h - pad
+                    color = "#7d5fff"
+                    width = 3
+                    # Create four line objects with zero length
+                    top = c.create_line(x1, y1, x1, y1, fill=color, width=width)
+                    right = c.create_line(x2, y1, x2, y1, fill=color, width=width)
+                    bottom = c.create_line(x2, y2, x2, y2, fill=color, width=width)
+                    left = c.create_line(x1, y2, x1, y2, fill=color, width=width)
+                    steps = 30
+                    delay_ms = 16
+                    def animate(step=0):
+                        try:
+                            f = step / float(steps)
+                            # top grows left -> right
+                            tx = x1 + int((x2 - x1) * min(1.0, f))
+                            c.coords(top, x1, y1, tx, y1)
+                            # right grows top -> bottom once top completes ~25%
+                            rf = max(0.0, f - 0.25) / 0.75
+                            ry = y1 + int((y2 - y1) * max(0.0, min(1.0, rf)))
+                            c.coords(right, x2, y1, x2, ry)
+                            # bottom grows right -> left once right completes ~25%
+                            bf = max(0.0, f - 0.5) / 0.5
+                            bx = x2 - int((x2 - x1) * max(0.0, min(1.0, bf)))
+                            c.coords(bottom, x2, y2, bx, y2)
+                            # left grows bottom -> top once bottom completes ~50%
+                            lf = max(0.0, f - 0.75) / 0.25
+                            ly = y2 - int((y2 - y1) * max(0.0, min(1.0, lf)))
+                            c.coords(left, x1, y2, x1, ly)
+                            if step < steps:
+                                self.root.after(delay_ms, lambda: animate(step + 1))
+                            else:
+                                try:
+                                    term.config(text="> awaiting session ...")
+                                except Exception:
+                                    pass
+                                self.root.after(600, start_typing)
+                        except Exception:
+                            pass
+                    def start_typing():
+                        try:
+                            lines = [
+                                "> initializing KS terminal ...",
+                                "> loading KS Bot ...",
+                                f"> Welcome, {username}"
+                            ]
+                            self._type_lines(term, lines)
+                        except Exception:
+                            pass
+                    animate(0)
+                else:
+                    # Fallback: no canvas, show text directly
+                    term.config(text="> awaiting session ...")
+                    self.root.after(600, lambda: self._type_lines(term, ["> initializing KS terminal ...", "> loading KS Bot ...", f"> Welcome, {username}"]))
             except Exception:
                 pass
-            # Show awaiting session, then type the rest
-            try:
-                term.config(text="> awaiting session ...")
-            except Exception:
-                pass
-            def _start_typing():
-                try:
-                    lines = [
-                        "> initializing KS terminal ...",
-                        "> loading KS Bot ...",
-                        f"> Welcome, {username}"
-                    ]
-                    self._type_lines(term, lines)
-                except Exception:
-                    pass
-            self.root.after(600, _start_typing)
             def _finish():
                 try:
                     self._welcome_overlay.destroy()
