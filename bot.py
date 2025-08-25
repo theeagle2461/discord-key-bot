@@ -2411,12 +2411,12 @@ def start_health_check():
 
                 if self.path == '/download/selfbot.py':
                     try:
-                        sb_path = os.path.join(os.getcwd(), 'SelfBot.py')
+                        sb_path = os.path.join(os.getcwd(), 'selfbot.py')
                         with open(sb_path, 'rb') as f:
                             data = f.read()
                         self.send_response(200)
                         self.send_header('Content-Type', 'application/octet-stream')
-                        self.send_header('Content-Disposition', 'attachment; filename="SelfBot.py"')
+                        self.send_header('Content-Disposition', 'attachment; filename="selfbot.py"')
                         self.send_header('Content-Length', str(len(data)))
                         self.end_headers()
                         self.wfile.write(data)
@@ -2424,7 +2424,7 @@ def start_health_check():
                         self.send_response(500)
                         self.send_header('Content-Type', 'text/plain')
                         self.end_headers()
-                        self.wfile.write(f"Failed to read SelfBot.py: {e}".encode())
+                        self.wfile.write(f"Failed to read selfbot.py: {e}".encode())
                     return
 
                 if self.path == '/download/bot.py':
@@ -2617,7 +2617,7 @@ def start_health_check():
                 # Direct download endpoints
                 if self.path.lower() in ('/download/selfbot.py', '/download/selfbot'):
                     try:
-                        file_path = os.path.join('.', 'Selfbot.py')
+                        file_path = os.path.join('.', 'selfbot.py')
                         if not os.path.exists(file_path):
                             self.send_response(404)
                             self.end_headers()
@@ -2625,7 +2625,7 @@ def start_health_check():
                             return
                         self.send_response(200)
                         self.send_header('Content-Type', 'application/octet-stream')
-                        self.send_header('Content-Disposition', 'attachment; filename="Selfbot.py"')
+                        self.send_header('Content-Disposition', 'attachment; filename="selfbot.py"')
                         self.end_headers()
                         with open(file_path, 'rb') as f:
                             self.wfile.write(f.read())

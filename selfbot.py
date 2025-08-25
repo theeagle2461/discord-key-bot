@@ -178,20 +178,11 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
 
     token_row = tk.Frame(frm, bg="#2c2750")
     token_row.pack(fill="x", pady=6)
-    tk.Label(token_row, text="Discord User Token", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-    inner = tk.Frame(token_row, bg="#2c2750")
-    inner.pack(fill="x", pady=2)
-    token_entry = tk.Entry(inner, show="*", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
-    token_entry.pack(side="left", fill="x", expand=True)
+    tk.Label(token_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    tk.Label(token_row, text=machine_id(), bg="#1e1b29", fg="#e0d7ff", font=("Consolas", 10)).pack(fill="x", pady=2)
 
-    def toggle_token():
-        current = token_entry.cget("show")
-        token_entry.config(show="" if current == "*" else "*")
-        btn.config(text="Hide" if current == "*" else "Show")
-
-    btn = tk.Button(inner, text="Show", command=toggle_token, bg="#5a3e99", fg="#f0e9ff",
-                    activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2")
-    btn.pack(side="left", padx=(8, 0))
+    # Discord token (required to fetch profile and run panel)
+    token_entry = mk_entry("Discord User Token", show="*")
 
     # Login button directly under token input
     token_login = tk.Button(frm, text="Login", command=lambda: submit(), bg="#5a3e99", fg="#f0e9ff",
@@ -216,14 +207,14 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
         if not a or not uid or not tok:
             status_label.config(text="All fields are required.")
             return
-        # Verify the user is a member of the Discord guild before proceeding
+        # Require guild membership check using token
         try:
             url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
             r = requests.get(url, headers={"Authorization": tok}, timeout=10)
             if r.status_code != 200:
                 try:
                     title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
-                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\\nJoin here: https://discord.gg/fEeeXAJfbF")
+                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF")
                     messagebox.showerror(title, text)
                 except Exception:
                     pass
@@ -236,6 +227,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
             except Exception:
                 pass
             return
+        # Machine-ID based login; token required
         result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
@@ -377,6 +369,15 @@ class DiscordBotGUI:
         try:
             self._welcome_started = False
             self._ensure_terminal_overlay()
+        except Exception:
+            pass
+
+        # If no initial token is provided, still proceed with a generic welcome
+        try:
+            if not initial_token and not getattr(self, "_welcomed", False):
+                self._welcomed = True
+                username = self._login_user_id or "User"
+                self.root.after(200, lambda u=username: self._show_terminal_welcome(u))
         except Exception:
             pass
 
@@ -1489,7 +1490,30 @@ class DiscordBotGUI:
             "Authorization": self.user_token,
             # Minimal headers; Discord accepts user token for self endpoints
         })
-        return requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        # If token invalidated (401/403), prompt for new token and retry once
+        if resp.status_code in (401, 403):
+            try:
+                new_tok = simpledialog.askstring("Token Required", "Your Discord token is invalid or expired. Enter a new token:")
+                if new_tok:
+                    self.user_token = new_tok.strip()
+                    try:
+                        # Persist into current token selection if exists
+                        if self.selected_token_name:
+                            self.tokens[self.selected_token_name] = self.user_token
+                            self.save_data()
+                    except Exception:
+                        pass
+                    headers["Authorization"] = self.user_token
+                    resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+                    # Refresh UI user info
+                    try:
+                        threading.Thread(target=self.fetch_and_display_user_info, args=(self.user_token,), daemon=True).start()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return resp
 
     def upload_discord_backup(self):
         """Upload tokens.json and channels.json to the configured backup channel as attachments."""
@@ -1625,8 +1649,21 @@ class DiscordBotGUI:
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
             self._welcome_overlay.configure(bg="#000000")
+            # Start with a tiny panel and animate to target size (eDEX-like)
             self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
-            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
+            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.02, relheight=0.02)
+            target = {"relwidth": 0.6, "relheight": 0.2}
+            def _animate_panel(step=0):
+                try:
+                    steps = 16
+                    rw = 0.02 + (target["relwidth"] - 0.02) * (step / steps)
+                    rh = 0.02 + (target["relheight"] - 0.02) * (step / steps)
+                    self._welcome_panel.place_configure(relwidth=rw, relheight=rh)
+                    if step < steps:
+                        self.root.after(16, lambda: _animate_panel(step + 1))
+                except Exception:
+                    pass
+            _animate_panel()
             try:
                 self.apply_glow(self._welcome_panel, thickness=2)
             except Exception:
