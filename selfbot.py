@@ -1773,9 +1773,15 @@ class DiscordBotGUI:
                     tmp = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
                     tmp.pack(pady=(4, 2))
                     def _after_aw():
-                        # After 0.6s, type remaining lines and then open
-                        self.root.after(600, lambda: self._type_lines(tmp, ["> initializing KS terminal ...", "> starting KS Bot ...", f"> Welcome, {username}"]))
-                        self.root.after(1400, _finish)
+                        # After 0.6s, type remaining lines and then open after computed delay
+                        seq = ["> initializing KS terminal ...", "> starting KS Bot ...", f"> Welcome, {username}"]
+                        self.root.after(600, lambda: self._type_lines(tmp, seq))
+                        init_len = len(seq[0])
+                        start_len = len(seq[1])
+                        welcome_len = len(seq[2])
+                        # typing time: 30ms per char, 150ms between lines, plus 2000ms hold
+                        finish_delay = 600 + (init_len * 30) + 150 + (start_len * 30) + 150 + (welcome_len * 30) + 2000
+                        self.root.after(finish_delay, _finish)
                     self.root.after(1000, lambda: self._type_lines(tmp, ["> awaiting session ..."]))
                     self.root.after(1000 + int(len("> awaiting session ...") * 30) + 50, _after_aw)
             except Exception:
@@ -1792,8 +1798,7 @@ class DiscordBotGUI:
                     except Exception:
                         pass
                 self.root.after(1500, _show_main)
-            # Keep overlay slightly longer for readability
-            self.root.after(5200, _finish)
+            # Removed fixed overlay timeout; closing is scheduled after typing completes
         except Exception:
             pass
 
