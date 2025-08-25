@@ -1677,6 +1677,23 @@ class DiscordBotGUI:
         try:
             self._ensure_terminal_overlay()
             term = self._welcome_term
+            if not username:
+                # Fallback: auto-advance without username
+                term.config(text="> initializing KS terminal ...\n> linking session ...\n> Welcome")
+                def _finish2():
+                    try:
+                        self._welcome_overlay.destroy()
+                        self._welcome_overlay = None
+                    except Exception:
+                        pass
+                    def _show_main2():
+                        try:
+                            self.main_frame.place(**self._mf_place_args)
+                        except Exception:
+                            pass
+                    self.root.after(800, _show_main2)
+                self.root.after(1200, _finish2)
+                return
             lines = [
                 "> initializing KS terminal ...",
                 "> linking session ...",
