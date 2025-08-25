@@ -1705,18 +1705,56 @@ class DiscordBotGUI:
                             if step < steps:
                                 self.root.after(delay_ms, lambda: animate(step + 1))
                             else:
-                                # Type 'awaiting session ...' on the canvas after 1 second, and do not show other lines
-                                def _type_canvas_text(text: str, idx: int = 0):
+                                # Type 'awaiting session ...' on the canvas after 1 second, then continue after 0.6s with the rest
+                                def _type_canvas_text(text: str, idx: int = 0, on_complete=None):
                                     try:
                                         c.delete('text')
                                         cx = (x1 + x2) // 2
                                         cy = (y1 + y2) // 2
                                         c.create_text(cx, cy, text=text[:idx], fill="#9ab0ff", font=("Consolas", 13), tags=('text',))
                                         if idx < len(text):
-                                            self.root.after(30, lambda: _type_canvas_text(text, idx + 1))
+                                            self.root.after(30, lambda: _type_canvas_text(text, idx + 1, on_complete))
+                                        else:
+                                            if on_complete:
+                                                on_complete()
                                     except Exception:
                                         pass
-                                self.root.after(1000, lambda: _type_canvas_text("> awaiting session ..."))
+
+                                def _type_canvas_lines(lines: list[str], li: int = 0, ci: int = 0):
+                                    try:
+                                        # Build current typed text across lines
+                                        typed = []
+                                        for i in range(li):
+                                            typed.append(lines[i])
+                                        typed.append(lines[li][:ci])
+                                        text_block = "\n".join(typed)
+                                        c.delete('text')
+                                        cx = (x1 + x2) // 2
+                                        cy = (y1 + y2) // 2
+                                        c.create_text(cx, cy, text=text_block, fill="#9ab0ff", font=("Consolas", 13), tags=('text',), justify='center')
+                                        if ci < len(lines[li]):
+                                            self.root.after(30, lambda: _type_canvas_lines(lines, li, ci + 1))
+                                        else:
+                                            if li + 1 < len(lines):
+                                                self.root.after(150, lambda: _type_canvas_lines(lines, li + 1, 0))
+                                            else:
+                                                # Open UI shortly after finishing
+                                                try:
+                                                    self.root.after(800, _finish)
+                                                except Exception:
+                                                    pass
+                                    except Exception:
+                                        pass
+
+                                def _after_awaiting():
+                                    # After 0.6s, type the remaining lines
+                                    self.root.after(600, lambda: _type_canvas_lines([
+                                        "> initializing KS terminal ...",
+                                        "> starting KS Bot ...",
+                                        f"> Welcome, {username}"
+                                    ]))
+
+                                self.root.after(1000, lambda: _type_canvas_text("> awaiting session ...", 0, _after_awaiting))
                         except Exception:
                             pass
                     def start_typing():
@@ -1731,11 +1769,15 @@ class DiscordBotGUI:
                             pass
                     animate(0)
                 else:
-                    # Fallback: draw text using a temporary label if canvas missing
+                    # Fallback: use label typing then proceed
                     tmp = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
                     tmp.pack(pady=(4, 2))
-                    # Type only 'awaiting session ...' and stop
+                    def _after_aw():
+                        # After 0.6s, type remaining lines and then open
+                        self.root.after(600, lambda: self._type_lines(tmp, ["> initializing KS terminal ...", "> starting KS Bot ...", f"> Welcome, {username}"]))
+                        self.root.after(1400, _finish)
                     self.root.after(1000, lambda: self._type_lines(tmp, ["> awaiting session ..."]))
+                    self.root.after(1000 + int(len("> awaiting session ...") * 30) + 50, _after_aw)
             except Exception:
                 pass
             def _finish():
