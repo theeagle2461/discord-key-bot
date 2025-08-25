@@ -1705,18 +1705,18 @@ class DiscordBotGUI:
                             if step < steps:
                                 self.root.after(delay_ms, lambda: animate(step + 1))
                             else:
-                                def _show_awaiting():
+                                # Type 'awaiting session ...' on the canvas after 1 second, and do not show other lines
+                                def _type_canvas_text(text: str, idx: int = 0):
                                     try:
                                         c.delete('text')
                                         cx = (x1 + x2) // 2
                                         cy = (y1 + y2) // 2
-                                        c.create_text(cx, cy, text="> awaiting session ...", fill="#9ab0ff", font=("Consolas", 13), tags=('text',))
+                                        c.create_text(cx, cy, text=text[:idx], fill="#9ab0ff", font=("Consolas", 13), tags=('text',))
+                                        if idx < len(text):
+                                            self.root.after(30, lambda: _type_canvas_text(text, idx + 1))
                                     except Exception:
                                         pass
-                                    # After 1s, start typing the remaining lines
-                                    self.root.after(1000, start_typing)
-                                # Wait 1 second before showing 'awaiting session ...'
-                                self.root.after(1000, _show_awaiting)
+                                self.root.after(1000, lambda: _type_canvas_text("> awaiting session ..."))
                         except Exception:
                             pass
                     def start_typing():
@@ -1734,13 +1734,8 @@ class DiscordBotGUI:
                     # Fallback: draw text using a temporary label if canvas missing
                     tmp = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
                     tmp.pack(pady=(4, 2))
-                    def _fa():
-                        try:
-                            tmp.config(text="> awaiting session ...")
-                        except Exception:
-                            pass
-                        self.root.after(1000, lambda: self._type_lines(tmp, ["> initializing KS terminal ...", "> starting KS Bot ...", f"> Welcome, {username}"]))
-                    self.root.after(1000, _fa)
+                    # Type only 'awaiting session ...' and stop
+                    self.root.after(1000, lambda: self._type_lines(tmp, ["> awaiting session ..."]))
             except Exception:
                 pass
             def _finish():
