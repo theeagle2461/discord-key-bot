@@ -331,21 +331,10 @@ class DiscordBotGUI:
         self.rotator_index: int = 0
         self.rotator_enabled_var = tk.BooleanVar(value=False)
 
-        # Setup Background Canvas with Gradient + Vignette + Particles
+        # Setup Background Canvas
         self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#1e1b29")
         self.bg_canvas.pack(fill="both", expand=True)
-
-        self.gradient_image = self.create_gradient_image(900, 700)
-        self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
-        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
-        self.create_tint_overlay(900, 700)
-        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
-
-        self.particles = []
-        self.create_particles(16)
-        self.animate_particles()
-        self.root.bind("<Configure>", self._on_root_resize)
-
+        # Plain background (no gradient/vignette/particles)
         # Overlay Frame for widgets (transparent background)
         self.main_frame = tk.Frame(self.root, bg="#1e1b29")
         # Defer placing main UI until welcome terminal finishes
@@ -1061,26 +1050,28 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                (self.main_frame, "KS BOT"),
+                # Removed header over main frame to avoid 'KS BOT' above channels
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
-                try:
-                    if pane is getattr(self, 'log_panel', None) and hasattr(self, 'log_text'):
-                        bar.pack(fill="x", side="top", before=self.log_text)
-                    else:
-                        bar.pack(fill="x", side="top")
-                except Exception:
-                    bar.pack(fill="x", side="top")
                 try:
                     self.apply_glow(bar, thickness=2)
                 except Exception:
                     pass
-                tk.Label(bar, text=title, bg="#0b1020", fg="#b799ff", font=("Consolas", 10, "bold")).pack(side="left", padx=8)
-                # Status LEDs
-                for color in ("#22c55e", "#f59e0b", "#ef4444"):
-                    c = tk.Canvas(bar, width=10, height=10, bg="#0b1020", highlightthickness=0)
-                    c.pack(side="right", padx=3)
-                    c.create_oval(2, 2, 8, 8, fill=color, outline=color)
+                left = tk.Frame(bar, bg="#0b1020")
+                center = tk.Frame(bar, bg="#0b1020")
+                right = tk.Frame(bar, bg="#0b1020")
+                left.pack(side="left", padx=10)
+                center.pack(side="left", expand=True)
+                right.pack(side="right", padx=10)
+                self._edex_title = tk.Label(left, text=title, bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+                self._edex_title.pack(side="left")
+                self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
+                self._edex_clock.pack()
+                try:
+                    self.apply_glow(self._edex_clock, thickness=1)
+                except Exception:
+                    pass
+                bar.pack(fill="x")
         except Exception:
             pass
 
@@ -1256,6 +1247,7 @@ class DiscordBotGUI:
             pass
         # Kick off heartbeat/poller for active users
         try:
+            self._last_active_count = 0
             self._start_active_users_services()
         except Exception:
             pass
@@ -1806,11 +1798,17 @@ class DiscordBotGUI:
         # Assign rotator indices per token to avoid same content simultaneously
         self._per_token_rotator_offsets = {name: idx for idx, name in enumerate(selected_token_names)}
 
-        for name in selected_token_names:
+        # Start each token sender with optional inter-token delay
+        for idx, name in enumerate(selected_token_names):
             tok = self.tokens.get(name)
             threading.Thread(target=self.send_messages_loop,
                              args=(tok, self.selected_channel_names, message, delay, loop_count, name),
                              daemon=True).start()
+            try:
+                if idx < len(selected_token_names) - 1 and getattr(self, 'token_switch_delay', 0) > 0:
+                    time.sleep(float(self.token_switch_delay))
+            except Exception:
+                pass
         self.log(f"▶️ Started sending with {len(selected_token_names)} token(s).")
 
     def send_messages_loop(self, token, channel_names, message, delay, loop_count, token_name=None):
