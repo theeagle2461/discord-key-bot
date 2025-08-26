@@ -3320,39 +3320,7 @@ async def periodic_backup_task():
     except Exception:
         pass
 
-    try:
-        await interaction.response.defer(ephemeral=False)
-        # Load latest from file to avoid stale memory
-        stats: dict[str, int] = {}
-        try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
-                    raw = await f.read()
-                import json as _json
-                stats = _json.loads(raw) or {}
-            else:
-                stats = MESSAGE_STATS
-        except Exception:
-            stats = MESSAGE_STATS
-        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
-        if not top:
-            await interaction.followup.send("No stats yet.")
-            return
-        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
-        rank = 1
-        desc_lines = []
-        for uid, cnt in top:
-            try:
-                user = await bot.fetch_user(int(uid))
-                name = f"{user.name}#{user.discriminator}" if user else uid
-            except Exception:
-                name = uid
-            desc_lines.append(f"**{rank}.** {name} — {cnt}")
-            rank += 1
-        em.description = "\n".join(desc_lines)
-        await interaction.followup.send(embed=em)
-    except Exception as e:
-        await interaction.followup.send(f"Error: {e}")
+
 
 
 @bot.tree.command(name="autobuy", description="Create a crypto invoice to buy a key")
@@ -3653,7 +3621,7 @@ async def upload_backup_snapshot(payload: dict) -> None:
     except Exception:
         pass
 
-@bot.tree.command(name="leaderboard", description="Show top message senders for the selfbot UI")
+@bot.tree.command(name="leaderboard", description="Show top message senders for the selfbot UI", guild=discord.Object(id=GUILD_ID))
 async def leaderboard(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=False)
