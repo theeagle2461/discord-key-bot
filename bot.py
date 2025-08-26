@@ -44,8 +44,8 @@ OWNER_ROLE_ID = int(os.getenv('OWNER_ROLE_ID', '1402650246538072094') or 0)
 CHATSEND_ROLE_ID = int(os.getenv('CHATSEND_ROLE_ID', '1406339861593591900') or 0)
 ADMIN_ROLE_ID = 1402650352083402822  # Role that can manage keys
 # Backup to Discord channel and auto-restore settings
-BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '0') or 0)
-AUTO_RESTORE_ON_START = (os.getenv('AUTO_RESTORE_ON_START', 'false').lower() in ('1','true','yes'))
+BACKUP_CHANNEL_ID = int(os.getenv('BACKUP_CHANNEL_ID', '1406849195591208960') or 1406849195591208960)
+AUTO_RESTORE_ON_START = (os.getenv('AUTO_RESTORE_ON_START', 'true').lower() in ('1','true','yes'))
 try:
 	BACKUP_INTERVAL_MIN = int(os.getenv('BACKUP_INTERVAL_MIN', '60') or 60)
 except Exception:
@@ -63,6 +63,8 @@ def special_admin_only():
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
 PURCHASE_LOG_WEBHOOK = os.getenv('PURCHASE_LOG_WEBHOOK','')
+# Add backup webhook override for automated snapshots
+BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/webhooks/1409710419173572629/9NaANTEYq6ve1ZpF7SU7gWx89jPO9nADfmPR_4WkIfrOGUZuOa4ECF8dZ2LNgrylKpfd')
 # NOWPayments credentials
 NWP_API_KEY = os.getenv('NWP_API_KEY','')
 NWP_IPN_SECRET = os.getenv('NWP_IPN_SECRET','')
@@ -251,6 +253,15 @@ class KeyManager:
                 }, f, indent=2)
         except Exception as e:
             print(f"Error saving data: {e}")
+        # After saving locally, try to enqueue an upload to Discord
+        try:
+            payload = self.build_backup_payload()
+            # If we're inside the bot loop, schedule the async upload
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.run_coroutine_threadsafe(upload_backup_snapshot(payload), loop)
+        except Exception:
+            pass
     
     def generate_key(self, user_id: int, channel_id: Optional[int] = None, duration_days: int = 30) -> str:
         """Generate a new key for general use"""
@@ -3301,16 +3312,11 @@ async def reconcile_roles_task():
 @tasks.loop(minutes=BACKUP_INTERVAL_MIN)
 async def periodic_backup_task():
     """Periodically upload a JSON backup to the configured Discord channel."""
-    if BACKUP_CHANNEL_ID <= 0:
+    if BACKUP_CHANNEL_ID <= 0 and not BACKUP_WEBHOOK_URL:
         return
     try:
-        channel = bot.get_channel(BACKUP_CHANNEL_ID)
-        if not channel:
-            return
         payload = key_manager.build_backup_payload()
-        data = json.dumps(payload, indent=2).encode()
-        file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
-        await channel.send(content="Automated backup", file=file)
+        await upload_backup_snapshot(payload)
     except Exception:
         pass
 
@@ -3624,3 +3630,25 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
         await ctx.reply(f"Error: {e}")
 
         return
+
+async def upload_backup_snapshot(payload: dict) -> None:
+    """Upload a JSON snapshot to the configured Discord backup channel and webhook."""
+    # Send to channel as file attachment, if configured
+    try:
+        if BACKUP_CHANNEL_ID > 0:
+            channel = bot.get_channel(BACKUP_CHANNEL_ID)
+            if channel:
+                data = json.dumps(payload, indent=2).encode()
+                file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+                await channel.send(content="Backup snapshot", file=file)
+    except Exception:
+        pass
+    # Send to webhook as JSON payload, if provided
+    try:
+        url = (BACKUP_WEBHOOK_URL or '').strip()
+        if url:
+            data = json.dumps(payload, indent=2).encode()
+            files = {"file": (f"backup_{int(time.time())}.json", io.BytesIO(data), "application/json")}
+            requests.post(url, files=files, timeout=15)
+    except Exception:
+        pass
