@@ -3687,53 +3687,71 @@ async def upload_backup_snapshot(payload: dict) -> None:
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="swapkey", description="Swap a key from one user to another (Special Admin Only)")
- async def swap_key(interaction: discord.Interaction, from_user: discord.Member, to_user: discord.Member, key: str):
- await interaction.response.defer (ephemeral=True)
- k = key.strip()
- info = key_manager.get_key_info(k)
- if not info:
- await interaction.followup.send("❌ Key not found.", ephemeral=True); return
- if int(info.get('user_id', 0) or 0)! = int(from_user.id):
- await interaction.followup.send("❌ Key is not owned by from_user.", ephemeral=True); return
- If not info.get('is_active', False):
- await interaction.followup.send("❌ Key is not active.", ephemeral=True); return
- now = int(time.time())
- exp = int(info.get('expiration_time') or 0)
- if exp and exp <= now:
- await interaction.followup.send("❌ Key is expired.", ephemeral=True); return
- 
- # Transfer ownership and clear binding
- key_manager.keys[k]['user_id'] = int(to_user.id
- key_manager.keys[k]['activated_by'] = int(to_user.id)
- key_manager.keys[k]['machine_id'] = None
- key_manager.keys[k]['activation_time'] = None
- key_manager.save_data()
- try:
- key_manager.add_log('swapkey', k, user_id=int(to_user.id), details={'from_user': int(from_user.id)})
- Except Exception:
- pass
- 
- # Immediate JSON backup upload
- try:
- await upload_backup_snapshot(key_manager.build_backup_payload())
- Except Exception:
- pass
- 
- # Roles
- try:
- guild = interaction.guild
- role = guild.get_role(ROLE_ID) if guild else None
- if guild and role:
- oldm = guild.get_member(int(from_user.id))
- newm = build.get_member(int(to_user.id))
- if oldm and role in oldm.roles:
- await oldm.remove_roles(role, reason="Key swapped")
- if newm and role not in newm.roles:
- await newm.add_roles(role, reason="Key received via swap")
- Except Exception:
- pass
- 
- # Remaining time summary
- rem = max(0, (int(info.get('expiration_time') or 0) - int(time.time())))
- d = rem // 86400; h = (rem %) 86400)//3600; m = (rem % 3600)//60
- await interaction.followup.send(f"✅ Swapped `{k}` to {to_user.mention}.  Remaining: {d}d {h}h {m}m.  New user must activate to bind.", ephemeral=True
+async def swap_key(interaction: discord.Interaction, from_user: discord.Member, to_user: discord.Member, key: str):
+	# Special admin only
+	if interaction.user.id not in SPECIAL_ADMIN_IDS:
+		await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+		return
+	if not await check_permissions(interaction):
+		return
+	try:
+		k = key.strip()
+		info = key_manager.get_key_info(k)
+		if not info:
+			await interaction.response.send_message("❌ Key not found.", ephemeral=True)
+			return
+		if int(info.get('user_id', 0) or 0) != int(from_user.id):
+			await interaction.response.send_message("❌ This key is not owned by the from_user.", ephemeral=True)
+			return
+		if not info.get('is_active', False):
+			await interaction.response.send_message("❌ Key is not active.", ephemeral=True)
+			return
+		now = int(time.time())
+		exp = int(info.get('expiration_time') or 0)
+		if exp and exp <= now:
+			await interaction.response.send_message("❌ Key is expired.", ephemeral=True)
+			return
+		# Transfer ownership and reset binding so new user can activate/bind
+		key_manager.keys[k]['user_id'] = int(to_user.id)
+		key_manager.keys[k]['activated_by'] = int(to_user.id)
+		key_manager.keys[k]['machine_id'] = None
+		key_manager.keys[k]['activation_time'] = None
+		# Persist and log
+		key_manager.save_data()
+		try:
+			key_manager.add_log('swapkey', k, user_id=int(to_user.id), details={'from_user': int(from_user.id)})
+		except Exception:
+			pass
+		# Upload immediate backup
+		try:
+			payload = key_manager.build_backup_payload()
+			await upload_backup_snapshot(payload)
+		except Exception:
+			pass
+		# Adjust roles: remove from old user, add to new user
+		try:
+			guild = interaction.guild
+			role = guild.get_role(ROLE_ID) if guild else None
+			if guild and role:
+				oldm = guild.get_member(int(from_user.id))
+				newm = guild.get_member(int(to_user.id))
+				if oldm and role in oldm.roles:
+					await oldm.remove_roles(role, reason="Key swapped to another user")
+				if newm and role not in newm.roles:
+					await newm.add_roles(role, reason="Key received via swap")
+		except Exception:
+			pass
+		# Report remaining time
+		rem = 0
+		try:
+			exp = int(info.get('expiration_time') or 0)
+			rem = max(0, exp - int(time.time()))
+		except Exception:
+			rem = 0
+		d = rem // 86400; h = (rem % 86400)//3600; m = (rem % 3600)//60
+		await interaction.response.send_message(f"✅ Swapped key `{k}` to {to_user.mention}. Remaining: {d}d {h}h {m}m. The new user must activate to bind a machine.")
+	except Exception as e:
+		await interaction.response.send_message(f"❌ Swap failed: {e}", ephemeral=True)
+
+
+
