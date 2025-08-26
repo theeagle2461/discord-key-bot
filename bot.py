@@ -3621,7 +3621,8 @@ async def upload_backup_snapshot(payload: dict) -> None:
     except Exception:
         pass
 
-@bot.tree.command(name="leaderboard", description="Show top message senders for the selfbot UI", guild=discord.Object(id=GUILD_ID))
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="leaderboard", description="Show top message senders for the selfbot UI")
 async def leaderboard(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=False)
