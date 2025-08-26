@@ -2782,13 +2782,11 @@ def start_health_check():
                         user_id_val = None
                     resp = {}
                     status_code = 200
-                    if not key or not user_id_val:
-                        resp = {'success': False, 'error': 'missing key or user_id'}
+                    if not key or not user_id_val or not machine:
+                        resp = {'success': False, 'error': 'missing key, user_id, or machine_id'}
                         status_code = 400
                     else:
                         try:
-                            if not machine:
-                                machine = str(user_id_val)
                             result = key_manager.activate_key(key, str(machine), int(user_id_val))
                             resp = result
                             if not result.get('success'):
