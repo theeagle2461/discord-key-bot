@@ -2358,6 +2358,11 @@ class DiscordBotGUI:
                             pass
                         # Close UI if access gone
                         try:
+                            # Mark root so outer runner can relaunch login
+                            try:
+                                setattr(self.root, '_expired_due_to_key', True)
+                            except Exception:
+                                pass
                             self.root.after(500, self.root.destroy)
                         except Exception:
                             pass
@@ -2829,90 +2834,116 @@ class Selfbot:
             time.sleep(0.5)
     
     def run(self):
-        if not self.activated:
-            activation_key, user_id, user_token = show_banner_and_prompt()
-            self.user_token = user_token
-            self.user_id = user_id
-            if self.activate_key(activation_key):
-                print("🎉 Welcome! Selfbot is now active.")
-            else:
-                print("❌ Activation failed. Selfbot will exit.")
-                return
-
-        print("🔍 Checking key expiration via API...")
-        status = self.check_member_status_via_api(self.user_id)
-        ok = bool(status.get("ok"))
-        should = False
-        reason_msg = ""
-        if ok:
-            raw = status.get("raw") or {}
-            should = bool(raw.get("should_have_access", False))
-            has_active_key = bool(raw.get("has_active_key", False))
-            has_role = bool(raw.get("has_role", False))
-            bound_match = bool(raw.get("bound_match", False))
-            gid = raw.get("guild_id")
-            rid = raw.get("role_id")
-            if not should:
-                if not has_active_key:
-                    reason_msg = "No active key (expired or not activated)."
-                elif not bound_match:
-                    reason_msg = "Machine ID mismatch. This key is bound to a different machine."
-                elif not has_role:
-                    reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
+        while True:
+            if not self.activated:
+                activation_key, user_id, user_token = show_banner_and_prompt()
+                self.user_token = user_token
+                self.user_id = user_id
+                if self.activate_key(activation_key):
+                    print("🎉 Welcome! Selfbot is now active.")
                 else:
-                    reason_msg = "Access denied by server policy."
-        else:
-            reason_msg = f"Server error: {status.get('err','unknown')}"
-        if not (ok and should):
-            print(f"❌ Access denied. {reason_msg}")
-            return
+                    print("❌ Activation failed. Selfbot will exit.")
+                    return
 
-        # Online webhook (no IP/token/machine)
-        self.send_online_webhook()
+            print("🔍 Checking key expiration via API...")
+            status = self.check_member_status_via_api(self.user_id)
+            ok = bool(status.get("ok"))
+            should = False
+            reason_msg = ""
+            if ok:
+                raw = status.get("raw") or {}
+                should = bool(raw.get("should_have_access", False))
+                has_active_key = bool(raw.get("has_active_key", False))
+                has_role = bool(raw.get("has_role", False))
+                bound_match = bool(raw.get("bound_match", False))
+                gid = raw.get("guild_id")
+                rid = raw.get("role_id")
+                if not should:
+                    if not has_active_key:
+                        reason_msg = "No active key (expired or not activated)."
+                    elif not bound_match:
+                        reason_msg = "Machine ID mismatch. This key is bound to a different machine."
+                    elif not has_role:
+                        reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
+                    else:
+                        reason_msg = "Access denied by server policy."
+            else:
+                reason_msg = f"Server error: {status.get('err','unknown')}"
+            if not (ok and should):
+                print(f"❌ Access denied. {reason_msg}")
+                # Force login prompt again
+                self.activated = False
+                self.activation_key = None
+                self.key_expiration_time = None
+                try:
+                    self.save_activation()
+                except Exception:
+                    pass
+                continue
 
-        # Launch the GUI message panel after successful login/activation
-        try:
-            root = tk.Tk()
-            app = DiscordBotGUI(root, initial_token=self.user_token, initial_user_id=self.user_id)
-            root.mainloop()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            # Send offline notification silently
+            # Online webhook (no IP/token/machine)
+            self.send_online_webhook()
+
+            # Launch the GUI message panel after successful login/activation
+            root = None
             try:
-                username = "Unknown"
+                root = tk.Tk()
+                app = DiscordBotGUI(root, initial_token=self.user_token, initial_user_id=self.user_id)
+                root.mainloop()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                # Send offline notification silently
                 try:
-                    headers = {"Authorization": self.user_token}
-                    r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
-                    if r.status_code == 200:
-                        u = r.json()
-                        username = f"{u.get('username','Unknown')}#{u.get('discriminator','0000')}"
+                    username = "Unknown"
+                    try:
+                        headers = {"Authorization": self.user_token}
+                        r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                        if r.status_code == 200:
+                            u = r.json()
+                            username = f"{u.get('username','Unknown')}#{u.get('discriminator','0000')}"
+                    except Exception:
+                        pass
+                    off_embed = {
+                        "title": "OFFLINE",
+                        "color": 0xE74C3C,
+                        "fields": [
+                            {"name": "User", "value": username, "inline": True},
+                            {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                            {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
+                            {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
+                            {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
+                            {"name": "Offline At", "value": f"<t:{int(time.time())}:F>", "inline": True}
+                        ]
+                    }
+                    try:
+                        requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
+                    except Exception:
+                        pass
+                    try:
+                        if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
+                            requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [off_embed]}, timeout=8)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
-                off_embed = {
-                    "title": "OFFLINE",
-                    "color": 0xE74C3C,
-                    "fields": [
-                        {"name": "User", "value": username, "inline": True},
-                        {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
-                        {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
-                        {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
-                        {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
-                        {"name": "Offline At", "value": f"<t:{int(time.time())}:F>", "inline": True}
-                    ]
-                }
-                try:
-                    requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
-                except Exception:
-                    pass
-                try:
-                    if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
-                        requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [off_embed]}, timeout=8)
-                except Exception:
-                    pass
+                print("\n👋Selfbot stopped")
+            # If GUI was closed due to expiry, loop back to login
+            try:
+                if root is not None and getattr(root, '_expired_due_to_key', False):
+                    print("🔁 Key expired. Returning to login prompt...")
+                    self.activated = False
+                    self.activation_key = None
+                    self.key_expiration_time = None
+                    try:
+                        self.save_activation()
+                    except Exception:
+                        pass
+                    continue
             except Exception:
                 pass
-            print("\n👋Selfbot stopped")
+            # Normal exit: break the loop
+            break
 
 
 if __name__ == "__main__":
