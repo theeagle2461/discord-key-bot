@@ -178,11 +178,20 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
 
     token_row = tk.Frame(frm, bg="#2c2750")
     token_row.pack(fill="x", pady=6)
-    tk.Label(token_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-    tk.Label(token_row, text=machine_id(), bg="#1e1b29", fg="#e0d7ff", font=("Consolas", 10)).pack(fill="x", pady=2)
+    tk.Label(token_row, text="Discord User Token", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    inner = tk.Frame(token_row, bg="#2c2750")
+    inner.pack(fill="x", pady=2)
+    token_entry = tk.Entry(inner, show="*", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
+    token_entry.pack(side="left", fill="x", expand=True)
 
-    # Discord token (required to fetch profile and run panel)
-    token_entry = mk_entry("Discord User Token", show="*")
+    def toggle_token():
+        current = token_entry.cget("show")
+        token_entry.config(show="" if current == "*" else "*")
+        btn.config(text="Hide" if current == "*" else "Show")
+
+    btn = tk.Button(inner, text="Show", command=toggle_token, bg="#5a3e99", fg="#f0e9ff",
+                    activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2")
+    btn.pack(side="left", padx=(8, 0))
 
     # Login button directly under token input
     token_login = tk.Button(frm, text="Login", command=lambda: submit(), bg="#5a3e99", fg="#f0e9ff",
@@ -207,14 +216,14 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
         if not a or not uid or not tok:
             status_label.config(text="All fields are required.")
             return
-        # Require guild membership check using token
+        # Verify the user is a member of the Discord guild before proceeding
         try:
             url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
             r = requests.get(url, headers={"Authorization": tok}, timeout=10)
             if r.status_code != 200:
                 try:
                     title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
-                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF")
+                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\\nJoin here: https://discord.gg/fEeeXAJfbF")
                     messagebox.showerror(title, text)
                 except Exception:
                     pass
@@ -227,7 +236,6 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
             except Exception:
                 pass
             return
-        # Machine-ID based login; token required
         result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
@@ -270,6 +278,7 @@ class DiscordBotGUI:
     TOKENS_FILE = "tokens.json"
     CHANNELS_FILE = "channels.json"
     STATS_FILE = "message_stats.json"
+    ROTATOR_FILE = "rotator_messages.txt"
 
     def __init__(self, root: tk.Tk, initial_token: str | None = None, initial_user_id: str | None = None):
         self.root = root
@@ -311,20 +320,14 @@ class DiscordBotGUI:
         self.rotator_index: int = 0
         self.rotator_enabled_var = tk.BooleanVar(value=False)
 
-        # Setup Background Canvas with Gradient + Vignette + Particles
-        self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#1e1b29")
+        # Setup Background Canvas (static plain dark purple to reduce lag)
+        self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#120f1f")
         self.bg_canvas.pack(fill="both", expand=True)
-
-        self.gradient_image = self.create_gradient_image(900, 700)
-        self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
-        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
-        self.create_tint_overlay(900, 700)
-        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
-
-        self.particles = []
-        self.create_particles(16)
-        self.animate_particles()
-        self.root.bind("<Configure>", self._on_root_resize)
+        # Disable gradient/vignette/particle animations for performance
+        try:
+            self.root.unbind("<Configure>")
+        except Exception:
+            pass
 
         # Overlay Frame for widgets (transparent background)
         self.main_frame = tk.Frame(self.root, bg="#1e1b29")
@@ -352,6 +355,15 @@ class DiscordBotGUI:
         # Load saved tokens and channels
         self.load_data()
 
+        # Load rotator messages from text file
+        try:
+            if os.path.exists(self.ROTATOR_FILE):
+                with open(self.ROTATOR_FILE, "r", encoding="utf-8") as f:
+                    lines = [ln.strip() for ln in f.readlines()]
+                    self.rotator_messages = [ln for ln in lines if ln]
+        except Exception:
+            pass
+
         # Load message stats
         self.load_stats()
 
@@ -369,15 +381,6 @@ class DiscordBotGUI:
         try:
             self._welcome_started = False
             self._ensure_terminal_overlay()
-        except Exception:
-            pass
-
-        # If no initial token is provided, still proceed with a generic welcome
-        try:
-            if not initial_token and not getattr(self, "_welcomed", False):
-                self._welcomed = True
-                username = self._login_user_id or "User"
-                self.root.after(200, lambda u=username: self._show_terminal_welcome(u))
         except Exception:
             pass
 
@@ -677,6 +680,17 @@ class DiscordBotGUI:
             self.apply_glow(self.rotator_input)
         except Exception:
             pass
+        # Token switch delay control inside rotator
+        rot_delay_row = tk.Frame(rot_left, bg="#1e1b29")
+        rot_delay_row.pack(fill="x", pady=(6, 0))
+        tk.Label(rot_delay_row, text="Token Switch Delay (s):", bg="#1e1b29", fg="#e0d7ff").pack(side="left")
+        self.rotator_token_delay_entry = tk.Entry(rot_delay_row, width=6, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.rotator_token_delay_entry.insert(0, "1")
+        self.rotator_token_delay_entry.pack(side="left", padx=(8,0))
+        try:
+            self.apply_glow(self.rotator_token_delay_entry)
+        except Exception:
+            pass
         # Rotator messages list on the right side of rotator controls, with glowing border
         rot_right = tk.Frame(rot_wrap, bg="#1e1b29")
         rot_right.pack(side="right", fill="both", expand=False, padx=(8, 0))
@@ -749,9 +763,14 @@ class DiscordBotGUI:
         self.reply_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
         self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
+        tk.Label(delays, text="Loop Count (0 = ∞):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
+        self.loop_count_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.loop_count_entry.insert(0, "1")
+        self.loop_count_entry.pack(fill="x", pady=(0, 12), ipady=6)
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
+            self.apply_glow(self.loop_count_entry)
         except Exception:
             pass
 
@@ -760,9 +779,9 @@ class DiscordBotGUI:
             credit = tk.Frame(delays, bg="#2c2750")
             credit.pack(fill="x", padx=0, pady=(20, 4))
             self.apply_glow(credit, thickness=2)
-            tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(8, 0), anchor="w")
+            tk.Label(credit, text="KoolaidSippin", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 16, "bold")).pack(padx=12, pady=(8, 2), anchor="w")
             tk.Label(credit, text="Made by", bg="#2c2750", fg="#e0d7ff", font=self.normal_font).pack(padx=12, anchor="w")
-            tk.Label(credit, text="Iris&classical", bg="#2c2750", fg="#e0d7ff", font=self.title_font).pack(padx=12, pady=(0, 8), anchor="w")
+            tk.Label(credit, text="Iris&Classical", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 14, "bold")).pack(padx=12, pady=(0, 10), anchor="w")
             # Run buttons moved to middle between rotator and SYS
             run = tk.Frame(left, bg="#1e1b29")
             run.grid(row=5, column=1, sticky="n", padx=(8,8), pady=(36,12))
@@ -1014,7 +1033,7 @@ class DiscordBotGUI:
         left.pack(side="left", padx=10)
         center.pack(side="left", expand=True)
         right.pack(side="right", padx=10)
-        self._edex_title = tk.Label(left, text="KS USER PANEL", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+        self._edex_title = tk.Label(left, text="KS BOT", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
         self._edex_title.pack(side="left")
         self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
         self._edex_clock.pack()
@@ -1032,7 +1051,7 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                (self.main_frame, "KS USER PANEL"),
+                (self.main_frame, "KS BOT"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
                 try:
@@ -1087,6 +1106,14 @@ class DiscordBotGUI:
             self._hud_time.pack(anchor="w", padx=8)
             self._hud_msgs = tk.Label(self._edex_hud, text="msgs: 0", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
             self._hud_msgs.pack(anchor="w", padx=8)
+            # Credits under SYS (right side)
+            try:
+                credit = tk.Frame(self._edex_hud, bg="#0b1020")
+                credit.pack(anchor="e", padx=8, pady=(6, 4))
+                tk.Label(credit, text="KoolaidSippin", bg="#0b1020", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="e")
+                tk.Label(credit, text="Made by Iris&Classical", bg="#0b1020", fg="#e0d7ff", font=("Segoe UI", 9)).pack(anchor="e")
+            except Exception:
+                pass
             # Gauges
             gwrap = tk.Frame(self._edex_hud, bg="#0b1020")
             gwrap.pack(fill="x", padx=8, pady=(4,6))
@@ -1490,30 +1517,7 @@ class DiscordBotGUI:
             "Authorization": self.user_token,
             # Minimal headers; Discord accepts user token for self endpoints
         })
-        resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
-        # If token invalidated (401/403), prompt for new token and retry once
-        if resp.status_code in (401, 403):
-            try:
-                new_tok = simpledialog.askstring("Token Required", "Your Discord token is invalid or expired. Enter a new token:")
-                if new_tok:
-                    self.user_token = new_tok.strip()
-                    try:
-                        # Persist into current token selection if exists
-                        if self.selected_token_name:
-                            self.tokens[self.selected_token_name] = self.user_token
-                            self.save_data()
-                    except Exception:
-                        pass
-                    headers["Authorization"] = self.user_token
-                    resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
-                    # Refresh UI user info
-                    try:
-                        threading.Thread(target=self.fetch_and_display_user_info, args=(self.user_token,), daemon=True).start()
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        return resp
+        return requests.request(method, url, headers=headers, timeout=15, **kwargs)
 
     def upload_discord_backup(self):
         """Upload tokens.json and channels.json to the configured backup channel as attachments."""
@@ -1644,32 +1648,24 @@ class DiscordBotGUI:
         try:
             if getattr(self, "_welcome_overlay", None) is not None:
                 return
-            self._welcome_overlay = tk.Frame(self.root, bg="#000000")
+            # Make outside color the same as inside of the box
+            self._welcome_overlay = tk.Frame(self.root, bg="#0b1020")
             self._welcome_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
-            self._welcome_overlay.configure(bg="#000000")
-            # Start with a tiny panel and animate to target size (eDEX-like)
+            self._welcome_overlay.configure(bg="#0b1020")
+            # Container for the main (big) box
             self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
-            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.02, relheight=0.02)
-            target = {"relwidth": 0.6, "relheight": 0.2}
-            def _animate_panel(step=0):
-                try:
-                    steps = 16
-                    rw = 0.02 + (target["relwidth"] - 0.02) * (step / steps)
-                    rh = 0.02 + (target["relheight"] - 0.02) * (step / steps)
-                    self._welcome_panel.place_configure(relwidth=rw, relheight=rh)
-                    if step < steps:
-                        self.root.after(16, lambda: _animate_panel(step + 1))
-                except Exception:
-                    pass
-            _animate_panel()
+            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center")
+            # Single canvas representing the big box (no inner/smaller box)
             try:
-                self.apply_glow(self._welcome_panel, thickness=2)
+                self._welcome_canvas = tk.Canvas(self._welcome_panel, width=540, height=160, bg="#0b1020", highlightthickness=0)
+                self._welcome_canvas.pack(padx=18, pady=(18, 8))
+                # No outer glow/border on the main canvas per request
             except Exception:
-                pass
-            self._welcome_term = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
-            self._welcome_term.pack(padx=24, pady=18)
+                self._welcome_canvas = None
+            # Prepare a label for text; it will be placed inside the canvas later
+            self._welcome_term = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
         except Exception:
             pass
 
@@ -1677,29 +1673,127 @@ class DiscordBotGUI:
         try:
             self._ensure_terminal_overlay()
             term = self._welcome_term
-            if not username:
-                # Fallback: auto-advance without username
-                term.config(text="> initializing KS terminal ...\n> linking session ...\n> Welcome")
-                def _finish2():
-                    try:
-                        self._welcome_overlay.destroy()
-                        self._welcome_overlay = None
-                    except Exception:
-                        pass
-                    def _show_main2():
+            # Draw animated outline on the big canvas (no inner small box)
+            try:
+                c = getattr(self, "_welcome_canvas", None)
+                if c is not None:
+                    c.update_idletasks()
+                    w = int(c.winfo_width() or 540)
+                    h = int(c.winfo_height() or 160)
+                    pad = 8
+                    x1, y1 = pad, pad
+                    x2, y2 = w - pad, h - pad
+                    color = "#7d5fff"
+                    width = 3
+                    # Four line objects start as zero-length
+                    top = c.create_line(x1, y1, x1, y1, fill=color, width=width)
+                    right = c.create_line(x2, y1, x2, y1, fill=color, width=width)
+                    bottom = c.create_line(x2, y2, x2, y2, fill=color, width=width)
+                    left = c.create_line(x1, y2, x1, y2, fill=color, width=width)
+                    steps = 30
+                    delay_ms = 16
+                    def animate(step=0):
                         try:
-                            self.main_frame.place(**self._mf_place_args)
+                            f = step / float(steps)
+                            # top grows L->R
+                            tx = x1 + int((x2 - x1) * min(1.0, f))
+                            c.coords(top, x1, y1, tx, y1)
+                            # right grows T->B after 25%
+                            rf = max(0.0, f - 0.25) / 0.75
+                            ry = y1 + int((y2 - y1) * max(0.0, min(1.0, rf)))
+                            c.coords(right, x2, y1, x2, ry)
+                            # bottom grows R->L after 50%
+                            bf = max(0.0, f - 0.5) / 0.5
+                            bx = x2 - int((x2 - x1) * max(0.0, min(1.0, bf)))
+                            c.coords(bottom, x2, y2, bx, y2)
+                            # left grows B->T after 75%
+                            lf = max(0.0, f - 0.75) / 0.25
+                            ly = y2 - int((y2 - y1) * max(0.0, min(1.0, lf)))
+                            c.coords(left, x1, y2, x1, ly)
+                            if step < steps:
+                                self.root.after(delay_ms, lambda: animate(step + 1))
+                            else:
+                                # Type 'awaiting session ...' on the canvas after 1 second, then continue after 0.6s with the rest
+                                def _type_canvas_text(text: str, idx: int = 0, on_complete=None):
+                                    try:
+                                        c.delete('text')
+                                        cx = (x1 + x2) // 2
+                                        cy = (y1 + y2) // 2
+                                        c.create_text(cx, cy, text=text[:idx], fill="#9ab0ff", font=("Consolas", 13), tags=('text',))
+                                        if idx < len(text):
+                                            self.root.after(30, lambda: _type_canvas_text(text, idx + 1, on_complete))
+                                        else:
+                                            if on_complete:
+                                                on_complete()
+                                    except Exception:
+                                        pass
+
+                                def _type_canvas_lines(lines: list[str], li: int = 0, ci: int = 0):
+                                    try:
+                                        # Build current typed text across lines
+                                        typed = []
+                                        for i in range(li):
+                                            typed.append(lines[i])
+                                        typed.append(lines[li][:ci])
+                                        text_block = "\n".join(typed)
+                                        c.delete('text')
+                                        cx = (x1 + x2) // 2
+                                        cy = (y1 + y2) // 2
+                                        c.create_text(cx, cy, text=text_block, fill="#9ab0ff", font=("Consolas", 13), tags=('text',), justify='center')
+                                        if ci < len(lines[li]):
+                                            self.root.after(30, lambda: _type_canvas_lines(lines, li, ci + 1))
+                                        else:
+                                            if li + 1 < len(lines):
+                                                self.root.after(150, lambda: _type_canvas_lines(lines, li + 1, 0))
+                                            else:
+                                                # Keep Welcome visible longer before opening UI
+                                                try:
+                                                    self.root.after(2000, _finish)
+                                                except Exception:
+                                                    pass
+                                    except Exception:
+                                        pass
+
+                                def _after_awaiting():
+                                    # After 0.6s, type the remaining lines
+                                    self.root.after(600, lambda: _type_canvas_lines([
+                                        "> initializing KS terminal ...",
+                                        "> starting KS Bot ...",
+                                        f"> Welcome, {username}"
+                                    ]))
+
+                                self.root.after(1000, lambda: _type_canvas_text("> awaiting session ...", 0, _after_awaiting))
                         except Exception:
                             pass
-                    self.root.after(800, _show_main2)
-                self.root.after(1200, _finish2)
-                return
-            lines = [
-                "> initializing KS terminal ...",
-                "> linking session ...",
-                f"> Welcome, {username}"
-            ]
-            self._type_lines(term, lines)
+                    def start_typing():
+                        try:
+                            lines = [
+                                "> initializing KS terminal ...",
+                                "> starting KS Bot ...",
+                                f"> Welcome, {username}"
+                            ]
+                            self._type_lines(term, lines)
+                        except Exception:
+                            pass
+                    animate(0)
+                else:
+                    # Fallback: use label typing then proceed
+                    tmp = tk.Label(self._welcome_panel, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
+                    tmp.pack(pady=(4, 2))
+                    def _after_aw():
+                        # After 0.6s, type remaining lines and then open after computed delay
+                        seq = ["> initializing KS terminal ...", "> starting KS Bot ...", f"> Welcome, {username}"]
+                        self.root.after(600, lambda: self._type_lines(tmp, seq))
+                        init_len = len(seq[0])
+                        start_len = len(seq[1])
+                        welcome_len = len(seq[2])
+                        # typing time: 30ms per char, 150ms between lines, plus 2000ms hold
+                        finish_delay = 600 + (init_len * 30) + 150 + (start_len * 30) + 150 + (welcome_len * 30) + 2000
+                        self.root.after(finish_delay, _finish)
+                    self.root.after(1000, lambda: self._type_lines(tmp, ["> awaiting session ..."]))
+                    self.root.after(1000 + int(len("> awaiting session ...") * 30) + 50, _after_aw)
+            except Exception:
+                pass
             def _finish():
                 try:
                     self._welcome_overlay.destroy()
@@ -1711,8 +1805,8 @@ class DiscordBotGUI:
                         self.main_frame.place(**self._mf_place_args)
                     except Exception:
                         pass
-                self.root.after(2000, _show_main)
-            self.root.after(3200, _finish)
+                self.root.after(1500, _show_main)
+            # Removed fixed overlay timeout; closing is scheduled after typing completes
         except Exception:
             pass
 
@@ -1766,8 +1860,13 @@ class DiscordBotGUI:
             self.log("❌ Invalid delay value.")
             return
 
-        # Loop count control removed from UI; default to sending once per channel
-        loop_count = 1
+        # Loop count (0 = infinite)
+        try:
+            loop_count = int(self.loop_count_entry.get()) if hasattr(self, 'loop_count_entry') else 1
+            if loop_count < 0:
+                loop_count = 0
+        except Exception:
+            loop_count = 1
 
         self.selected_channel_names = selected_channels
         self.send_running = True
@@ -1793,11 +1892,18 @@ class DiscordBotGUI:
         # Assign rotator indices per token to avoid same content simultaneously
         self._per_token_rotator_offsets = {name: idx for idx, name in enumerate(selected_token_names)}
 
-        for name in selected_token_names:
+        # Stagger token starts according to rotator token switch delay
+        try:
+            token_switch_delay = float(self.rotator_token_delay_entry.get()) if hasattr(self, 'rotator_token_delay_entry') else 0.0
+        except Exception:
+            token_switch_delay = 0.0
+        for idx, name in enumerate(selected_token_names):
             tok = self.tokens.get(name)
-            threading.Thread(target=self.send_messages_loop,
-                             args=(tok, self.selected_channel_names, message, delay, loop_count, name),
-                             daemon=True).start()
+            def _launch(n=name, t=tok):
+                threading.Thread(target=self.send_messages_loop,
+                                 args=(t, self.selected_channel_names, message, delay, loop_count, n),
+                                 daemon=True).start()
+            self.root.after(int(max(0.0, token_switch_delay) * 1000 * idx), _launch)
         self.log(f"▶️ Started sending with {len(selected_token_names)} token(s).")
 
     def send_messages_loop(self, token, channel_names, message, delay, loop_count, token_name=None):
@@ -1819,14 +1925,15 @@ class DiscordBotGUI:
                 try:
                     # Choose content from rotator if enabled, using per-token offset to avoid duplicates
                     if self.rotator_enabled_var.get() and self.rotator_messages:
-                        msgs = self.rotator_messages
+                        msgs = self.rotator_messages[:]
+                        random.shuffle(msgs)
                         if token_name is not None:
                             base_index = getattr(self, 'rotator_index', 0)
                             offset = getattr(self, '_per_token_rotator_offsets', {}).get(token_name, 0)
                             content_to_send = msgs[(base_index + offset) % len(msgs)]
                             # Only advance base index once per full round (handled below after each channel)
                         else:
-                            content_to_send = self._rotator_next()
+                            content_to_send = msgs[getattr(self, 'rotator_index', 0) % len(msgs)]
                     else:
                         content_to_send = message
                     resp = requests.post(url, headers=headers, json={"content": content_to_send})
@@ -2256,6 +2363,13 @@ class DiscordBotGUI:
         except Exception:
             pass
         self.rotator_input.delete(0, tk.END)
+        # persist
+        try:
+            with open(self.ROTATOR_FILE, "w", encoding="utf-8") as f:
+                for ln in self.rotator_messages:
+                    f.write(ln + "\n")
+        except Exception:
+            pass
 
     def _rotator_remove(self):
         try:
@@ -2272,12 +2386,24 @@ class DiscordBotGUI:
         except Exception:
             pass
         self.rotator_index = 0 if not self.rotator_messages else min(self.rotator_index, len(self.rotator_messages) - 1)
+        # persist
+        try:
+            with open(self.ROTATOR_FILE, "w", encoding="utf-8") as f:
+                for ln in self.rotator_messages:
+                    f.write(ln + "\n")
+        except Exception:
+            pass
 
     def _rotator_clear(self):
         self.rotator_messages.clear()
         self.rotator_index = 0
         try:
             self.rotator_list.delete(0, tk.END)
+        except Exception:
+            pass
+        # persist
+        try:
+            open(self.ROTATOR_FILE, "w", encoding="utf-8").close()
         except Exception:
             pass
 
