@@ -185,7 +185,8 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
     except Exception:
         mid_val = "unknown"
     mid_var = tk.StringVar(value=mid_val)
-    mid_entry.config(textvariable=mid_var)
+    mid_entry.config(textvariable=mid_var, readonlybackground="#1e1b29")
+    mid_entry.pack(fill="x", pady=2)
 
     token_row = tk.Frame(frm, bg="#2c2750")
     token_row.pack(fill="x", pady=6)
