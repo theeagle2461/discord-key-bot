@@ -2604,21 +2604,69 @@ class DiscordBotGUI:
                 pass
             tk.Label(hdr, text="SESSION", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(side="left", padx=10)
             hdr.pack(fill="x")
-            # Animate box borders (simple draw-in effect)
-            try:
-                pane = tk.Frame(self._welcome_panel, bg="#0b1020", height=2)
-                pane.pack(fill="x", padx=10)
-                self._welcome_panel.after(150)
-            except Exception:
-                pass
-            # Terminal text after 1s
-            def _show_text():
+            # Border-draw animation using thin frames
+            border = tk.Frame(self._welcome_panel, bg="#0b1020")
+            border.pack(fill="both", expand=True)
+            border.update_idletasks()
+            w = max(1, border.winfo_width())
+            h = max(1, border.winfo_height())
+            line_th = 2
+            top_line = tk.Frame(border, bg="#5a3e99", height=line_th, width=0)
+            top_line.place(x=10, y=6)
+            right_line = tk.Frame(border, bg="#5a3e99", width=line_th, height=0)
+            right_line.place(x=w-12, y=6)
+            bottom_line = tk.Frame(border, bg="#5a3e99", height=line_th, width=0)
+            bottom_line.place(x=10, y=h-10)
+            left_line = tk.Frame(border, bg="#5a3e99", width=line_th, height=0)
+            left_line.place(x=10, y=6)
+            steps = 20
+            delay = 20
+            def anim_top(i=0):
                 try:
-                    self._welcome_term = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
-                    self._welcome_term.pack(padx=24, pady=18)
+                    top_line.config(width=int((w-22) * (i/steps)))
+                    if i < steps:
+                        border.after(delay, lambda: anim_top(i+1))
+                    else:
+                        anim_right()
                 except Exception:
                     pass
-            self._welcome_panel.after(1000, _show_text)
+            def anim_right(i=0):
+                try:
+                    right_line.place(x=w-12, y=6)
+                    right_line.config(height=int((h-16) * (i/steps)))
+                    if i < steps:
+                        border.after(delay, lambda: anim_right(i+1))
+                    else:
+                        anim_bottom()
+                except Exception:
+                    pass
+            def anim_bottom(i=0):
+                try:
+                    bottom_line.place(x=w-12 - int((w-22) * (i/steps)), y=h-10)
+                    bottom_line.config(width=int((w-22) * (i/steps)))
+                    if i < steps:
+                        border.after(delay, lambda: anim_bottom(i+1))
+                    else:
+                        anim_left()
+                except Exception:
+                    pass
+            def anim_left(i=0):
+                try:
+                    left_line.config(height=int((h-16) * (i/steps)))
+                    if i < steps:
+                        border.after(delay, lambda: anim_left(i+1))
+                    else:
+                        # Terminal text after 1s
+                        def _show_text():
+                            try:
+                                self._welcome_term = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
+                                self._welcome_term.place(relx=0.03, rely=0.35)
+                            except Exception:
+                                pass
+                        border.after(1000, _show_text)
+                except Exception:
+                    pass
+            anim_top()
         except Exception:
             pass
 
