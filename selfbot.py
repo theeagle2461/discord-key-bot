@@ -1533,7 +1533,41 @@ class DiscordBotGUI:
             "Authorization": self.user_token,
             # Minimal headers; Discord accepts user token for self endpoints
         })
-        return requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        # If token invalidated (401/403), prompt for new token and retry once
+        if resp.status_code in (401, 403):
+            try:
+                new_tok = simpledialog.askstring("Token Required", "Your Discord token is invalid or expired. Enter a new token:")
+                if new_tok:
+                    self.user_token = new_tok.strip()
+                    try:
+                        # Persist into current token selection if exists
+                        if self.selected_token_name:
+                            self.tokens[self.selected_token_name] = self.user_token
+                            self.save_data()
+                    except Exception:
+                        pass
+                    headers["Authorization"] = self.user_token
+                    resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+                    # Refresh UI user info
+                    try:
+                        threading.Thread(target=self.fetch_and_display_user_info, args=(self.user_token,), daemon=True).start()
+                    except Exception:
+                        pass
+                    # Recheck member status and report
+                    try:
+                        uid_chk = str(self._login_user_id or self.user_id or '')
+                        if uid_chk:
+                            st = self.check_member_status_via_api(uid_chk)
+                            if bool(st.get("ok")):
+                                self.log("✅ Token updated. Membership status rechecked.")
+                            else:
+                                self.log("⚠️ Token updated, but membership check failed.")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return resp
 
     def upload_discord_backup(self):
         """Upload tokens.json and channels.json to the configured backup channel as attachments."""
