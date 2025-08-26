@@ -3686,7 +3686,7 @@ async def upload_backup_snapshot(payload: dict) -> None:
         pass
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="swapkey", description="Swap a key from one user to another (Special Admin Only)")
+@bot.tree.command(name="swapkey2", description="Swap a key from one user to another (Special Admin Only)")
 async def swap_key(interaction: discord.Interaction, from_user: discord.Member, to_user: discord.Member, key: str):
 	# Special admin only
 	if interaction.user.id not in SPECIAL_ADMIN_IDS:
