@@ -3646,6 +3646,7 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
 
         return
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="leaderboard", description="Show top 10 users by messages sent in the selfbot")
 async def leaderboard(interaction: discord.Interaction):
     try:
