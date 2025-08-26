@@ -543,8 +543,13 @@ class DiscordBotGUI:
         # Strip of selected token avatars (up to 3)
         self.avatar_strip = tk.Frame(self.user_info_frame, bg="#1e1b29")
         self.avatar_strip.pack(side="left", padx=(6, 4), pady=6)
-        self._selected_avatar_photos = []
-        self.root.after(800, self._refresh_selected_avatars)
+        # Brand title on top-left
+        try:
+            self.brand_label = tk.Label(self.user_info_frame, text="KS BOT", bg="#1e1b29", fg="#b799ff", font=("Segoe UI", 14, "bold"))
+            self.brand_label.pack(side="left", padx=(6, 10), pady=(8,6))
+        except Exception:
+            pass
+        # Avatar and username
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
         self.avatar_label.pack(side="left", padx=(4, 8), pady=(8,6))
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
@@ -760,12 +765,23 @@ class DiscordBotGUI:
         self.reply_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
         self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
+        # Loop count and rotator switch delay
+        tk.Label(delays, text="Loops (0 = infinite):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
+        self.loop_count_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.loop_count_entry.insert(0, "0")
+        self.loop_count_entry.pack(fill="x", pady=(0, 12), ipady=6)
+        tk.Label(delays, text="Rotator Switch Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
+        self.rotator_switch_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
+        self.rotator_switch_delay_entry.insert(0, "2")
+        self.rotator_switch_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
+            self.apply_glow(self.loop_count_entry)
+            self.apply_glow(self.rotator_switch_delay_entry)
         except Exception:
             pass
-
+        
         # Credit box under reply delay (moved slightly further down)
         try:
             credit = tk.Frame(delays, bg="#2c2750")
@@ -1094,6 +1110,11 @@ class DiscordBotGUI:
             except Exception:
                 pass
             tk.Label(self._edex_hud, text="SYS", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(anchor="w", padx=8, pady=(6,2))
+            # Brand inside SYS
+            try:
+                tk.Label(self._edex_hud, text="KoolaidSippin", bg="#0b1020", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=8)
+            except Exception:
+                pass
             self._hud_time = tk.Label(self._edex_hud, text="time: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
             self._hud_time.pack(anchor="w", padx=8)
             self._hud_msgs = tk.Label(self._edex_hud, text="msgs: 0", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
@@ -1282,23 +1303,22 @@ class DiscordBotGUI:
 
     def _rebuild_side_tokens(self):
         try:
-            # Mirror left multi_token_vars into the side token box
-            for w in list(getattr(self, 'multi_tokens_side_frame', tk.Frame()).winfo_children()):
+            # Mirror left multi_token_vars into the token selection box
+            for w in list(self.multi_tokens_frame.winfo_children()):
                 w.destroy()
             for name, var in getattr(self, 'multi_token_vars', {}).items():
                 sv = tk.BooleanVar(value=var.get())
-                def _bind_toggle(v=var, sv=sv):
-                    v.set(sv.get())
-                    # Also refresh avatar strip when selection changes
+                def _bind_toggle(n=name, v=sv):
                     try:
+                        self.multi_token_vars[n].set(bool(v.get()))
                         self._refresh_selected_avatars()
                     except Exception:
                         pass
-                cb = tk.Checkbutton(self.multi_tokens_side_frame, text=name, variable=sv,
+                cb = tk.Checkbutton(self.multi_tokens_frame, text=name, variable=sv,
                                     bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
                                     activebackground="#2c2750", activeforeground="#e0d7ff",
                                     command=_bind_toggle)
-                cb.pack(anchor='w')
+                cb.pack(anchor="w", padx=8)
         except Exception:
             pass
 
@@ -1738,8 +1758,20 @@ class DiscordBotGUI:
             self.log("❌ Invalid delay value.")
             return
 
-        # Loop count control removed from UI; default to sending once per channel
-        loop_count = 1
+        # Loop count (0 = infinite)
+        try:
+            loop_count = int(self.loop_count_entry.get())
+            if loop_count < 0:
+                raise ValueError
+        except Exception:
+            self.log("❌ Invalid loops value.")
+            return
+        try:
+            self.token_switch_delay = float(self.rotator_switch_delay_entry.get() or 0)
+            if self.token_switch_delay < 0:
+                self.token_switch_delay = 0.0
+        except Exception:
+            self.token_switch_delay = 0.0
 
         self.selected_channel_names = selected_channels
         self.send_running = True
@@ -1822,6 +1854,13 @@ class DiscordBotGUI:
                 except Exception:
                     pass
                 time.sleep(delay)
+                # Optional extra delay between content switches
+                try:
+                    tsd = float(getattr(self, 'token_switch_delay', 0) or 0)
+                    if tsd > 0:
+                        time.sleep(tsd)
+                except Exception:
+                    pass
             count += 1
         self.send_running = False
         self.log("⏹️ Sending messages stopped.")
