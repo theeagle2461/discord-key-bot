@@ -336,7 +336,13 @@ class DiscordBotGUI:
         self.bg_canvas.pack(fill="both", expand=True)
         # Plain background (no gradient/vignette/particles)
         # Overlay Frame for widgets (transparent background)
-        self.main_frame = tk.Frame(self.root, bg="#1e1b29")
+        # Glow-outlined main container
+        self.main_frame_outer = tk.Frame(self.root, bg="#1e1b29")
+        try:
+            self.apply_glow(self.main_frame_outer, thickness=3)
+        except Exception:
+            pass
+        self.main_frame = tk.Frame(self.main_frame_outer, bg="#1e1b29")
         # Defer placing main UI until welcome terminal finishes
         self._mf_place_args = dict(relx=0.03, rely=0.08, relwidth=0.94, relheight=0.89)
 
@@ -537,6 +543,7 @@ class DiscordBotGUI:
         self.avatar_label.pack(side="left", padx=(4, 8), pady=(8,6))
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
         self.username_label.pack(side="left", pady=(8,6))
+        # No KS BOT label over channels
         # Top-right title
         try:
             top_right = tk.Frame(self.user_info_frame, bg="#1e1b29")
@@ -689,9 +696,9 @@ class DiscordBotGUI:
         rot_right.pack(side="right", fill="both", expand=False, padx=(8, 0))
         tk.Label(rot_right, text="Rotator Messages", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
         rot_content = tk.Frame(rot_right, bg="#1e1b29")
-        rot_content.pack(fill="y")
+        rot_content.pack(fill="both", expand=True)
         try:
-            self.apply_glow(rot_content, thickness=2)
+            self.apply_glow(rot_right, thickness=2)
         except Exception:
             pass
         list_frame = tk.Frame(rot_content, bg="#1e1b29")
@@ -756,20 +763,15 @@ class DiscordBotGUI:
         self.reply_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
         self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
-        # Loop count and rotator switch delay
+        # Loop count only here; switch delay moved to rotator
         tk.Label(delays, text="Loops (0 = infinite):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
         self.loop_count_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.loop_count_entry.insert(0, "0")
         self.loop_count_entry.pack(fill="x", pady=(0, 12), ipady=6)
-        tk.Label(delays, text="Rotator Switch Delay (seconds):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.rotator_switch_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.rotator_switch_delay_entry.insert(0, "2")
-        self.rotator_switch_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
             self.apply_glow(self.loop_count_entry)
-            self.apply_glow(self.rotator_switch_delay_entry)
         except Exception:
             pass
         
@@ -1103,7 +1105,7 @@ class DiscordBotGUI:
             except Exception:
                 pass
             tk.Label(self._edex_hud, text="SYS", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(anchor="w", padx=8, pady=(6,2))
-            # Bottom-right credit inside SYS
+            # SYS credit bottom-right
             cred = tk.Frame(self._edex_hud, bg="#0b1020")
             cred.pack(fill="x", padx=8, pady=(0, 2))
             try:
@@ -2544,7 +2546,7 @@ class DiscordBotGUI:
             pass
 
     def _start_active_users_services(self):
-        # Heartbeat every 30s and poll active count every 20s
+        # Heartbeat every 30s and poll active count every 10s
         try:
             if getattr(self, '_active_services_started', False):
                 return
@@ -2571,15 +2573,59 @@ class DiscordBotGUI:
                 if r.status_code == 200:
                     j = r.json() or {}
                     self._last_active_count = int(j.get('active_users', 0))
+                else:
+                    self._last_active_count = self._last_active_count if hasattr(self, '_last_active_count') else 0
             except Exception:
                 pass
             try:
-                self.root.after(20000, poll)
+                self.root.after(10000, poll)
             except Exception:
                 pass
         try:
-            self.root.after(1000, beat)
-            self.root.after(1500, poll)
+            # Fire immediately so HUD shows quickly
+            beat()
+            poll()
+        except Exception:
+            pass
+
+    def _welcome_screen(self, username: str):
+        try:
+            self._welcome_panel = tk.Frame(self.root, bg="#0b1020")
+            self._welcome_panel.place(relx=0.2, rely=0.18, relwidth=0.6, relheight=0.22)
+            try:
+                self.apply_glow(self._welcome_panel, thickness=2)
+            except Exception:
+                pass
+            # eDEX-like header bar
+            hdr = tk.Frame(self._welcome_panel, bg="#0b1020")
+            try:
+                self.apply_glow(hdr, thickness=1)
+            except Exception:
+                pass
+            tk.Label(hdr, text="SESSION", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(side="left", padx=10)
+            hdr.pack(fill="x")
+            # Animate box borders (simple draw-in effect)
+            try:
+                pane = tk.Frame(self._welcome_panel, bg="#0b1020", height=2)
+                pane.pack(fill="x", padx=10)
+                self._welcome_panel.after(150)
+            except Exception:
+                pass
+            # Terminal text after 1s
+            def _show_text():
+                try:
+                    self._welcome_term = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
+                    self._welcome_term.pack(padx=24, pady=18)
+                except Exception:
+                    pass
+            self._welcome_panel.after(1000, _show_text)
+        except Exception:
+            pass
+
+    def _place_main_ui(self):
+        try:
+            self.main_frame_outer.place(**self._mf_place_args)
+            self.main_frame.pack(fill="both", expand=True, padx=6, pady=6)
         except Exception:
             pass
 
