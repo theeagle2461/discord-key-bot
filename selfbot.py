@@ -175,7 +175,23 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
 
     activation_entry = mk_entry("Activation Key")
     user_id_entry = mk_entry("Discord User ID")
-
+    
+    # Machine ID (auto)
+    try:
+        mid_row = tk.Frame(frm, bg="#2c2750")
+        mid_row.pack(fill="x", pady=6)
+        tk.Label(mid_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        mid_entry = tk.Entry(mid_row, bg="#1e1b29", fg="#9ab0ff", state="readonly")
+        try:
+            mid_val = machine_id()
+        except Exception:
+            mid_val = "unknown"
+        mid_var = tk.StringVar(value=mid_val)
+        mid_entry.config(textvariable=mid_var, readonlybackground="#1e1b29")
+        mid_entry.pack(fill="x", pady=2)
+    except Exception:
+        pass
+    
     token_row = tk.Frame(frm, bg="#2c2750")
     token_row.pack(fill="x", pady=6)
     tk.Label(token_row, text="Discord User Token", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
