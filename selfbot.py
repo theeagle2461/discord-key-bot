@@ -1086,6 +1086,9 @@ class DiscordBotGUI:
             self._hud_time.pack(anchor="w", padx=8)
             self._hud_msgs = tk.Label(self._edex_hud, text="msgs: 0", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
             self._hud_msgs.pack(anchor="w", padx=8)
+            # Active users indicator
+            self._hud_active = tk.Label(self._edex_hud, text="active: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
+            self._hud_active.pack(anchor="w", padx=8)
             # Gauges
             gwrap = tk.Frame(self._edex_hud, bg="#0b1020")
             gwrap.pack(fill="x", padx=8, pady=(4,6))
@@ -1165,6 +1168,12 @@ class DiscordBotGUI:
         try:
             self._hud_time.config(text=f"time: {time.strftime('%H:%M:%S')}" )
             self._hud_msgs.config(text=f"msgs: {self.message_counter_total}")
+            # Update active users label if present
+            try:
+                if hasattr(self, '_last_active_count'):
+                    self._hud_active.config(text=f"active: {self._last_active_count}")
+            except Exception:
+                pass
             # Gauges
             cpu_p = 0
             ram_p = 0
@@ -1201,6 +1210,11 @@ class DiscordBotGUI:
         # Re-schedule
         try:
             self.root.after(500, self._edex_tick)
+        except Exception:
+            pass
+        # Kick off heartbeat/poller for active users
+        try:
+            self._start_active_users_services()
         except Exception:
             pass
 
@@ -2463,6 +2477,46 @@ class DiscordBotGUI:
             } for m in self._chat_items[-400:]]
             with open(self.CHAT_HISTORY_FILE, 'w') as f:
                 json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+    def _start_active_users_services(self):
+        # Heartbeat every 30s and poll active count every 20s
+        try:
+            if getattr(self, '_active_services_started', False):
+                return
+            self._active_services_started = True
+        except Exception:
+            pass
+        def beat():
+            try:
+                uid = str(self._login_user_id or self.user_id or '')
+                if uid:
+                    try:
+                        requests.post(f"{SERVICE_URL}/api/selfbot-heartbeat", data={"user_id": uid}, timeout=4)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                self.root.after(30000, beat)
+            except Exception:
+                pass
+        def poll():
+            try:
+                r = requests.get(f"{SERVICE_URL}/api/active-users", timeout=5)
+                if r.status_code == 200:
+                    j = r.json() or {}
+                    self._last_active_count = int(j.get('active_users', 0))
+            except Exception:
+                pass
+            try:
+                self.root.after(20000, poll)
+            except Exception:
+                pass
+        try:
+            self.root.after(1000, beat)
+            self.root.after(1500, poll)
         except Exception:
             pass
 
