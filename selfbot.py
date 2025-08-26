@@ -543,17 +543,19 @@ class DiscordBotGUI:
         # Strip of selected token avatars (up to 3)
         self.avatar_strip = tk.Frame(self.user_info_frame, bg="#1e1b29")
         self.avatar_strip.pack(side="left", padx=(6, 4), pady=6)
-        # Brand title on top-left
-        try:
-            self.brand_label = tk.Label(self.user_info_frame, text="KS BOT", bg="#1e1b29", fg="#b799ff", font=("Segoe UI", 14, "bold"))
-            self.brand_label.pack(side="left", padx=(6, 10), pady=(8,6))
-        except Exception:
-            pass
         # Avatar and username
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
         self.avatar_label.pack(side="left", padx=(4, 8), pady=(8,6))
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
         self.username_label.pack(side="left", pady=(8,6))
+        # Top-right title
+        try:
+            top_right = tk.Frame(self.user_info_frame, bg="#1e1b29")
+            top_right.pack(side="right", padx=(6, 8), pady=(8,6))
+            self.top_right_title = tk.Label(top_right, text="KS BOT", bg="#1e1b29", fg="#b799ff", font=("Segoe UI", 14, "bold"))
+            self.top_right_title.pack(side="right")
+        except Exception:
+            pass
 
         # Left column for controls (below user header)
         left = tk.Frame(frame, bg="#1e1b29")
@@ -1041,7 +1043,7 @@ class DiscordBotGUI:
         left.pack(side="left", padx=10)
         center.pack(side="left", expand=True)
         right.pack(side="right", padx=10)
-        self._edex_title = tk.Label(left, text="KS USER PANEL", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+        self._edex_title = tk.Label(left, text="KS BOT", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
         self._edex_title.pack(side="left")
         self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
         self._edex_clock.pack()
@@ -1059,7 +1061,7 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                (self.main_frame, "KS USER PANEL"),
+                (self.main_frame, "KS BOT"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
                 try:
@@ -1110,9 +1112,12 @@ class DiscordBotGUI:
             except Exception:
                 pass
             tk.Label(self._edex_hud, text="SYS", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(anchor="w", padx=8, pady=(6,2))
-            # Brand inside SYS
+            # Bottom-right credit inside SYS
+            cred = tk.Frame(self._edex_hud, bg="#0b1020")
+            cred.pack(fill="x", padx=8, pady=(0, 2))
             try:
-                tk.Label(self._edex_hud, text="KoolaidSippin", bg="#0b1020", fg="#e0d7ff", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=8)
+                lbl = tk.Label(cred, text="KoolaidSippin • Made by Iris&Classical", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 9))
+                lbl.pack(anchor="e")
             except Exception:
                 pass
             self._hud_time = tk.Label(self._edex_hud, text="time: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
@@ -1203,8 +1208,12 @@ class DiscordBotGUI:
             self._hud_msgs.config(text=f"msgs: {self.message_counter_total}")
             # Update active users label if present
             try:
-                if hasattr(self, '_last_active_count'):
-                    self._hud_active.config(text=f"active: {self._last_active_count}")
+                val = getattr(self, '_last_active_count', None)
+                if val is None:
+                    txt = "active: —"
+                else:
+                    txt = f"active: {val}"
+                self._hud_active.config(text=txt)
             except Exception:
                 pass
             # Gauges

@@ -943,6 +943,12 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
 	
 	# Send key to webhook
 	await key_manager.send_generated_key_to_webhook(key, duration_days, interaction.user.display_name)
+	# Force immediate backup upload
+	try:
+		payload = key_manager.build_backup_payload()
+		await upload_backup_snapshot(payload)
+	except Exception:
+		pass
 	
 	# Create embed
 	embed = discord.Embed(
@@ -987,11 +993,28 @@ async def activate_key(interaction: discord.Interaction, key: str):
             
             # Get key duration info
             key_data = key_manager.get_key_info(key)
-            duration_days = key_data.get("duration_days", 30)
+            duration_days = key_data.get("duration_days", 30) if key_data else 30
             
-            # Send success message
+            # Force immediate backup upload
+            try:
+                payload = key_manager.build_backup_payload()
+                await upload_backup_snapshot(payload)
+            except Exception:
+                pass
+            
+            # Webhook notify
+            try:
+                try:
+                    user_ip = os.getenv('SELF_IP')
+                except Exception:
+                    user_ip = None
+                await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
+            except Exception:
+                pass
+            
+            # Create embed
             embed = discord.Embed(
-                title="🔑 Key Activated Successfully!",
+                title="✅ Key Activated",
                 description=f"Your key has been activated and you now have access to the selfbot.",
                 color=0x00ff00
             )
@@ -1002,25 +1025,14 @@ async def activate_key(interaction: discord.Interaction, key: str):
             if result.get('channel_id'):
                 embed.add_field(name="Channel Locked", value=f"<#{result['channel_id']}>", inline=True)
             
-            # Add SelfBot instructions
-            embed.add_field(name="📱 SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {duration_days} days duration!", inline=False)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url if interaction.user.display_avatar else None)
+            embed.set_footer(text=f"Activated by {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed)
-            
-            # Send webhook notification (with IP if available)
-            user_ip = None
-            try:
-                import os
-                user_ip = os.getenv('SELF_IP')
-            except Exception:
-                user_ip = None
-            await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
-            
         else:
             await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
-            
     except Exception as e:
-        await interaction.response.send_message(f"❌ **Error during activation:** {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 # Removed duplicate sync command name to avoid conflicts
 @bot.tree.command(name="syncduration", description="Sync your key duration with SelfBot")
