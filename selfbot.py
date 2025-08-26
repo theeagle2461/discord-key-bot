@@ -175,35 +175,14 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
 
     activation_entry = mk_entry("Activation Key")
     user_id_entry = mk_entry("Discord User ID")
-    # Machine ID (read-only, auto)
-    mid_row = tk.Frame(frm, bg="#2c2750")
-    mid_row.pack(fill="x", pady=6)
-    tk.Label(mid_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-    mid_entry = tk.Entry(mid_row, bg="#1e1b29", fg="#9ab0ff", state="readonly")
-    try:
-        mid_val = machine_id()
-    except Exception:
-        mid_val = "unknown"
-    mid_var = tk.StringVar(value=mid_val)
-    mid_entry.config(textvariable=mid_var, readonlybackground="#1e1b29")
-    mid_entry.pack(fill="x", pady=2)
 
     token_row = tk.Frame(frm, bg="#2c2750")
     token_row.pack(fill="x", pady=6)
-    tk.Label(token_row, text="Discord User Token", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-    inner = tk.Frame(token_row, bg="#2c2750")
-    inner.pack(fill="x", pady=2)
-    token_entry = tk.Entry(inner, show="*", bg="#1e1b29", fg="#e0d7ff", insertbackground="#e0d7ff")
-    token_entry.pack(side="left", fill="x", expand=True)
+    tk.Label(token_row, text="Machine ID (auto)", bg="#2c2750", fg="#e0d7ff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    tk.Label(token_row, text=machine_id(), bg="#1e1b29", fg="#e0d7ff", font=("Consolas", 10)).pack(fill="x", pady=2)
 
-    def toggle_token():
-        current = token_entry.cget("show")
-        token_entry.config(show="" if current == "*" else "*")
-        btn.config(text="Hide" if current == "*" else "Show")
-
-    btn = tk.Button(inner, text="Show", command=toggle_token, bg="#5a3e99", fg="#f0e9ff",
-                    activebackground="#7d5fff", activeforeground="#f0e9ff", relief="flat", cursor="hand2")
-    btn.pack(side="left", padx=(8, 0))
+    # Discord token (required to fetch profile and run panel)
+    token_entry = mk_entry("Discord User Token", show="*")
 
     # Login button directly under token input
     token_login = tk.Button(frm, text="Login", command=lambda: submit(), bg="#5a3e99", fg="#f0e9ff",
@@ -228,14 +207,14 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
         if not a or not uid or not tok:
             status_label.config(text="All fields are required.")
             return
-        # Verify the user is a member of the Discord guild before proceeding
+        # Require guild membership check using token
         try:
             url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{uid}"
             r = requests.get(url, headers={"Authorization": tok}, timeout=10)
             if r.status_code != 200:
                 try:
                     title = os.getenv("JOIN_DIALOG_TITLE", "Join Discord")
-                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\\nJoin here: https://discord.gg/fEeeXAJfbF")
+                    text = os.getenv("JOIN_DIALOG_TEXT", "You need to be in our Discord to run this selfbot.\nJoin here: https://discord.gg/fEeeXAJfbF")
                     messagebox.showerror(title, text)
                 except Exception:
                     pass
@@ -248,6 +227,7 @@ def show_banner_and_prompt() -> tuple[str, str, str]:
             except Exception:
                 pass
             return
+        # Machine-ID based login; token required
         result[0], result[1], result[2] = a, uid, tok
         root.destroy()
 
@@ -331,18 +311,23 @@ class DiscordBotGUI:
         self.rotator_index: int = 0
         self.rotator_enabled_var = tk.BooleanVar(value=False)
 
-        # Setup Background Canvas
+        # Setup Background Canvas with Gradient + Vignette + Particles
         self.bg_canvas = tk.Canvas(self.root, width=900, height=700, highlightthickness=0, bg="#1e1b29")
         self.bg_canvas.pack(fill="both", expand=True)
-        # Plain background (no gradient/vignette/particles)
+
+        self.gradient_image = self.create_gradient_image(900, 700)
+        self.bg_photo = ImageTk.PhotoImage(self.gradient_image)
+        self._bg_img_item = self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+        self.create_tint_overlay(900, 700)
+        self._vignette_item = self.bg_canvas.create_image(0, 0, image=self.vignette_photo, anchor="nw")
+
+        self.particles = []
+        self.create_particles(16)
+        self.animate_particles()
+        self.root.bind("<Configure>", self._on_root_resize)
+
         # Overlay Frame for widgets (transparent background)
-        # Glow-outlined main container
-        self.main_frame_outer = tk.Frame(self.root, bg="#1e1b29")
-        try:
-            self.apply_glow(self.main_frame_outer, thickness=3)
-        except Exception:
-            pass
-        self.main_frame = tk.Frame(self.main_frame_outer, bg="#1e1b29")
+        self.main_frame = tk.Frame(self.root, bg="#1e1b29")
         # Defer placing main UI until welcome terminal finishes
         self._mf_place_args = dict(relx=0.03, rely=0.08, relwidth=0.94, relheight=0.89)
 
@@ -384,6 +369,15 @@ class DiscordBotGUI:
         try:
             self._welcome_started = False
             self._ensure_terminal_overlay()
+        except Exception:
+            pass
+
+        # If no initial token is provided, still proceed with a generic welcome
+        try:
+            if not initial_token and not getattr(self, "_welcomed", False):
+                self._welcomed = True
+                username = self._login_user_id or "User"
+                self.root.after(200, lambda u=username: self._show_terminal_welcome(u))
         except Exception:
             pass
 
@@ -538,20 +532,12 @@ class DiscordBotGUI:
         # Strip of selected token avatars (up to 3)
         self.avatar_strip = tk.Frame(self.user_info_frame, bg="#1e1b29")
         self.avatar_strip.pack(side="left", padx=(6, 4), pady=6)
-        # Avatar and username
+        self._selected_avatar_photos = []
+        self.root.after(800, self._refresh_selected_avatars)
         self.avatar_label = tk.Label(self.user_info_frame, bg="#1e1b29")
         self.avatar_label.pack(side="left", padx=(4, 8), pady=(8,6))
         self.username_label = tk.Label(self.user_info_frame, text="", bg="#1e1b29", fg="#e0d7ff")
         self.username_label.pack(side="left", pady=(8,6))
-        # No KS BOT label over channels
-        # Top-right title
-        try:
-            top_right = tk.Frame(self.user_info_frame, bg="#1e1b29")
-            top_right.pack(side="right", padx=(6, 8), pady=(8,6))
-            self.top_right_title = tk.Label(top_right, text="KS BOT", bg="#1e1b29", fg="#b799ff", font=("Segoe UI", 14, "bold"))
-            self.top_right_title.pack(side="right")
-        except Exception:
-            pass
 
         # Left column for controls (below user header)
         left = tk.Frame(frame, bg="#1e1b29")
@@ -696,9 +682,9 @@ class DiscordBotGUI:
         rot_right.pack(side="right", fill="both", expand=False, padx=(8, 0))
         tk.Label(rot_right, text="Rotator Messages", bg="#1e1b29", fg="#e0d7ff").pack(anchor="w")
         rot_content = tk.Frame(rot_right, bg="#1e1b29")
-        rot_content.pack(fill="both", expand=True)
+        rot_content.pack(fill="y")
         try:
-            self.apply_glow(rot_right, thickness=2)
+            self.apply_glow(rot_content, thickness=2)
         except Exception:
             pass
         list_frame = tk.Frame(rot_content, bg="#1e1b29")
@@ -763,18 +749,12 @@ class DiscordBotGUI:
         self.reply_delay_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
         self.reply_delay_entry.insert(0, "8")
         self.reply_delay_entry.pack(fill="x", pady=(0, 12), ipady=6)
-        # Loop count only here; switch delay moved to rotator
-        tk.Label(delays, text="Loops (0 = infinite):", anchor="w", bg="#1e1b29", fg="#e0d7ff").pack(fill="x")
-        self.loop_count_entry = tk.Entry(delays, width=24, relief="flat", bg="#2c2750", fg="#e0d7ff", insertbackground="#e0d7ff")
-        self.loop_count_entry.insert(0, "0")
-        self.loop_count_entry.pack(fill="x", pady=(0, 12), ipady=6)
         try:
             self.apply_glow(self.delay_entry)
             self.apply_glow(self.reply_delay_entry)
-            self.apply_glow(self.loop_count_entry)
         except Exception:
             pass
-        
+
         # Credit box under reply delay (moved slightly further down)
         try:
             credit = tk.Frame(delays, bg="#2c2750")
@@ -1034,7 +1014,7 @@ class DiscordBotGUI:
         left.pack(side="left", padx=10)
         center.pack(side="left", expand=True)
         right.pack(side="right", padx=10)
-        self._edex_title = tk.Label(left, text="KS BOT", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
+        self._edex_title = tk.Label(left, text="KS USER PANEL", bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
         self._edex_title.pack(side="left")
         self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
         self._edex_clock.pack()
@@ -1052,28 +1032,26 @@ class DiscordBotGUI:
         try:
             for pane, title in [
                 (self.log_panel, "TERMINAL: LOG"),
-                # Removed header over main frame to avoid 'KS BOT' above channels
+                (self.main_frame, "KS USER PANEL"),
             ]:
                 bar = tk.Frame(pane, bg="#0b1020")
+                try:
+                    if pane is getattr(self, 'log_panel', None) and hasattr(self, 'log_text'):
+                        bar.pack(fill="x", side="top", before=self.log_text)
+                    else:
+                        bar.pack(fill="x", side="top")
+                except Exception:
+                    bar.pack(fill="x", side="top")
                 try:
                     self.apply_glow(bar, thickness=2)
                 except Exception:
                     pass
-                left = tk.Frame(bar, bg="#0b1020")
-                center = tk.Frame(bar, bg="#0b1020")
-                right = tk.Frame(bar, bg="#0b1020")
-                left.pack(side="left", padx=10)
-                center.pack(side="left", expand=True)
-                right.pack(side="right", padx=10)
-                self._edex_title = tk.Label(left, text=title, bg="#0b1020", fg="#b799ff", font=("Consolas", 12, "bold"))
-                self._edex_title.pack(side="left")
-                self._edex_clock = tk.Label(center, text="", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 11))
-                self._edex_clock.pack()
-                try:
-                    self.apply_glow(self._edex_clock, thickness=1)
-                except Exception:
-                    pass
-                bar.pack(fill="x")
+                tk.Label(bar, text=title, bg="#0b1020", fg="#b799ff", font=("Consolas", 10, "bold")).pack(side="left", padx=8)
+                # Status LEDs
+                for color in ("#22c55e", "#f59e0b", "#ef4444"):
+                    c = tk.Canvas(bar, width=10, height=10, bg="#0b1020", highlightthickness=0)
+                    c.pack(side="right", padx=3)
+                    c.create_oval(2, 2, 8, 8, fill=color, outline=color)
         except Exception:
             pass
 
@@ -1105,21 +1083,10 @@ class DiscordBotGUI:
             except Exception:
                 pass
             tk.Label(self._edex_hud, text="SYS", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(anchor="w", padx=8, pady=(6,2))
-            # SYS credit bottom-right
-            cred = tk.Frame(self._edex_hud, bg="#0b1020")
-            cred.pack(fill="x", padx=8, pady=(0, 2))
-            try:
-                lbl = tk.Label(cred, text="KoolaidSippin • Made by Iris&Classical", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 9))
-                lbl.pack(anchor="e")
-            except Exception:
-                pass
             self._hud_time = tk.Label(self._edex_hud, text="time: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
             self._hud_time.pack(anchor="w", padx=8)
             self._hud_msgs = tk.Label(self._edex_hud, text="msgs: 0", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
             self._hud_msgs.pack(anchor="w", padx=8)
-            # Active users indicator
-            self._hud_active = tk.Label(self._edex_hud, text="active: —", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 10))
-            self._hud_active.pack(anchor="w", padx=8)
             # Gauges
             gwrap = tk.Frame(self._edex_hud, bg="#0b1020")
             gwrap.pack(fill="x", padx=8, pady=(4,6))
@@ -1199,16 +1166,6 @@ class DiscordBotGUI:
         try:
             self._hud_time.config(text=f"time: {time.strftime('%H:%M:%S')}" )
             self._hud_msgs.config(text=f"msgs: {self.message_counter_total}")
-            # Update active users label if present
-            try:
-                val = getattr(self, '_last_active_count', None)
-                if val is None:
-                    txt = "active: —"
-                else:
-                    txt = f"active: {val}"
-                self._hud_active.config(text=txt)
-            except Exception:
-                pass
             # Gauges
             cpu_p = 0
             ram_p = 0
@@ -1245,12 +1202,6 @@ class DiscordBotGUI:
         # Re-schedule
         try:
             self.root.after(500, self._edex_tick)
-        except Exception:
-            pass
-        # Kick off heartbeat/poller for active users
-        try:
-            self._last_active_count = 0
-            self._start_active_users_services()
         except Exception:
             pass
 
@@ -1306,22 +1257,23 @@ class DiscordBotGUI:
 
     def _rebuild_side_tokens(self):
         try:
-            # Mirror left multi_token_vars into the token selection box
-            for w in list(self.multi_tokens_frame.winfo_children()):
+            # Mirror left multi_token_vars into the side token box
+            for w in list(getattr(self, 'multi_tokens_side_frame', tk.Frame()).winfo_children()):
                 w.destroy()
             for name, var in getattr(self, 'multi_token_vars', {}).items():
                 sv = tk.BooleanVar(value=var.get())
-                def _bind_toggle(n=name, v=sv):
+                def _bind_toggle(v=var, sv=sv):
+                    v.set(sv.get())
+                    # Also refresh avatar strip when selection changes
                     try:
-                        self.multi_token_vars[n].set(bool(v.get()))
                         self._refresh_selected_avatars()
                     except Exception:
                         pass
-                cb = tk.Checkbutton(self.multi_tokens_frame, text=name, variable=sv,
+                cb = tk.Checkbutton(self.multi_tokens_side_frame, text=name, variable=sv,
                                     bg="#2c2750", fg="#e0d7ff", selectcolor="#5a3e99",
                                     activebackground="#2c2750", activeforeground="#e0d7ff",
                                     command=_bind_toggle)
-                cb.pack(anchor="w", padx=8)
+                cb.pack(anchor='w')
         except Exception:
             pass
 
@@ -1538,7 +1490,30 @@ class DiscordBotGUI:
             "Authorization": self.user_token,
             # Minimal headers; Discord accepts user token for self endpoints
         })
-        return requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+        # If token invalidated (401/403), prompt for new token and retry once
+        if resp.status_code in (401, 403):
+            try:
+                new_tok = simpledialog.askstring("Token Required", "Your Discord token is invalid or expired. Enter a new token:")
+                if new_tok:
+                    self.user_token = new_tok.strip()
+                    try:
+                        # Persist into current token selection if exists
+                        if self.selected_token_name:
+                            self.tokens[self.selected_token_name] = self.user_token
+                            self.save_data()
+                    except Exception:
+                        pass
+                    headers["Authorization"] = self.user_token
+                    resp = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+                    # Refresh UI user info
+                    try:
+                        threading.Thread(target=self.fetch_and_display_user_info, args=(self.user_token,), daemon=True).start()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return resp
 
     def upload_discord_backup(self):
         """Upload tokens.json and channels.json to the configured backup channel as attachments."""
@@ -1674,8 +1649,21 @@ class DiscordBotGUI:
             self._welcome_overlay.lower(self.bg_canvas)
             self._welcome_overlay.lift()
             self._welcome_overlay.configure(bg="#000000")
+            # Start with a tiny panel and animate to target size (eDEX-like)
             self._welcome_panel = tk.Frame(self._welcome_overlay, bg="#0b1020")
-            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.6)
+            self._welcome_panel.place(relx=0.5, rely=0.4, anchor="center", relwidth=0.02, relheight=0.02)
+            target = {"relwidth": 0.6, "relheight": 0.2}
+            def _animate_panel(step=0):
+                try:
+                    steps = 16
+                    rw = 0.02 + (target["relwidth"] - 0.02) * (step / steps)
+                    rh = 0.02 + (target["relheight"] - 0.02) * (step / steps)
+                    self._welcome_panel.place_configure(relwidth=rw, relheight=rh)
+                    if step < steps:
+                        self.root.after(16, lambda: _animate_panel(step + 1))
+                except Exception:
+                    pass
+            _animate_panel()
             try:
                 self.apply_glow(self._welcome_panel, thickness=2)
             except Exception:
@@ -1689,6 +1677,23 @@ class DiscordBotGUI:
         try:
             self._ensure_terminal_overlay()
             term = self._welcome_term
+            if not username:
+                # Fallback: auto-advance without username
+                term.config(text="> initializing KS terminal ...\n> linking session ...\n> Welcome")
+                def _finish2():
+                    try:
+                        self._welcome_overlay.destroy()
+                        self._welcome_overlay = None
+                    except Exception:
+                        pass
+                    def _show_main2():
+                        try:
+                            self.main_frame.place(**self._mf_place_args)
+                        except Exception:
+                            pass
+                    self.root.after(800, _show_main2)
+                self.root.after(1200, _finish2)
+                return
             lines = [
                 "> initializing KS terminal ...",
                 "> linking session ...",
@@ -1761,20 +1766,8 @@ class DiscordBotGUI:
             self.log("❌ Invalid delay value.")
             return
 
-        # Loop count (0 = infinite)
-        try:
-            loop_count = int(self.loop_count_entry.get())
-            if loop_count < 0:
-                raise ValueError
-        except Exception:
-            self.log("❌ Invalid loops value.")
-            return
-        try:
-            self.token_switch_delay = float(self.rotator_switch_delay_entry.get() or 0)
-            if self.token_switch_delay < 0:
-                self.token_switch_delay = 0.0
-        except Exception:
-            self.token_switch_delay = 0.0
+        # Loop count control removed from UI; default to sending once per channel
+        loop_count = 1
 
         self.selected_channel_names = selected_channels
         self.send_running = True
@@ -1800,17 +1793,11 @@ class DiscordBotGUI:
         # Assign rotator indices per token to avoid same content simultaneously
         self._per_token_rotator_offsets = {name: idx for idx, name in enumerate(selected_token_names)}
 
-        # Start each token sender with optional inter-token delay
-        for idx, name in enumerate(selected_token_names):
+        for name in selected_token_names:
             tok = self.tokens.get(name)
             threading.Thread(target=self.send_messages_loop,
                              args=(tok, self.selected_channel_names, message, delay, loop_count, name),
                              daemon=True).start()
-            try:
-                if idx < len(selected_token_names) - 1 and getattr(self, 'token_switch_delay', 0) > 0:
-                    time.sleep(float(self.token_switch_delay))
-            except Exception:
-                pass
         self.log(f"▶️ Started sending with {len(selected_token_names)} token(s).")
 
     def send_messages_loop(self, token, channel_names, message, delay, loop_count, token_name=None):
@@ -1863,13 +1850,6 @@ class DiscordBotGUI:
                 except Exception:
                     pass
                 time.sleep(delay)
-                # Optional extra delay between content switches
-                try:
-                    tsd = float(getattr(self, 'token_switch_delay', 0) or 0)
-                    if tsd > 0:
-                        time.sleep(tsd)
-                except Exception:
-                    pass
             count += 1
         self.send_running = False
         self.log("⏹️ Sending messages stopped.")
@@ -2406,11 +2386,6 @@ class DiscordBotGUI:
                             pass
                         # Close UI if access gone
                         try:
-                            # Mark root so outer runner can relaunch login
-                            try:
-                                setattr(self.root, '_expired_due_to_key', True)
-                            except Exception:
-                                pass
                             self.root.after(500, self.root.destroy)
                         except Exception:
                             pass
@@ -2542,138 +2517,6 @@ class DiscordBotGUI:
             } for m in self._chat_items[-400:]]
             with open(self.CHAT_HISTORY_FILE, 'w') as f:
                 json.dump(data, f, indent=2)
-        except Exception:
-            pass
-
-    def _start_active_users_services(self):
-        # Heartbeat every 30s and poll active count every 10s
-        try:
-            if getattr(self, '_active_services_started', False):
-                return
-            self._active_services_started = True
-        except Exception:
-            pass
-        def beat():
-            try:
-                uid = str(self._login_user_id or self.user_id or '')
-                if uid:
-                    try:
-                        requests.post(f"{SERVICE_URL}/api/selfbot-heartbeat", data={"user_id": uid}, timeout=4)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            try:
-                self.root.after(30000, beat)
-            except Exception:
-                pass
-        def poll():
-            try:
-                r = requests.get(f"{SERVICE_URL}/api/active-users", timeout=5)
-                if r.status_code == 200:
-                    j = r.json() or {}
-                    self._last_active_count = int(j.get('active_users', 0))
-                else:
-                    self._last_active_count = self._last_active_count if hasattr(self, '_last_active_count') else 0
-            except Exception:
-                pass
-            try:
-                self.root.after(10000, poll)
-            except Exception:
-                pass
-        try:
-            # Fire immediately so HUD shows quickly
-            beat()
-            poll()
-        except Exception:
-            pass
-
-    def _welcome_screen(self, username: str):
-        try:
-            self._welcome_panel = tk.Frame(self.root, bg="#0b1020")
-            self._welcome_panel.place(relx=0.2, rely=0.18, relwidth=0.6, relheight=0.22)
-            try:
-                self.apply_glow(self._welcome_panel, thickness=2)
-            except Exception:
-                pass
-            # eDEX-like header bar
-            hdr = tk.Frame(self._welcome_panel, bg="#0b1020")
-            try:
-                self.apply_glow(hdr, thickness=1)
-            except Exception:
-                pass
-            tk.Label(hdr, text="SESSION", bg="#0b1020", fg="#b799ff", font=("Consolas", 11, "bold")).pack(side="left", padx=10)
-            hdr.pack(fill="x")
-            # Border-draw animation using thin frames
-            border = tk.Frame(self._welcome_panel, bg="#0b1020")
-            border.pack(fill="both", expand=True)
-            border.update_idletasks()
-            w = max(1, border.winfo_width())
-            h = max(1, border.winfo_height())
-            line_th = 2
-            top_line = tk.Frame(border, bg="#5a3e99", height=line_th, width=0)
-            top_line.place(x=10, y=6)
-            right_line = tk.Frame(border, bg="#5a3e99", width=line_th, height=0)
-            right_line.place(x=w-12, y=6)
-            bottom_line = tk.Frame(border, bg="#5a3e99", height=line_th, width=0)
-            bottom_line.place(x=10, y=h-10)
-            left_line = tk.Frame(border, bg="#5a3e99", width=line_th, height=0)
-            left_line.place(x=10, y=6)
-            steps = 20
-            delay = 20
-            def anim_top(i=0):
-                try:
-                    top_line.config(width=int((w-22) * (i/steps)))
-                    if i < steps:
-                        border.after(delay, lambda: anim_top(i+1))
-                    else:
-                        anim_right()
-                except Exception:
-                    pass
-            def anim_right(i=0):
-                try:
-                    right_line.place(x=w-12, y=6)
-                    right_line.config(height=int((h-16) * (i/steps)))
-                    if i < steps:
-                        border.after(delay, lambda: anim_right(i+1))
-                    else:
-                        anim_bottom()
-                except Exception:
-                    pass
-            def anim_bottom(i=0):
-                try:
-                    bottom_line.place(x=w-12 - int((w-22) * (i/steps)), y=h-10)
-                    bottom_line.config(width=int((w-22) * (i/steps)))
-                    if i < steps:
-                        border.after(delay, lambda: anim_bottom(i+1))
-                    else:
-                        anim_left()
-                except Exception:
-                    pass
-            def anim_left(i=0):
-                try:
-                    left_line.config(height=int((h-16) * (i/steps)))
-                    if i < steps:
-                        border.after(delay, lambda: anim_left(i+1))
-                    else:
-                        # Terminal text after 1s
-                        def _show_text():
-                            try:
-                                self._welcome_term = tk.Label(self._welcome_panel, text="> awaiting session ...", bg="#0b1020", fg="#9ab0ff", font=("Consolas", 13))
-                                self._welcome_term.place(relx=0.03, rely=0.35)
-                            except Exception:
-                                pass
-                        border.after(1000, _show_text)
-                except Exception:
-                    pass
-            anim_top()
-        except Exception:
-            pass
-
-    def _place_main_ui(self):
-        try:
-            self.main_frame_outer.place(**self._mf_place_args)
-            self.main_frame.pack(fill="both", expand=True, padx=6, pady=6)
         except Exception:
             pass
 
@@ -2974,116 +2817,90 @@ class Selfbot:
             time.sleep(0.5)
     
     def run(self):
-        while True:
-            if not self.activated:
-                activation_key, user_id, user_token = show_banner_and_prompt()
-                self.user_token = user_token
-                self.user_id = user_id
-                if self.activate_key(activation_key):
-                    print("🎉 Welcome! Selfbot is now active.")
-                else:
-                    print("❌ Activation failed. Selfbot will exit.")
-                    return
-
-            print("🔍 Checking key expiration via API...")
-            status = self.check_member_status_via_api(self.user_id)
-            ok = bool(status.get("ok"))
-            should = False
-            reason_msg = ""
-            if ok:
-                raw = status.get("raw") or {}
-                should = bool(raw.get("should_have_access", False))
-                has_active_key = bool(raw.get("has_active_key", False))
-                has_role = bool(raw.get("has_role", False))
-                bound_match = bool(raw.get("bound_match", False))
-                gid = raw.get("guild_id")
-                rid = raw.get("role_id")
-                if not should:
-                    if not has_active_key:
-                        reason_msg = "No active key (expired or not activated)."
-                    elif not bound_match:
-                        reason_msg = "Machine ID mismatch. This key is bound to a different machine."
-                    elif not has_role:
-                        reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
-                    else:
-                        reason_msg = "Access denied by server policy."
+        if not self.activated:
+            activation_key, user_id, user_token = show_banner_and_prompt()
+            self.user_token = user_token
+            self.user_id = user_id
+            if self.activate_key(activation_key):
+                print("🎉 Welcome! Selfbot is now active.")
             else:
-                reason_msg = f"Server error: {status.get('err','unknown')}"
-            if not (ok and should):
-                print(f"❌ Access denied. {reason_msg}")
-                # Force login prompt again
-                self.activated = False
-                self.activation_key = None
-                self.key_expiration_time = None
+                print("❌ Activation failed. Selfbot will exit.")
+                return
+
+        print("🔍 Checking key expiration via API...")
+        status = self.check_member_status_via_api(self.user_id)
+        ok = bool(status.get("ok"))
+        should = False
+        reason_msg = ""
+        if ok:
+            raw = status.get("raw") or {}
+            should = bool(raw.get("should_have_access", False))
+            has_active_key = bool(raw.get("has_active_key", False))
+            has_role = bool(raw.get("has_role", False))
+            bound_match = bool(raw.get("bound_match", False))
+            gid = raw.get("guild_id")
+            rid = raw.get("role_id")
+            if not should:
+                if not has_active_key:
+                    reason_msg = "No active key (expired or not activated)."
+                elif not bound_match:
+                    reason_msg = "Machine ID mismatch. This key is bound to a different machine."
+                elif not has_role:
+                    reason_msg = f"Required role missing in guild {gid} (role ID {rid})."
+                else:
+                    reason_msg = "Access denied by server policy."
+        else:
+            reason_msg = f"Server error: {status.get('err','unknown')}"
+        if not (ok and should):
+            print(f"❌ Access denied. {reason_msg}")
+            return
+
+        # Online webhook (no IP/token/machine)
+        self.send_online_webhook()
+
+        # Launch the GUI message panel after successful login/activation
+        try:
+            root = tk.Tk()
+            app = DiscordBotGUI(root, initial_token=self.user_token, initial_user_id=self.user_id)
+            root.mainloop()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Send offline notification silently
+            try:
+                username = "Unknown"
                 try:
-                    self.save_activation()
+                    headers = {"Authorization": self.user_token}
+                    r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
+                    if r.status_code == 200:
+                        u = r.json()
+                        username = f"{u.get('username','Unknown')}#{u.get('discriminator','0000')}"
                 except Exception:
                     pass
-                continue
-
-            # Online webhook (no IP/token/machine)
-            self.send_online_webhook()
-
-            # Launch the GUI message panel after successful login/activation
-            root = None
-            try:
-                root = tk.Tk()
-                app = DiscordBotGUI(root, initial_token=self.user_token, initial_user_id=self.user_id)
-                root.mainloop()
-            except KeyboardInterrupt:
-                pass
-            finally:
-                # Send offline notification silently
+                off_embed = {
+                    "title": "OFFLINE",
+                    "color": 0xE74C3C,
+                    "fields": [
+                        {"name": "User", "value": username, "inline": True},
+                        {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
+                        {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
+                        {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
+                        {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
+                        {"name": "Offline At", "value": f"<t:{int(time.time())}:F>", "inline": True}
+                    ]
+                }
                 try:
-                    username = "Unknown"
-                    try:
-                        headers = {"Authorization": self.user_token}
-                        r = requests.get("https://discord.com/api/v10/users/@me", headers=headers, timeout=6)
-                        if r.status_code == 200:
-                            u = r.json()
-                            username = f"{u.get('username','Unknown')}#{u.get('discriminator','0000')}"
-                    except Exception:
-                        pass
-                    off_embed = {
-                        "title": "OFFLINE",
-                        "color": 0xE74C3C,
-                        "fields": [
-                            {"name": "User", "value": username, "inline": True},
-                            {"name": "User ID", "value": f"`{self.user_id}`", "inline": True},
-                            {"name": "Masked Token", "value": f"`{mask_token(self.user_token)}`", "inline": False},
-                            {"name": "Machine ID", "value": f"`{machine_id()}`", "inline": True},
-                            {"name": "Activation Key", "value": f"`{self.activation_key or 'N/A'}`", "inline": False},
-                            {"name": "Offline At", "value": f"<t:{int(time.time())}:F>", "inline": True}
-                        ]
-                    }
-                    try:
-                        requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
-                    except Exception:
-                        pass
-                    try:
-                        if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
-                            requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [off_embed]}, timeout=8)
-                    except Exception:
-                        pass
+                    requests.post(WEBHOOK_URL, json={"embeds": [off_embed]}, timeout=8)
                 except Exception:
                     pass
-                print("\n👋Selfbot stopped")
-            # If GUI was closed due to expiry, loop back to login
-            try:
-                if root is not None and getattr(root, '_expired_due_to_key', False):
-                    print("🔁 Key expired. Returning to login prompt...")
-                    self.activated = False
-                    self.activation_key = None
-                    self.key_expiration_time = None
-                    try:
-                        self.save_activation()
-                    except Exception:
-                        pass
-                    continue
+                try:
+                    if TOKEN_EVENT_WEBHOOK and TOKEN_EVENT_WEBHOOK != WEBHOOK_URL:
+                        requests.post(TOKEN_EVENT_WEBHOOK, json={"embeds": [off_embed]}, timeout=8)
+                except Exception:
+                    pass
             except Exception:
                 pass
-            # Normal exit: break the loop
-            break
+            print("\n👋Selfbot stopped")
 
 
 if __name__ == "__main__":
