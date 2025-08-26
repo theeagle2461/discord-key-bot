@@ -3686,11 +3686,9 @@ async def upload_backup_snapshot(payload: dict) -> None:
         pass
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
- @bot.tree.command(name="swapkey", description="Swap a key from one user to another (Special Admin Only)")
+@bot.tree.command(name="swapkey", description="Swap a key from one user to another (Special Admin Only)")
  async def swap_key(interaction: discord.Interaction, from_user: discord.Member, to_user: discord.Member, key: str):
  await interaction.response.defer (ephemeral=True)
- 
- # Validate
  k = key.strip()
  info = key_manager.get_key_info(k)
  if not info:
@@ -3705,7 +3703,7 @@ async def upload_backup_snapshot(payload: dict) -> None:
  await interaction.followup.send("❌ Key is expired.", ephemeral=True); return
  
  # Transfer ownership and clear binding
- key_manager.keys[k]['user_id'] = int(to_user.id)
+ key_manager.keys[k]['user_id'] = int(to_user.id
  key_manager.keys[k]['activated_by'] = int(to_user.id)
  key_manager.keys[k]['machine_id'] = None
  key_manager.keys[k]['activation_time'] = None
@@ -3715,7 +3713,7 @@ async def upload_backup_snapshot(payload: dict) -> None:
  Except Exception:
  pass
  
- # Immediate JSON backup upload (uses your existing helper)
+ # Immediate JSON backup upload
  try:
  await upload_backup_snapshot(key_manager.build_backup_payload())
  Except Exception:
@@ -3736,9 +3734,6 @@ async def upload_backup_snapshot(payload: dict) -> None:
  pass
  
  # Remaining time summary
- rem = max(0, (int(info.get('expiration_time') or 0) - int(time.time())
- d = rem // 86400; h = (rem % 86400)//3600; m = (rem % 3600)//60
+ rem = max(0, (int(info.get('expiration_time') or 0) - int(time.time())))
+ d = rem // 86400; h = (rem %) 86400)//3600; m = (rem % 3600)//60
  await interaction.followup.send(f"✅ Swapped `{k}` to {to_user.mention}.  Remaining: {d}d {h}h {m}m.  New user must activate to bind.", ephemeral=True
-
-
-
