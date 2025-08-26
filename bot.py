@@ -950,6 +950,17 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
 	
 	# Send to channel
 	await interaction.response.send_message(embed=embed)
+	# Immediate backup upload (if configured)
+	try:
+		if BACKUP_CHANNEL_ID > 0:
+			channel = bot.get_channel(BACKUP_CHANNEL_ID)
+			if channel:
+				payload = key_manager.build_backup_payload()
+				data = json.dumps(payload, indent=2).encode()
+				file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+				await channel.send(content="Backup after key generation", file=file)
+	except Exception:
+		pass
 
 @bot.tree.command(name="activate", description="Activate a key and get the user role")
 async def activate_key(interaction: discord.Interaction, key: str):
@@ -1001,7 +1012,17 @@ async def activate_key(interaction: discord.Interaction, key: str):
             except Exception:
                 user_ip = None
             await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
-            
+            # Immediate backup upload (if configured)
+            try:
+                if BACKUP_CHANNEL_ID > 0:
+                    channel = bot.get_channel(BACKUP_CHANNEL_ID)
+                    if channel:
+                        payload = key_manager.build_backup_payload()
+                        data = json.dumps(payload, indent=2).encode()
+                        file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+                        await channel.send(content="Backup after key activation", file=file)
+            except Exception:
+                pass
         else:
             await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
             
@@ -3624,3 +3645,77 @@ async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = 
         await ctx.reply(f"Error: {e}")
 
         return
+
+@bot.tree.command(name="leaderboard", description="Show top 10 users by messages sent in the selfbot")
+async def leaderboard(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer(ephemeral=False)
+        # Load latest from file to avoid stale memory
+        stats: dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                import json as _json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await interaction.followup.send("No stats yet.")
+            return
+        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        rank = 1
+        desc_lines = []
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        await interaction.followup.send(embed=em)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}")
+
+@bot.command(name="leaderboard")
+async def leaderboard_text(ctx: commands.Context):
+    try:
+        # Only allow in the configured guild
+        if not ctx.guild or ctx.guild.id != GUILD_ID:
+            return
+        # Load stats
+        stats: dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                import json as _json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await ctx.reply("No stats yet.")
+            return
+        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        desc_lines = []
+        rank = 1
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        await ctx.reply(embed=em)
+    except Exception as e:
+        await ctx.reply(f"Error: {e}")
