@@ -943,6 +943,12 @@ async def generate_key(interaction: discord.Interaction, user: discord.Member, c
 	
 	# Send key to webhook
 	await key_manager.send_generated_key_to_webhook(key, duration_days, interaction.user.display_name)
+	# Force immediate backup upload
+	try:
+		payload = key_manager.build_backup_payload()
+		await upload_backup_snapshot(payload)
+	except Exception:
+		pass
 	
 	# Create embed
 	embed = discord.Embed(
@@ -987,11 +993,28 @@ async def activate_key(interaction: discord.Interaction, key: str):
             
             # Get key duration info
             key_data = key_manager.get_key_info(key)
-            duration_days = key_data.get("duration_days", 30)
+            duration_days = key_data.get("duration_days", 30) if key_data else 30
             
-            # Send success message
+            # Force immediate backup upload
+            try:
+                payload = key_manager.build_backup_payload()
+                await upload_backup_snapshot(payload)
+            except Exception:
+                pass
+            
+            # Webhook notify
+            try:
+                try:
+                    user_ip = os.getenv('SELF_IP')
+                except Exception:
+                    user_ip = None
+                await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
+            except Exception:
+                pass
+            
+            # Create embed
             embed = discord.Embed(
-                title="🔑 Key Activated Successfully!",
+                title="✅ Key Activated",
                 description=f"Your key has been activated and you now have access to the selfbot.",
                 color=0x00ff00
             )
@@ -1002,25 +1025,14 @@ async def activate_key(interaction: discord.Interaction, key: str):
             if result.get('channel_id'):
                 embed.add_field(name="Channel Locked", value=f"<#{result['channel_id']}>", inline=True)
             
-            # Add SelfBot instructions
-            embed.add_field(name="📱 SelfBot Setup", value=f"Use this key in SelfBot.py - it will automatically sync with {duration_days} days duration!", inline=False)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url if interaction.user.display_avatar else None)
+            embed.set_footer(text=f"Activated by {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed)
-            
-            # Send webhook notification (with IP if available)
-            user_ip = None
-            try:
-                import os
-                user_ip = os.getenv('SELF_IP')
-            except Exception:
-                user_ip = None
-            await key_manager.send_webhook_notification(key, user_id, machine_id, ip=user_ip)
-            
         else:
             await interaction.response.send_message(f"❌ **Activation Failed:** {result['error']}", ephemeral=True)
-            
     except Exception as e:
-        await interaction.response.send_message(f"❌ **Error during activation:** {str(e)}", ephemeral=True)
+        await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 # Removed duplicate sync command name to avoid conflicts
 @bot.tree.command(name="syncduration", description="Sync your key duration with SelfBot")
@@ -2782,13 +2794,11 @@ def start_health_check():
                         user_id_val = None
                     resp = {}
                     status_code = 200
-                    if not key or not user_id_val:
-                        resp = {'success': False, 'error': 'missing key or user_id'}
+                    if not key or not user_id_val or not machine:
+                        resp = {'success': False, 'error': 'missing key, user_id, or machine_id'}
                         status_code = 400
                     else:
                         try:
-                            if not machine:
-                                machine = str(user_id_val)
                             result = key_manager.activate_key(key, str(machine), int(user_id_val))
                             resp = result
                             if not result.get('success'):
@@ -3674,5 +3684,74 @@ async def upload_backup_snapshot(payload: dict) -> None:
             requests.post(url, files=files, timeout=15)
     except Exception:
         pass
+
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="swapkey", description="Swap a key from one user to another (Special Admin Only)")
+async def swap_key(interaction: discord.Interaction, from_user: discord.Member, to_user: discord.Member, key: str):
+	# Special admin only
+	if interaction.user.id not in SPECIAL_ADMIN_IDS:
+		await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
+		return
+	if not await check_permissions(interaction):
+		return
+	try:
+		k = key.strip()
+		info = key_manager.get_key_info(k)
+		if not info:
+			await interaction.response.send_message("❌ Key not found.", ephemeral=True)
+			return
+		if int(info.get('user_id', 0) or 0) != int(from_user.id):
+			await interaction.response.send_message("❌ This key is not owned by the from_user.", ephemeral=True)
+			return
+		if not info.get('is_active', False):
+			await interaction.response.send_message("❌ Key is not active.", ephemeral=True)
+			return
+		now = int(time.time())
+		exp = int(info.get('expiration_time') or 0)
+		if exp and exp <= now:
+			await interaction.response.send_message("❌ Key is expired.", ephemeral=True)
+			return
+		# Transfer ownership and reset binding so new user can activate/bind
+		key_manager.keys[k]['user_id'] = int(to_user.id)
+		key_manager.keys[k]['activated_by'] = int(to_user.id)
+		key_manager.keys[k]['machine_id'] = None
+		key_manager.keys[k]['activation_time'] = None
+		# Persist and log
+		key_manager.save_data()
+		try:
+			key_manager.add_log('swapkey', k, user_id=int(to_user.id), details={'from_user': int(from_user.id)})
+		except Exception:
+			pass
+		# Upload immediate backup
+		try:
+			payload = key_manager.build_backup_payload()
+			await upload_backup_snapshot(payload)
+		except Exception:
+			pass
+		# Adjust roles: remove from old user, add to new user
+		try:
+			guild = interaction.guild
+			role = guild.get_role(ROLE_ID) if guild else None
+			if guild and role:
+				oldm = guild.get_member(int(from_user.id))
+				newm = guild.get_member(int(to_user.id))
+				if oldm and role in oldm.roles:
+					await oldm.remove_roles(role, reason="Key swapped to another user")
+				if newm and role not in newm.roles:
+					await newm.add_roles(role, reason="Key received via swap")
+		except Exception:
+			pass
+		# Report remaining time
+		rem = 0
+		try:
+			exp = int(info.get('expiration_time') or 0)
+			rem = max(0, exp - int(time.time()))
+		except Exception:
+			rem = 0
+		d = rem // 86400; h = (rem % 86400)//3600; m = (rem % 3600)//60
+		await interaction.response.send_message(f"✅ Swapped key `{k}` to {to_user.mention}. Remaining: {d}d {h}h {m}m. The new user must activate to bind a machine.")
+	except Exception as e:
+		await interaction.response.send_message(f"❌ Swap failed: {e}", ephemeral=True)
+
 
 
