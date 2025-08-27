@@ -841,17 +841,9 @@ async def on_ready():
         await send_status_webhook('online')
     except Exception:
         pass
-    # Clear global commands (avoid duplicates) and force-sync guild commands
+    # Force-sync guild commands
     try:
         guild_obj = discord.Object(id=GUILD_ID)
-        try:
-            # Overwrite global commands with empty to clear them
-            await bot.tree.sync()  # ensure tree exists
-            bot.tree.clear_commands(guild=None)
-            await bot.tree.sync()
-            print("🧹 Cleared global application commands")
-        except Exception as e:
-            print(f"⚠️ Failed clearing globals: {e}")
         synced = await bot.tree.sync(guild=guild_obj)
         print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
         try:
