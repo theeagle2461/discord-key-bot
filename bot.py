@@ -59,16 +59,25 @@ def special_admin_only():
 		return interaction.user.id in SPECIAL_ADMIN_IDS
 	return app_commands.check(predicate)
 
+# Admin role-only check (role 1402650246538072094)
+def admin_role_only():
+	async def predicate(interaction: discord.Interaction) -> bool:
+		try:
+			member = interaction.user if isinstance(interaction.user, discord.Member) else interaction.guild.get_member(interaction.user.id)
+			return bool(member and any(getattr(r, 'id', 0) == 1402650246538072094 for r in getattr(member, 'roles', [])))
+		except Exception:
+			return False
+	return app_commands.check(predicate)
+
 # Webhook configuration for key notifications and selfbot launches
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
 PURCHASE_LOG_WEBHOOK = os.getenv('PURCHASE_LOG_WEBHOOK','')
 # Add backup webhook override for automated snapshots
 BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/webhooks/1409710419173572629/9NaANTEYq6ve1ZpF7SU7gWx89jPO9nADfmPR_4WkIfrOGUZuOa4ECF8dZ2LNgrylKpfd')
-# NOWPayments credentials
-NWP_API_KEY = os.getenv('NWP_API_KEY','')
-NWP_IPN_SECRET = os.getenv('NWP_IPN_SECRET','')
-PUBLIC_URL = os.getenv('PUBLIC_URL','')  # optional; used for ipn callback if provided
+# Removed NOWPayments credentials and related features
+# PUBLIC_URL may still be used by health endpoints elsewhere
+PUBLIC_URL = os.getenv('PUBLIC_URL','')
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -924,7 +933,7 @@ async def check_permissions(interaction) -> bool:
     
     return True
 
-	if duration_days < 1 or duration_days > 365:
+	@duration_days < 1 or duration_days > 365:
 		await interaction.response.send_message("❌ Duration must be between 1 and 365 days.", ephemeral=True)
 		return
 	
@@ -1044,6 +1053,7 @@ async def sync_key(interaction: discord.Interaction, key: str):
     except Exception as e:
         await interaction.response.send_message(f"❌ Error syncing key: {str(e)}", ephemeral=True)
 
+@admin_role_only()
 @bot.tree.command(name="revoke", description="Revoke a specific key")
 async def revoke_key(interaction: discord.Interaction, key: str):
 	"""Revoke a specific key"""
@@ -1064,7 +1074,7 @@ async def revoke_key(interaction: discord.Interaction, key: str):
 	else:
 		await interaction.response.send_message("❌ Key not found or already revoked.", ephemeral=True)
 
-@special_admin_only()
+@admin_role_only()
 @bot.tree.command(name="keys", description="Show all keys for a user")
 async def show_keys(interaction: discord.Interaction, user: Optional[discord.Member] = None):
 	"""Show all keys for a user (or yourself if no user specified)"""
@@ -1095,6 +1105,7 @@ async def show_keys(interaction: discord.Interaction, user: Optional[discord.Mem
 	
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@admin_role_only()
 @bot.tree.command(name="info", description="Get detailed information about a key")
 async def key_info(interaction: discord.Interaction, key: str):
     """Get detailed information about a key"""
@@ -1131,7 +1142,7 @@ async def key_info(interaction: discord.Interaction, key: str):
     
     await interaction.response.send_message(embed=embed)
 
-@special_admin_only()
+@admin_role_only()
 @bot.tree.command(name="backup", description="Create a backup of all keys")
 async def backup_keys(interaction: discord.Interaction):
 	"""Create a backup of all keys"""
@@ -1155,7 +1166,7 @@ async def backup_keys(interaction: discord.Interaction):
 	
 	await interaction.response.send_message(embed=embed)
 
-@special_admin_only()
+@admin_role_only()
 @bot.tree.command(name="restore", description="Restore keys from a backup file")
 async def restore_keys(interaction: discord.Interaction, backup_file: str):
 	"""Restore keys from a backup file"""
@@ -1184,7 +1195,7 @@ async def restore_keys(interaction: discord.Interaction, backup_file: str):
 	else:
 		await interaction.response.send_message("❌ Failed to restore from backup.", ephemeral=True)
 
-@special_admin_only()
+@admin_role_only()
 @bot.tree.command(name="status", description="Show bot status and statistics")
 async def bot_status(interaction: discord.Interaction):
 	"""Show bot status and statistics"""
@@ -1217,6 +1228,7 @@ async def bot_status(interaction: discord.Interaction):
 	await interaction.response.send_message(embed=embed)
 
 # New bulk key generation command for special admins
+@admin_role_only()
 @bot.tree.command(name="generatekeys", description="Generate multiple keys of different types (Special Admin Only)")
 async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int, weekly_count: int, monthly_count: int, lifetime_count: int):
     """Generate multiple keys of different types - Special Admin Only"""
@@ -1254,6 +1266,7 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # New command to view available keys by type
+@admin_role_only()
 @bot.tree.command(name="viewkeys", description="View all available keys by type (Special Admin Only)")
 async def view_available_keys(interaction: discord.Interaction):
     """View all available keys grouped by type - Special Admin Only"""
@@ -1312,6 +1325,7 @@ async def view_available_keys(interaction: discord.Interaction):
     embed.set_footer(text="Use /generatekeys to create more keys")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@admin_role_only()
 @bot.tree.command(name="delete", description="Completely delete a key (Special Admin Only)")
 async def delete_key(interaction: discord.Interaction, key: str):
     """Completely delete a key - Special Admin Only"""
@@ -1334,6 +1348,7 @@ async def delete_key(interaction: discord.Interaction, key: str):
     else:
         await interaction.response.send_message("❌ Key not found or already deleted.", ephemeral=True)
 
+@admin_role_only()
 @bot.tree.command(name="deletedkeys", description="View all deleted keys (Special Admin Only)")
 async def view_deleted_keys(interaction: discord.Interaction):
     """View all deleted keys - Special Admin Only"""
@@ -1376,7 +1391,7 @@ async def view_deleted_keys(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@special_admin_only()
+@admin_role_only()
 @bot.tree.command(name="activekeys", description="List all active keys with remaining time and assigned user")
 async def active_keys(interaction: discord.Interaction):
 	# Special admin only
@@ -1422,7 +1437,7 @@ async def active_keys(interaction: discord.Interaction):
 
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@special_admin_only()
+@admin_role_only()
 @bot.tree.command(name="expiredkeys", description="List expired keys")
 async def expired_keys(interaction: discord.Interaction):
 	# Special admin only
@@ -1457,7 +1472,7 @@ async def expired_keys(interaction: discord.Interaction):
 
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
+@admin_role_only()
 @bot.tree.command(name="swapmachineid", description="Swap a user's active key to a new machine ID (Special Admin Only)")
 async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
 	# Special admin only
@@ -1489,6 +1504,7 @@ async def swap_machine_id(interaction: discord.Interaction, user: discord.Member
 	except Exception as e:
 		await interaction.response.send_message(f"❌ Failed: {e}", ephemeral=True)
 
+@admin_role_only()
 @bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
 async def sync_commands(interaction: discord.Interaction):
     if not interaction.guild or interaction.guild.id != GUILD_ID:
@@ -3200,7 +3216,6 @@ def start_health_check():
         async def _run_aiohttp():
             app = web.Application()
             app.router.add_post('/webhook/coinbase-commerce', coinbase_webhook)
-            app.router.add_post('/webhook/nowpayments', nowpayments_webhook)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port+1)
