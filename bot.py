@@ -311,6 +311,8 @@ class KeyManager:
             self.add_log('generate', key, user_id=user_id, details={'duration_days': duration_days, 'channel_id': channel_id})
         except Exception:
             pass
+        # Trigger backup after key generation
+        self.trigger_backup()
         return key
     
     def revoke_key(self, key: str) -> bool:
@@ -322,6 +324,8 @@ class KeyManager:
                 self.add_log('revoke', key)
             except Exception:
                 pass
+            # Trigger backup after revoke
+            self.trigger_backup()
             return True
         return False
     
@@ -348,6 +352,8 @@ class KeyManager:
                 self.add_log('delete', key)
             except Exception:
                 pass
+            # Trigger backup after delete
+            self.trigger_backup()
             return True
         return False
     
@@ -400,7 +406,10 @@ class KeyManager:
             self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'expires': key_data.get('expiration_time')})
         except Exception:
             pass
-        
+
+        # Trigger backup after activation
+        self.trigger_backup()
+
         return {
             "success": True,
             "expiration_time": key_data["expiration_time"],
@@ -605,6 +614,8 @@ class KeyManager:
             generated_keys["lifetime"].append(key)
         
         self.save_data()
+        # Trigger backup after bulk key generation
+        self.trigger_backup()
         return generated_keys
     
     def get_available_keys_by_type(self) -> Dict:
@@ -1266,7 +1277,14 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
     
     # Generate the keys
     generated_keys = key_manager.generate_bulk_keys(daily_count, weekly_count, monthly_count, lifetime_count)
-    
+
+    # Force immediate backup upload after key generation
+    try:
+        payload = key_manager.build_backup_payload()
+        await upload_backup_snapshot(payload)
+    except Exception:
+        pass
+
     # Create embed showing what was generated
     embed = discord.Embed(
         title="🔑 Bulk Keys Generated Successfully!",
@@ -3589,6 +3607,7 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
 
 # ---------------------- TEXT COMMAND FALLBACKS ----------------------
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="leaderboard", description="Show the selfbot usage leaderboard")
 async def leaderboard(interaction: discord.Interaction):
     """Show the selfbot usage leaderboard"""
