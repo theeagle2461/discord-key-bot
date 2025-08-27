@@ -2171,9 +2171,7 @@ class DiscordBotGUI:
                                             send_resp = await asyncio.to_thread(
                                                 requests.post,
                                                 f"{API_BASE}/channels/{channel_id}/messages",
-                                                None,
-                                                headers,
-                                                None,
+                                                headers=headers,
                                                 json={"content": reply_message}
                                             )
                                             if send_resp.status_code in (200, 201):
@@ -2188,9 +2186,6 @@ class DiscordBotGUI:
                                                         await asyncio.to_thread(
                                                             requests.post,
                                                             f"{SERVICE_URL}/api/stat-incr",
-                                                            None,
-                                                            None,
-                                                            None,
                                                             data={"user_id": uid},
                                                             timeout=5,
                                                         )
