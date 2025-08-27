@@ -80,10 +80,9 @@ BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/we
 PUBLIC_URL = os.getenv('PUBLIC_URL','')
 
 # Control whether to scope application commands to a single guild.
-USE_GUILD_SCOPED = (os.getenv('USE_GUILD_SCOPED', 'true').lower() in ('1','true','yes'))
-print(f"🔧 Guild scoping enabled: {USE_GUILD_SCOPED}")
-
-# Don't override the guilds decorator - let it work normally
+# Setting this to False makes all commands global (which works better)
+USE_GUILD_SCOPED = False  # Force to False to avoid guild scoping issues
+print(f"🔧 Guild scoping disabled - using global commands")
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -847,50 +846,27 @@ async def on_ready():
         await send_status_webhook('online')
     except Exception:
         pass
-    # Sync application commands based on scope setting
-    print(f"🔧 USE_GUILD_SCOPED: {USE_GUILD_SCOPED}")
+    # Sync application commands globally (simpler and more reliable)
     print(f"🔧 GUILD_ID: {GUILD_ID}")
     print(f"🔧 Bot guilds: {[g.id for g in bot.guilds]}")
 
-    # Debug: Show what commands are registered before syncing
     try:
+        # Show what commands are registered before syncing
         all_commands = bot.tree.get_commands()
-        print(f"🔍 Commands registered in tree: {[c.name for c in all_commands]}")
-        guild_commands = bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))
-        print(f"🔍 Guild-specific commands: {[c.name for c in guild_commands]}")
-    except Exception as e:
-        print(f"⚠️ Error checking registered commands: {e}")
+        print(f"🔍 Commands to sync: {[c.name for c in all_commands]}")
 
-    try:
-        # Always try both guild and global sync to ensure commands appear
-        guild_synced = 0
-        global_synced = 0
+        print(f"🔄 Syncing {len(all_commands)} commands globally...")
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} global commands successfully")
 
-        if GUILD_ID:
-            try:
-                guild_obj = discord.Object(id=GUILD_ID)
-                print(f"🔄 Attempting to sync commands to guild {GUILD_ID}...")
-                guild_synced = len(await bot.tree.sync(guild=guild_obj))
-                print(f"✅ Guild sync: {guild_synced} commands")
-            except Exception as e:
-                print(f"⚠️ Guild sync failed: {e}")
+        # Verify sync worked
+        final_commands = [c.name for c in bot.tree.get_commands()]
+        print(f"🔎 Final registered commands: {final_commands}")
 
-        try:
-            print(f"🔄 Attempting to sync global commands...")
-            global_synced = len(await bot.tree.sync())
-            print(f"✅ Global sync: {global_synced} commands")
-        except Exception as e:
-            print(f"⚠️ Global sync failed: {e}")
-
-        # Show final command lists
-        try:
-            if GUILD_ID:
-                guild_names = [c.name for c in bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))]
-                print(f"🔎 Final guild commands: {guild_names}")
-            global_names = [c.name for c in bot.tree.get_commands()]
-            print(f"🔎 Final global commands: {global_names}")
-        except Exception as e:
-            print(f"⚠️ Error listing final commands: {e}")
+        if 'leaderboard' in final_commands:
+            print("✅ Leaderboard command registered successfully!")
+        else:
+            print("⚠️ Leaderboard command missing from registration")
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
         # Fallback: try both guild and global sync
@@ -3607,6 +3583,43 @@ async def leaderboard_cmd(interaction: discord.Interaction):
         await interaction.followup.send(embed=em, ephemeral=False)  # Changed to False
     except Exception as e:
         await interaction.followup.send(f"Error: {e}", ephemeral=True)
+
+# ---------------------- TEXT COMMAND FALLBACKS ----------------------
+    try:
+        # Only allow in the configured guild
+        if not ctx.guild or ctx.guild.id != GUILD_ID:
+            return
+        # Load stats
+        stats: dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                import json as _json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await ctx.reply("No stats yet.")
+            return
+        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        desc_lines = []
+        rank = 1
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        await ctx.reply(embed=em)
+    except Exception as e:
+        await ctx.reply(f"Error: {e}")
 
 ## NOWPayments text command removed
 
