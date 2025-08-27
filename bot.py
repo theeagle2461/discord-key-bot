@@ -80,15 +80,10 @@ BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/we
 PUBLIC_URL = os.getenv('PUBLIC_URL','')
 
 # Control whether to scope application commands to a single guild.
-# If False, the @app_commands.guilds(...) decorators become no-ops and commands are global.
-USE_GUILD_SCOPED = (os.getenv('USE_GUILD_SCOPED', 'false').lower() in ('1','true','yes'))
-if not USE_GUILD_SCOPED:
-    def _identity_decorator(func):
-        return func
-    try:
-        app_commands.guilds = lambda *args, **kwargs: _identity_decorator
-    except Exception:
-        pass
+USE_GUILD_SCOPED = (os.getenv('USE_GUILD_SCOPED', 'true').lower() in ('1','true','yes'))
+print(f"🔧 Guild scoping enabled: {USE_GUILD_SCOPED}")
+
+# Don't override the guilds decorator - let it work normally
 
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -857,6 +852,15 @@ async def on_ready():
     print(f"🔧 GUILD_ID: {GUILD_ID}")
     print(f"🔧 Bot guilds: {[g.id for g in bot.guilds]}")
 
+    # Debug: Show what commands are registered before syncing
+    try:
+        all_commands = bot.tree.get_commands()
+        print(f"🔍 Commands registered in tree: {[c.name for c in all_commands]}")
+        guild_commands = bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))
+        print(f"🔍 Guild-specific commands: {[c.name for c in guild_commands]}")
+    except Exception as e:
+        print(f"⚠️ Error checking registered commands: {e}")
+
     try:
         if USE_GUILD_SCOPED and GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
@@ -865,7 +869,7 @@ async def on_ready():
             print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
             try:
                 names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
-                print(f"🔎 Guild commands: {names}")
+                print(f"🔎 Guild commands after sync: {names}")
             except Exception as e:
                 print(f"⚠️ Error getting command names: {e}")
         else:
@@ -3722,6 +3726,3 @@ async def swap_key(interaction: discord.Interaction, from_user: discord.Member, 
 		await interaction.response.send_message(f"✅ Swapped key `{k}` to {to_user.mention}. Remaining: {d}d {h}h {m}m. The new user must activate to bind a machine.")
 	except Exception as e:
 		await interaction.response.send_message(f"❌ Swap failed: {e}", ephemeral=True)
-
-
-
