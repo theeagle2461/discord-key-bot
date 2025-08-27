@@ -1075,6 +1075,36 @@ async def revoke_key(interaction: discord.Interaction, key: str):
 		await interaction.response.send_message("❌ Key not found or already revoked.", ephemeral=True)
 
 @admin_role_only()
+@bot.tree.command(name="unrevoke", description="Unrevoke (re-enable) a revoked key")
+async def unrevoke_key(interaction: discord.Interaction, key: str):
+	"""Re-enable a previously revoked key and upload a backup."""
+	try:
+		await interaction.response.defer(ephemeral=True)
+		k = key.strip()
+		info = key_manager.get_key_info(k)
+		if not info:
+			await interaction.followup.send("❌ Key not found.", ephemeral=True); return
+		# Set active
+		if k in key_manager.keys:
+			key_manager.keys[k]["is_active"] = True
+			key_manager.save_data()
+			try:
+				key_manager.add_log('unrevoke', k)
+			except Exception:
+				pass
+			# Immediate backup
+			try:
+				await upload_backup_snapshot(key_manager.build_backup_payload())
+			except Exception:
+				pass
+			embed = discord.Embed(title="✅ Key Unrevoked", description=f"Key `{k}` has been re-enabled.", color=0x22C55E)
+			await interaction.followup.send(embed=embed, ephemeral=True)
+		else:
+			await interaction.followup.send("❌ Key not found.", ephemeral=True)
+	except Exception as e:
+		await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
+
+@admin_role_only()
 @bot.tree.command(name="keys", description="Show all keys for a user")
 async def show_keys(interaction: discord.Interaction, user: Optional[discord.Member] = None):
 	"""Show all keys for a user (or yourself if no user specified)"""
