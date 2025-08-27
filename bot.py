@@ -853,21 +853,46 @@ async def on_ready():
     except Exception:
         pass
     # Sync application commands based on scope setting
+    print(f"🔧 USE_GUILD_SCOPED: {USE_GUILD_SCOPED}")
+    print(f"🔧 GUILD_ID: {GUILD_ID}")
+    print(f"🔧 Bot guilds: {[g.id for g in bot.guilds]}")
+
     try:
         if USE_GUILD_SCOPED and GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
+            print(f"🔄 Attempting to sync commands to guild {GUILD_ID}...")
             synced = await bot.tree.sync(guild=guild_obj)
             print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
             try:
                 names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
                 print(f"🔎 Guild commands: {names}")
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"⚠️ Error getting command names: {e}")
         else:
+            print(f"🔄 Attempting to sync global commands...")
             synced = await bot.tree.sync()
             print(f"✅ Synced {len(synced)} global commands")
+            try:
+                names = [c.name for c in bot.tree.get_commands()]
+                print(f"🔎 Global commands: {names}")
+            except Exception as e:
+                print(f"⚠️ Error getting global command names: {e}")
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
+        # Fallback: try both guild and global sync
+        print("🔄 Attempting fallback sync...")
+        try:
+            if GUILD_ID:
+                guild_obj = discord.Object(id=GUILD_ID)
+                synced = await bot.tree.sync(guild=guild_obj)
+                print(f"✅ Fallback guild sync: {len(synced)} commands")
+        except Exception as e2:
+            print(f"⚠️ Fallback guild sync failed: {e2}")
+        try:
+            synced = await bot.tree.sync()
+            print(f"✅ Fallback global sync: {len(synced)} commands")
+        except Exception as e3:
+            print(f"⚠️ Fallback global sync failed: {e3}")
     # Auto-restore from the most recent JSON attachment in backup channel
     if AUTO_RESTORE_ON_START and BACKUP_CHANNEL_ID > 0:
         try:
@@ -1631,6 +1656,93 @@ async def on_command_error(ctx, error):
         await ctx.send("❌ Command not found. Use `!help` to see available commands.")
     else:
         await ctx.send(f"❌ An error occurred: {str(error)}")
+
+# Emergency text commands for when slash commands don't work
+@bot.command(name='forcesync')
+async def force_sync_commands(ctx):
+    """Emergency command to force sync slash commands"""
+    # Only allow special admins and in the correct guild
+    if ctx.author.id not in SPECIAL_ADMIN_IDS:
+        await ctx.send("❌ Access denied.")
+        return
+
+    if not ctx.guild or ctx.guild.id != GUILD_ID:
+        await ctx.send("❌ Wrong server.")
+        return
+
+    try:
+        await ctx.send("🔄 Attempting to sync commands...")
+
+        # Try guild sync first
+        guild_synced = 0
+        global_synced = 0
+
+        try:
+            guild_obj = discord.Object(id=GUILD_ID)
+            guild_synced = len(await bot.tree.sync(guild=guild_obj))
+            await ctx.send(f"✅ Guild sync: {guild_synced} commands")
+        except Exception as e:
+            await ctx.send(f"❌ Guild sync failed: {e}")
+
+        try:
+            global_synced = len(await bot.tree.sync())
+            await ctx.send(f"✅ Global sync: {global_synced} commands")
+        except Exception as e:
+            await ctx.send(f"❌ Global sync failed: {e}")
+
+        # List available commands
+        try:
+            guild_commands = [c.name for c in bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))]
+            global_commands = [c.name for c in bot.tree.get_commands()]
+            await ctx.send(f"📋 Guild commands: {', '.join(guild_commands) or 'None'}")
+            await ctx.send(f"📋 Global commands: {', '.join(global_commands) or 'None'}")
+        except Exception as e:
+            await ctx.send(f"⚠️ Error listing commands: {e}")
+
+    except Exception as e:
+        await ctx.send(f"❌ Sync failed: {e}")
+
+@bot.command(name='testleaderboard')
+async def test_leaderboard(ctx):
+    """Emergency text command version of leaderboard"""
+    if not ctx.guild or ctx.guild.id != GUILD_ID:
+        return
+
+    try:
+        # Load stats from file if present, otherwise in-memory
+        stats: Dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                with open(STATS_FILE, 'r') as f:
+                    stats = json.load(f) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await ctx.send("No message stats yet.")
+            return
+
+        em = discord.Embed(title="🏆 Selfbot Leaderboard", color=0x5a3e99)
+        desc_lines = []
+        rank = 1
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            # Add trophy emojis for top 3
+            trophy = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "🏅"
+            desc_lines.append(f"{trophy} **{rank}.** {name} — **{cnt:,}** messages")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        em.set_footer(text=f"Requested by {ctx.author.display_name}")
+        await ctx.send(embed=em)
+    except Exception as e:
+        await ctx.send(f"Error: {e}")
 
 # Coinbase Commerce webhook handler
 from aiohttp import web
@@ -3446,7 +3558,7 @@ async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: 
 @bot.tree.command(name="leaderboard", description="Show top 10 users by selfbot messages sent")
 async def leaderboard_cmd(interaction: discord.Interaction):
     try:
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)  # Changed to False so everyone can see
         # Load stats from file if present, otherwise in-memory
         stats: Dict[str, int] = {}
         try:
@@ -3461,9 +3573,9 @@ async def leaderboard_cmd(interaction: discord.Interaction):
             stats = MESSAGE_STATS
         top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
         if not top:
-            await interaction.followup.send("No message stats yet.", ephemeral=True)
+            await interaction.followup.send("No message stats yet.", ephemeral=False)  # Changed to False
             return
-        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        em = discord.Embed(title="🏆 Selfbot Leaderboard", color=0x5a3e99)
         desc_lines = []
         rank = 1
         for uid, cnt in top:
@@ -3472,10 +3584,13 @@ async def leaderboard_cmd(interaction: discord.Interaction):
                 name = f"{user.name}#{user.discriminator}" if user else uid
             except Exception:
                 name = uid
-            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            # Add trophy emojis for top 3
+            trophy = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "🏅"
+            desc_lines.append(f"{trophy} **{rank}.** {name} — **{cnt:,}** messages")
             rank += 1
         em.description = "\n".join(desc_lines)
-        await interaction.followup.send(embed=em, ephemeral=True)
+        em.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.followup.send(embed=em, ephemeral=False)  # Changed to False
     except Exception as e:
         await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
