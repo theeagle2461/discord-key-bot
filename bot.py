@@ -79,6 +79,17 @@ BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/we
 # PUBLIC_URL may still be used by health endpoints elsewhere
 PUBLIC_URL = os.getenv('PUBLIC_URL','')
 
+# Control whether to scope application commands to a single guild.
+# If False, the @app_commands.guilds(...) decorators become no-ops and commands are global.
+USE_GUILD_SCOPED = (os.getenv('USE_GUILD_SCOPED', 'false').lower() in ('1','true','yes'))
+if not USE_GUILD_SCOPED:
+    def _identity_decorator(func):
+        return func
+    try:
+        app_commands.guilds = lambda *args, **kwargs: _identity_decorator
+    except Exception:
+        pass
+
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
@@ -841,24 +852,20 @@ async def on_ready():
         await send_status_webhook('online')
     except Exception:
         pass
-    # Clear global commands (avoid duplicates) and force-sync guild commands
+    # Sync application commands based on scope setting
     try:
-        guild_obj = discord.Object(id=GUILD_ID)
-        try:
-            # Overwrite global commands with empty to clear them
-            await bot.tree.sync()  # ensure tree exists
-            bot.tree.clear_commands(guild=None)
-            await bot.tree.sync()
-            print("🧹 Cleared global application commands")
-        except Exception as e:
-            print(f"⚠️ Failed clearing globals: {e}")
-        synced = await bot.tree.sync(guild=guild_obj)
-        print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
-        try:
-            names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
-            print(f"🔎 Guild commands: {names}")
-        except Exception:
-            pass
+        if USE_GUILD_SCOPED and GUILD_ID:
+            guild_obj = discord.Object(id=GUILD_ID)
+            synced = await bot.tree.sync(guild=guild_obj)
+            print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
+            try:
+                names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
+                print(f"🔎 Guild commands: {names}")
+            except Exception:
+                pass
+        else:
+            synced = await bot.tree.sync()
+            print(f"✅ Synced {len(synced)} global commands")
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
     # Auto-restore from the most recent JSON attachment in backup channel
