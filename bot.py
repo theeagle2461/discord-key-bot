@@ -311,8 +311,6 @@ class KeyManager:
             self.add_log('generate', key, user_id=user_id, details={'duration_days': duration_days, 'channel_id': channel_id})
         except Exception:
             pass
-        # Trigger backup after key generation
-        self.trigger_backup()
         return key
     
     def revoke_key(self, key: str) -> bool:
@@ -324,8 +322,6 @@ class KeyManager:
                 self.add_log('revoke', key)
             except Exception:
                 pass
-            # Trigger backup after revoke
-            self.trigger_backup()
             return True
         return False
     
@@ -352,8 +348,6 @@ class KeyManager:
                 self.add_log('delete', key)
             except Exception:
                 pass
-            # Trigger backup after delete
-            self.trigger_backup()
             return True
         return False
     
@@ -406,9 +400,6 @@ class KeyManager:
             self.add_log('activate', key, user_id=user_id, details={'machine_id': machine_id, 'expires': key_data.get('expiration_time')})
         except Exception:
             pass
-
-        # Trigger backup after activation
-        self.trigger_backup()
 
         return {
             "success": True,
@@ -614,8 +605,6 @@ class KeyManager:
             generated_keys["lifetime"].append(key)
         
         self.save_data()
-        # Trigger backup after bulk key generation
-        self.trigger_backup()
         return generated_keys
     
     def get_available_keys_by_type(self) -> Dict:
@@ -1065,6 +1054,13 @@ async def revoke_key(interaction: discord.Interaction, key: str):
 		return
 	
 	if key_manager.revoke_key(key):
+		# Force immediate backup upload after revoke
+		try:
+			payload = key_manager.build_backup_payload()
+			await upload_backup_snapshot(payload)
+		except Exception:
+			pass
+
 		embed = discord.Embed(
 			title="🗑️ Key Revoked",
 			description=f"Key `{key}` has been successfully revoked.",
@@ -1372,6 +1368,13 @@ async def delete_key(interaction: discord.Interaction, key: str):
         return
     
     if key_manager.delete_key(key):
+        # Force immediate backup upload after delete
+        try:
+            payload = key_manager.build_backup_payload()
+            await upload_backup_snapshot(payload)
+        except Exception:
+            pass
+
         embed = discord.Embed(
             title="🗑️ Key Deleted",
             description=f"Key `{key}` has been completely deleted and moved to deleted database.",
@@ -1380,7 +1383,7 @@ async def delete_key(interaction: discord.Interaction, key: str):
         embed.add_field(name="Status", value="✅ Key removed from active keys", inline=True)
         embed.add_field(name="Database", value="📁 Moved to deleted keys", inline=True)
         embed.add_field(name="SelfBot Access", value="❌ No access, deleted key", inline=False)
-        
+
         await interaction.response.send_message(embed=embed)
     else:
         await interaction.response.send_message("❌ Key not found or already deleted.", ephemeral=True)
@@ -3338,6 +3341,68 @@ async def keylogs(interaction: discord.Interaction):
     embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="leaderboard", description="Show top 5 users with most selfbot messages sent")
+async def leaderboard(interaction: discord.Interaction):
+    """Show the top 5 users with most selfbot messages sent"""
+    try:
+        await interaction.response.defer()
+
+        # Load message stats from file and memory
+        stats: dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                import json as _json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS.copy()
+        except Exception:
+            stats = MESSAGE_STATS.copy()
+
+        # Merge with in-memory stats to get most current data
+        for uid, count in MESSAGE_STATS.items():
+            stats[uid] = max(stats.get(uid, 0), count)
+
+        # Get top 5 users
+        top_users = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        if not top_users:
+            await interaction.followup.send("📊 No message statistics available yet.")
+            return
+
+        # Create leaderboard embed
+        embed = discord.Embed(
+            title="🏆 Selfbot Message Leaderboard",
+            description="Top 5 users with most messages sent through selfbot",
+            color=0x5a3e99
+        )
+
+        rank_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+
+        for i, (user_id, message_count) in enumerate(top_users):
+            try:
+                user = await bot.fetch_user(int(user_id))
+                username = user.display_name if user else f"User {user_id}"
+            except Exception:
+                username = f"User {user_id}"
+
+            embed.add_field(
+                name=f"{rank_emojis[i]} #{i+1}",
+                value=f"**{username}**\n📨 {message_count:,} messages",
+                inline=True
+            )
+
+        embed.set_footer(text="Statistics persist even after key expiration")
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        try:
+            await interaction.followup.send(f"❌ Error loading leaderboard: {str(e)}")
+        except:
+            await interaction.response.send_message(f"❌ Error loading leaderboard: {str(e)}", ephemeral=True)
+
 @tasks.loop(seconds=60)
 async def reconcile_roles_task():
     """Grant or remove the access role based on key validity."""
@@ -3403,15 +3468,135 @@ async def periodic_backup_task():
 
 
 
+# Key type selection view
+class KeyTypeSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Day Key", description="1 day access - $3", emoji="📅", value="daily"),
+            discord.SelectOption(label="Week Key", description="7 days access - $10", emoji="📆", value="weekly"),
+            discord.SelectOption(label="Month Key", description="30 days access - $20", emoji="🗓️", value="monthly"),
+            discord.SelectOption(label="Lifetime Key", description="365 days access - $50", emoji="♾️", value="lifetime")
+        ]
+        super().__init__(placeholder="Choose the key type you want to purchase...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_key_type = self.values[0]
+        await interaction.response.edit_message(view=self.view.get_crypto_view())
+
+# Crypto selection view
+class CryptoSelect(discord.ui.Select):
+    def __init__(self, key_type: str):
+        self.key_type = key_type
+        price_map = {"daily": 3, "weekly": 10, "monthly": 20, "lifetime": 50}
+        price = price_map[key_type]
+
+        options = [
+            discord.SelectOption(label="USDT", description=f"Pay ${price} with Tether", emoji="💰", value="USDT"),
+            discord.SelectOption(label="USDC", description=f"Pay ${price} with USD Coin", emoji="💵", value="USDC"),
+            discord.SelectOption(label="BTC", description=f"Pay ${price} with Bitcoin", emoji="₿", value="BTC"),
+            discord.SelectOption(label="LTC", description=f"Pay ${price} with Litecoin", emoji="Ł", value="LTC"),
+            discord.SelectOption(label="ETH", description=f"Pay ${price} with Ethereum", emoji="Ξ", value="ETH")
+        ]
+        super().__init__(placeholder="Choose your payment method...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.create_invoice(interaction, self.values[0], self.key_type)
+
+# Main autobuy view
+class AutobuyView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+        self.selected_key_type = None
+        self.add_item(KeyTypeSelect())
+
+    def get_crypto_view(self):
+        # Create new view with crypto selection
+        new_view = discord.ui.View(timeout=300)
+        new_view.selected_key_type = self.selected_key_type
+        new_view.create_invoice = self.create_invoice
+        new_view.add_item(CryptoSelect(self.selected_key_type))
+
+        # Add back button
+        back_button = discord.ui.Button(label="← Back to Key Selection", style=discord.ButtonStyle.secondary)
+        async def back_callback(button_interaction):
+            original_view = AutobuyView()
+            await button_interaction.response.edit_message(view=original_view)
+        back_button.callback = back_callback
+        new_view.add_item(back_button)
+
+        return new_view
+
+    async def create_invoice(self, interaction: discord.Interaction, coin: str, key_type: str):
+        try:
+            if not NWP_API_KEY or not NWP_IPN_SECRET:
+                await interaction.response.edit_message(content="❌ Payment processor not configured.", view=None)
+                return
+
+            price_map = {"daily": 3, "weekly": 10, "monthly": 20, "lifetime": 50}
+            amount = price_map[key_type]
+
+            order_id = f"{interaction.user.id}:{interaction.channel.id}:{key_type}:${amount}:{int(time.time())}"
+            payload = {
+                "price_amount": amount,
+                "price_currency": "USD",
+                "order_id": order_id,
+                "order_description": f"{key_type} key for {interaction.user.display_name}",
+                "pay_currency": coin,
+                "is_fixed_rate": True,
+            }
+            if PUBLIC_URL:
+                payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
+
+            headers = {"x-api-key": NWP_API_KEY, "Content-Type": "application/json"}
+            import requests as _req, json as _json
+
+            await interaction.response.defer()
+
+            try:
+                r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
+                if r.status_code not in (200, 201):
+                    await interaction.followup.edit_message(content=f"❌ Failed to create invoice (HTTP {r.status_code}).", view=None)
+                    return
+                inv = r.json()
+            except Exception as e:
+                await interaction.followup.edit_message(content=f"❌ Error creating invoice: {e}", view=None)
+                return
+
+            url = inv.get("invoice_url") or inv.get("pay_url")
+            if not url:
+                await interaction.followup.edit_message(content="❌ Invoice created but no URL returned.", view=None)
+                return
+
+            # Create payment embed
+            key_names = {"daily": "Day Key", "weekly": "Week Key", "monthly": "Month Key", "lifetime": "Lifetime Key"}
+            embed = discord.Embed(
+                title="💳 Payment Invoice Created",
+                description=f"**Product:** {key_names[key_type]}\n**Price:** ${amount} USD\n**Payment:** {coin}",
+                color=0x00ff00
+            )
+            embed.add_field(name="🔗 Payment Link", value=f"[Click here to pay]({url})", inline=False)
+            embed.add_field(name="⏱️ Processing Time", value="Payment confirmation: 3-20 minutes", inline=False)
+            embed.add_field(name="🔑 Key Delivery", value="Your key will be sent automatically after payment confirmation", inline=False)
+            embed.set_footer(text=f"Order ID: {order_id}")
+
+            await interaction.followup.edit_message(content=None, embed=embed, view=None)
+
+        except Exception as e:
+            try:
+                await interaction.followup.edit_message(content=f"❌ Error: {e}", view=None)
+            except:
+                await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
 @app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="autobuy", description="Create a crypto invoice to purchase a key")
-@app_commands.describe(
-    coin="The cryptocurrency to pay with (BTC, LTC, ETH, USDC, USDT)",
-    key_type="The type of key to purchase (daily, weekly, monthly, lifetime)"
-)
-async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
-    """Create a crypto invoice to purchase a key"""
+@bot.tree.command(name="autobuy", description="Purchase a key with cryptocurrency")
+async def autobuy(interaction: discord.Interaction):
+    """Interactive key purchase system with dropdown menus"""
     try:
+        # Check if command is used in the correct channel
+        if interaction.channel.id != 1410190267264401550:
+            await interaction.response.send_message(f"❌ This command can only be used in <#1410190267264401550>.", ephemeral=True)
+            return
+
         if not interaction.guild or interaction.guild.id != GUILD_ID:
             await interaction.response.send_message("❌ This command can only be used in the configured server.", ephemeral=True)
             return
@@ -3420,70 +3605,25 @@ async def autobuy(interaction: discord.Interaction, coin: str, key_type: str):
             await interaction.response.send_message("❌ Payment processor not configured.", ephemeral=True)
             return
 
-        coin = coin.upper()
-        if coin not in ("BTC", "LTC", "ETH", "USDC", "USDT"):
-            await interaction.response.send_message("❌ Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.", ephemeral=True)
-            return
+        # Create initial embed
+        embed = discord.Embed(
+            title="🛒 Key Purchase System",
+            description="Select the type of key you want to purchase:",
+            color=0x5a3e99
+        )
+        embed.add_field(name="📅 Day Key", value="$3 - 1 day access", inline=True)
+        embed.add_field(name="📆 Week Key", value="$10 - 7 days access", inline=True)
+        embed.add_field(name="🗓️ Month Key", value="$20 - 30 days access", inline=True)
+        embed.add_field(name="♾️ Lifetime Key", value="$50 - 365 days access", inline=True)
+        embed.set_footer(text="Choose your key type below")
 
-        key_type = key_type.lower()
-        price_map = {"daily": 3, "weekly": 10, "monthly": 20, "lifetime": 50}
-        if key_type not in price_map:
-            await interaction.response.send_message("❌ Invalid key type. Choose daily, weekly, monthly or lifetime.", ephemeral=True)
-            return
-
-        amount = price_map[key_type]
-        order_id = f"{interaction.user.id}:{interaction.channel.id}:{key_type}:${amount}"
-        payload = {
-            "price_amount": amount,
-            "price_currency": "USD",
-            "order_id": order_id,
-            "order_description": f"{key_type} key for {interaction.user.id}",
-            "pay_currency": coin,
-            "is_fixed_rate": True,
-        }
-        if PUBLIC_URL:
-            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
-
-        headers = {"x-api-key": NWP_API_KEY, "Content-Type": "application/json"}
-        import requests as _req, json as _json
-
-        await interaction.response.defer()
-
-        try:
-            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
-            if r.status_code not in (200, 201):
-                await interaction.followup.send(f"❌ Failed to create invoice (HTTP {r.status_code}).")
-                return
-            inv = r.json()
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error creating invoice: {e}")
-            return
-
-        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
-        if not url:
-            await interaction.followup.send("❌ Invoice created but no URL returned.")
-            return
-
-        note = "Autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
-        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key (${amount}).\n\n{note}", color=0x7d5fff)
-        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
-        await interaction.followup.send(embed=em)
+        view = AutobuyView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     except Exception as e:
-        try:
-            await interaction.followup.send(f"❌ Error: {e}")
-        except:
-            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="sbautobuy", description="Create a crypto invoice (backup command)")
-@app_commands.describe(
-    coin="The cryptocurrency to pay with (BTC, LTC, ETH, USDC, USDT)",
-    key_type="The type of key to purchase (daily, weekly, monthly, lifetime)"
-)
-async def sbautobuy(interaction: discord.Interaction, coin: str, key_type: str):
-    """Backup autobuy command that calls the main autobuy function"""
-    await autobuy.callback(interaction, coin, key_type)
+
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="listcommands", description="List registered application commands (debug)")
@@ -3566,19 +3706,7 @@ async def nowpayments_webhook(request: web.Request):
     except Exception as e:
         return web.Response(status=500, text=str(e))
 
-@bot.tree.command(name="setstatuswebhook", description="Set the webhook URL to receive bot online/offline status")
-async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: str):
-    try:
-        CONFIG['STATUS_WEBHOOK_URL'] = webhook_url.strip()
-        save_config()
-        await interaction.response.send_message("✅ Status webhook set.", ephemeral=True)
-        # Send a test online ping
-        try:
-            await send_status_webhook('online')
-        except Exception:
-            pass
-    except Exception as e:
-        await interaction.response.send_message(f"❌ Failed to set webhook: {e}", ephemeral=True)
+
 
 @bot.tree.command(name="backupchannel", description="Set the channel to auto-backup keys and auto-restore on deploy")
 async def set_backup_channel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
@@ -3606,55 +3734,6 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
         await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
 
 # ---------------------- TEXT COMMAND FALLBACKS ----------------------
-
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="leaderboard", description="Show the selfbot usage leaderboard")
-async def leaderboard(interaction: discord.Interaction):
-    """Show the selfbot usage leaderboard"""
-    try:
-        # Only allow in the configured guild
-        if not interaction.guild or interaction.guild.id != GUILD_ID:
-            await interaction.response.send_message("❌ This command can only be used in the configured server.", ephemeral=True)
-            return
-
-        await interaction.response.defer()
-
-        # Load stats
-        stats: dict[str, int] = {}
-        try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
-                    raw = await f.read()
-                import json as _json
-                stats = _json.loads(raw) or {}
-            else:
-                stats = MESSAGE_STATS
-        except Exception:
-            stats = MESSAGE_STATS
-
-        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
-        if not top:
-            await interaction.followup.send("No stats yet.")
-            return
-
-        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
-        desc_lines = []
-        rank = 1
-        for uid, cnt in top:
-            try:
-                user = await bot.fetch_user(int(uid))
-                name = f"{user.name}#{user.discriminator}" if user else uid
-            except Exception:
-                name = uid
-            desc_lines.append(f"**{rank}.** {name} — {cnt}")
-            rank += 1
-        em.description = "\n".join(desc_lines)
-        await interaction.followup.send(embed=em)
-    except Exception as e:
-        try:
-            await interaction.followup.send(f"Error: {e}")
-        except:
-            await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
 @bot.command(name="autobuy")
 async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = None):
