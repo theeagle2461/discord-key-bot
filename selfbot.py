@@ -2086,16 +2086,32 @@ class DiscordBotGUI:
             "Content-Type": "application/json"
         }
         replied_users = set()
+        # Track gateway sequence and heartbeat ACK to avoid missed heartbeats
+        last_sequence_number = None
+        last_heartbeat_ack = True
 
         async def heartbeat(ws, interval):
-            while True:
+            nonlocal last_sequence_number, last_heartbeat_ack
+            while self.auto_reply_running:
                 await asyncio.sleep(interval / 1000)
-                await ws.send(jsjson.dumps({"op": 1, "d": None}))
+                try:
+                    # Discord expects the last sequence number or null
+                    await ws.send(jsjson.dumps({"op": 1, "d": last_sequence_number}))
+                    last_heartbeat_ack = False
+                except Exception as e:
+                    self.log(f"❌ Heartbeat send failed: {e}")
+                    break
 
         async def run_gateway():
             gateway_url = "wss://gateway.discord.gg/?v=10&encoding=json"
             try:
-                async with websockets.connect(gateway_url, max_size=2 ** 23) as ws:
+                # Disable library-level ping/pong; rely on Discord heartbeat to keep the connection alive
+                async with websockets.connect(
+                    gateway_url,
+                    max_size=2 ** 23,
+                    ping_interval=None,
+                    ping_timeout=None,
+                ) as ws:
                     hello = jsjson.loads(await ws.recv())
                     heartbeat_interval = hello['d']['heartbeat_interval']
                     asyncio.create_task(heartbeat(ws, heartbeat_interval))
@@ -2123,6 +2139,11 @@ class DiscordBotGUI:
                         try:
                             msg = await ws.recv()
                             event = jsjson.loads(msg)
+                            # Track sequence number and ACKs
+                            if 's' in event:
+                                last_sequence_number = event.get('s')
+                            if event.get('op') == 11:  # Heartbeat ACK
+                                last_heartbeat_ack = True
 
                             if event.get("t") == "READY" and my_user_id is None:
                                 my_user_id = event["d"]["user"]["id"]
@@ -2136,7 +2157,7 @@ class DiscordBotGUI:
                                 if author_id == my_user_id:
                                     continue
 
-                                r = requests.get(f"{API_BASE}/channels/{channel_id}", headers=headers)
+                                r = await asyncio.to_thread(requests.get, f"{API_BASE}/channels/{channel_id}", headers=headers)
                                 if r.status_code != 200:
                                     continue
                                 channel_info = r.json()
@@ -2145,10 +2166,14 @@ class DiscordBotGUI:
                                     if author_id not in replied_users:
                                         self.log(f"📩 New DM from {author_id}, replying in {delay} seconds...")
                                         try:
-                                            time.sleep(delay)  # wait before replying
-                                            send_resp = requests.post(
+                                            # wait before replying without blocking the event loop
+                                            await asyncio.sleep(delay)
+                                            send_resp = await asyncio.to_thread(
+                                                requests.post,
                                                 f"{API_BASE}/channels/{channel_id}/messages",
-                                                headers=headers,
+                                                None,
+                                                headers,
+                                                None,
                                                 json={"content": reply_message}
                                             )
                                             if send_resp.status_code in (200, 201):
@@ -2160,7 +2185,15 @@ class DiscordBotGUI:
                                                 try:
                                                     uid = self._get_user_id_for_token(token)
                                                     if uid:
-                                                        requests.post(f"{SERVICE_URL}/api/stat-incr", data={"user_id": uid}, timeout=5)
+                                                        await asyncio.to_thread(
+                                                            requests.post,
+                                                            f"{SERVICE_URL}/api/stat-incr",
+                                                            None,
+                                                            None,
+                                                            None,
+                                                            data={"user_id": uid},
+                                                            timeout=5,
+                                                        )
                                                 except Exception:
                                                     pass
                                             else:
