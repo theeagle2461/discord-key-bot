@@ -3387,10 +3387,7 @@ async def periodic_backup_task():
 
 ## NOWPayments slash command removed
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="sbautobuy", description="Create a crypto invoice (backup command)")
-async def sbautobuy(interaction: discord.Interaction, coin: str, key_type: str):
-    await autobuy.callback(interaction, coin, key_type)
+## NOWPayments slash command removed (fully deleted)
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="listcommands", description="List registered application commands (debug)")
@@ -3406,72 +3403,7 @@ async def listcommands(interaction: discord.Interaction):
         else:
             await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
-async def nowpayments_webhook(request: web.Request):
-    try:
-        secret = NWP_IPN_SECRET or ''
-        body_txt = await request.text()
-        sig = request.headers.get('x-nowpayments-sig','')
-        import hmac, hashlib
-        expected = hmac.new(secret.encode(), body_txt.encode() if isinstance(body_txt, str) else body_txt, hashlib.sha512).hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            return web.Response(status=400, text='bad sig')
-        data = json.loads(body_txt)
-        status = str(data.get('payment_status','')).lower()
-        order_id = str(data.get('order_id',''))
-        # order_id format: user:channel:key:amount
-        parts = order_id.split(':') if order_id else []
-        user_id = parts[0] if len(parts) > 0 else None
-        ticket_channel_id = parts[1] if len(parts) > 1 else None
-        key_type = parts[2] if len(parts) > 2 else ''
-        amount = parts[3] if len(parts) > 3 else ''
-        # Log pending/confirmed
-        try:
-            if PURCHASE_LOG_WEBHOOK:
-                color = 0xF59E0B if ('pending' in status or 'waiting' in status or 'confirming' in status) else 0x22C55E if ('finished' in status or 'confirmed' in status) else 0x64748B
-                embed = {
-                    'title': 'Autobuy (NOWPayments)',
-                    'description': status,
-                    'color': color,
-                    'fields': [
-                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
-                        {'name':'Key','value': key_type or '','inline': True},
-                        {'name':'Amount','value': amount or '','inline': True},
-                    ]
-                }
-                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
-        except Exception:
-            pass
-        # On finished/confirmed
-        if user_id and key_type and (('finished' in status) or ('confirmed' in status)):
-            try:
-                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
-                duration_days = durations.get(key_type, 30)
-                key = key_manager.generate_key(int(user_id), None, duration_days)
-                guild = bot.get_guild(GUILD_ID)
-                if guild and ticket_channel_id:
-                    try:
-                        chan = guild.get_channel(int(ticket_channel_id))
-                        if chan:
-                            member = guild.get_member(int(user_id))
-                            if member:
-                                try:
-                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
-                                except Exception:
-                                    pass
-                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
-                    except Exception:
-                        pass
-                try:
-                    ch = bot.get_channel(1402647285145538630)
-                    if ch:
-                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        return web.Response(text='ok')
-    except Exception as e:
-        return web.Response(status=500, text=str(e))
+## NOWPayments webhook removed
 
 @bot.tree.command(name="setstatuswebhook", description="Set the webhook URL to receive bot online/offline status")
 async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: str):
@@ -3486,31 +3418,6 @@ async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: 
             pass
     except Exception as e:
         await interaction.response.send_message(f"❌ Failed to set webhook: {e}", ephemeral=True)
-
-@bot.tree.command(name="backupchannel", description="Set the channel to auto-backup keys and auto-restore on deploy")
-async def set_backup_channel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
-    try:
-        global BACKUP_CHANNEL_ID
-        BACKUP_CHANNEL_ID = int(channel.id)
-        CONFIG['BACKUP_CHANNEL_ID'] = BACKUP_CHANNEL_ID
-        save_config()
-        await interaction.response.send_message(f"✅ Backup channel set to {channel.mention}.", ephemeral=True)
-        # Ensure backup loop is running
-        try:
-            if not periodic_backup_task.is_running():
-                periodic_backup_task.start()
-        except Exception:
-            pass
-        # Optional immediate backup
-        try:
-            payload = key_manager.build_backup_payload()
-            data = json.dumps(payload, indent=2).encode()
-            file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
-            await channel.send(content="Manual backup after setting channel", file=file)
-        except Exception:
-            pass
-    except Exception as e:
-        await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="leaderboard", description="Show top 10 users by selfbot messages sent")
@@ -3586,61 +3493,7 @@ async def leaderboard_cmd(interaction: discord.Interaction):
     except Exception as e:
         await ctx.reply(f"Error: {e}")
 
-@bot.command(name="autobuy")
-async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = None):
-    try:
-        if not ctx.guild or ctx.guild.id != GUILD_ID:
-            return
-        if not coin or not key_type:
-            await ctx.reply("Usage: !autobuy <BTC|LTC|ETH|USDC|USDT> <daily|weekly|monthly|lifetime>")
-            return
-        if not NWP_API_KEY or not NWP_IPN_SECRET:
-            await ctx.reply("Payment processor not configured.")
-            return
-        coin = coin.upper()
-        if coin not in ("BTC","LTC","ETH","USDC","USDT"):
-            await ctx.reply("Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.")
-            return
-        key_type = key_type.lower()
-        price_map = {"daily":3, "weekly":10, "monthly":20, "lifetime":50}
-        if key_type not in price_map:
-            await ctx.reply("Invalid key type. Choose daily, weekly, monthly or lifetime.")
-            return
-        amount = price_map[key_type]
-        order_id = f"{ctx.author.id}:{ctx.channel.id}:{key_type}:${amount}"
-        payload = {
-            "price_amount": amount,
-            "price_currency": "USD",
-            "order_id": order_id,
-            "order_description": f"{key_type} key for {ctx.author.id}",
-            "pay_currency": coin,
-            "is_fixed_rate": True,
-        }
-        if PUBLIC_URL:
-            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
-        headers = {"x-api-key": NWP_API_KEY, "Content-Type": "application/json"}
-        import requests as _req, json as _json
-        try:
-            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
-            if r.status_code not in (200,201):
-                await ctx.reply(f"Failed to create invoice (HTTP {r.status_code}).")
-                return
-            inv = r.json()
-        except Exception as e:
-            await ctx.reply(f"Error creating invoice: {e}")
-            return
-        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
-        if not url:
-            await ctx.reply("Invoice created but no URL returned.")
-            return
-        note = "autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
-        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
-        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
-        await ctx.reply(embed=em)
-    except Exception as e:
-        await ctx.reply(f"Error: {e}")
-
-        return
+## NOWPayments text command removed
 
 async def upload_backup_snapshot(payload: dict) -> None:
     """Upload a JSON snapshot to the configured Discord backup channel and webhook."""
