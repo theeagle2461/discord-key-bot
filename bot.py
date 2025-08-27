@@ -79,6 +79,17 @@ BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/we
 # PUBLIC_URL may still be used by health endpoints elsewhere
 PUBLIC_URL = os.getenv('PUBLIC_URL','')
 
+# Control whether to scope application commands to a single guild.
+# If False, the @app_commands.guilds(...) decorators become no-ops and commands are global.
+USE_GUILD_SCOPED = (os.getenv('USE_GUILD_SCOPED', 'false').lower() in ('1','true','yes'))
+if not USE_GUILD_SCOPED:
+    def _identity_decorator(func):
+        return func
+    try:
+        app_commands.guilds = lambda *args, **kwargs: _identity_decorator
+    except Exception:
+        pass
+
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
