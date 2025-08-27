@@ -933,17 +933,6 @@ async def check_permissions(interaction) -> bool:
     
     return True
 
-	@duration_days < 1 or duration_days > 365:
-		await interaction.response.send_message("❌ Duration must be between 1 and 365 days.", ephemeral=True)
-		return
-	
-	
-	embed.add_field(name="Generated For", value=f"{user.mention} ({user.display_name})", inline=False)
-	embed.add_field(name="Key", value=f"`{key}`", inline=False)
-	embed.add_field(name="Duration", value=f"{duration_days} days", inline=True)
-	embed.add_field(name="Expires", value=f"<t:{int(time.time()) + (duration_days * 24 * 60 * 60)}:R>", inline=True)
-	
-
 @bot.tree.command(name="activate", description="Activate a key and get the user role")
 async def activate_key(interaction: discord.Interaction, key: str):
     """Activate a key and assign the user role"""
