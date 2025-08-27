@@ -79,11 +79,6 @@ BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/we
 # PUBLIC_URL may still be used by health endpoints elsewhere
 PUBLIC_URL = os.getenv('PUBLIC_URL','')
 
-# Control whether to scope application commands to a single guild.
-# Setting this to False makes all commands global (which works better)
-USE_GUILD_SCOPED = False  # Force to False to avoid guild scoping issues
-print(f"🔧 Guild scoping disabled - using global commands")
-
 # Load bot token from environment variable for security
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
@@ -846,43 +841,28 @@ async def on_ready():
         await send_status_webhook('online')
     except Exception:
         pass
-    # Sync application commands globally (simpler and more reliable)
-    print(f"🔧 GUILD_ID: {GUILD_ID}")
-    print(f"🔧 Bot guilds: {[g.id for g in bot.guilds]}")
-
+    # Copy any global commands into the guild and force-sync for instant visibility
     try:
-        # Show what commands are registered before syncing
-        all_commands = bot.tree.get_commands()
-        print(f"🔍 Commands to sync: {[c.name for c in all_commands]}")
-
-        print(f"🔄 Syncing {len(all_commands)} commands globally...")
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} global commands successfully")
-
-        # Verify sync worked
-        final_commands = [c.name for c in bot.tree.get_commands()]
-        print(f"🔎 Final registered commands: {final_commands}")
-
-        if 'leaderboard' in final_commands:
-            print("✅ Leaderboard command registered successfully!")
-        else:
-            print("⚠️ Leaderboard command missing from registration")
+        guild_obj = discord.Object(id=GUILD_ID)
+        try:
+            globals_list = bot.tree.get_commands()
+            if globals_list:
+                try:
+                    await bot.tree.copy_global_to(guild=guild_obj)
+                    print(f"📎 Copied {len(globals_list)} global commands to guild {GUILD_ID}")
+                except Exception as e:
+                    print(f"⚠️ Failed copying globals to guild: {e}")
+        except Exception:
+            pass
+        synced = await bot.tree.sync(guild=guild_obj)
+        print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
+        try:
+            names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
+            print(f"🔎 Guild commands: {names}")
+        except Exception:
+            pass
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
-        # Fallback: try both guild and global sync
-        print("🔄 Attempting fallback sync...")
-        try:
-            if GUILD_ID:
-                guild_obj = discord.Object(id=GUILD_ID)
-                synced = await bot.tree.sync(guild=guild_obj)
-                print(f"✅ Fallback guild sync: {len(synced)} commands")
-        except Exception as e2:
-            print(f"⚠️ Fallback guild sync failed: {e2}")
-        try:
-            synced = await bot.tree.sync()
-            print(f"✅ Fallback global sync: {len(synced)} commands")
-        except Exception as e3:
-            print(f"⚠️ Fallback global sync failed: {e3}")
     # Auto-restore from the most recent JSON attachment in backup channel
     if AUTO_RESTORE_ON_START and BACKUP_CHANNEL_ID > 0:
         try:
@@ -934,7 +914,7 @@ async def check_permissions(interaction) -> bool:
     # Commands that everyone can use
     public_commands = {
         "help", "activate", "keys", "info", "status", "activekeys", "expiredkeys",
-        "sync", "synccommands", "leaderboard"
+        "sync", "synccommands"
     }
     cmd_name = None
     try:
@@ -953,7 +933,6 @@ async def check_permissions(interaction) -> bool:
     
     return True
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="activate", description="Activate a key and get the user role")
 async def activate_key(interaction: discord.Interaction, key: str):
     """Activate a key and assign the user role"""
@@ -1018,7 +997,6 @@ async def activate_key(interaction: discord.Interaction, key: str):
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 # Removed duplicate sync command name to avoid conflicts
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="syncduration", description="Sync your key duration with SelfBot")
 async def sync_key(interaction: discord.Interaction, key: str):
     """Sync key duration with SelfBot"""
@@ -1065,7 +1043,6 @@ async def sync_key(interaction: discord.Interaction, key: str):
         await interaction.response.send_message(f"❌ Error syncing key: {str(e)}", ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="revoke", description="Revoke a specific key")
 async def revoke_key(interaction: discord.Interaction, key: str):
 	"""Revoke a specific key"""
@@ -1087,7 +1064,6 @@ async def revoke_key(interaction: discord.Interaction, key: str):
 		await interaction.response.send_message("❌ Key not found or already revoked.", ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="unrevoke", description="Unrevoke (re-enable) a revoked key")
 async def unrevoke_key(interaction: discord.Interaction, key: str):
 	"""Re-enable a previously revoked key and upload a backup."""
@@ -1118,7 +1094,6 @@ async def unrevoke_key(interaction: discord.Interaction, key: str):
 		await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="keys", description="Show all keys for a user")
 async def show_keys(interaction: discord.Interaction, user: Optional[discord.Member] = None):
 	"""Show all keys for a user (or yourself if no user specified)"""
@@ -1150,7 +1125,6 @@ async def show_keys(interaction: discord.Interaction, user: Optional[discord.Mem
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="info", description="Get detailed information about a key")
 async def key_info(interaction: discord.Interaction, key: str):
     """Get detailed information about a key"""
@@ -1188,7 +1162,6 @@ async def key_info(interaction: discord.Interaction, key: str):
     await interaction.response.send_message(embed=embed)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="backup", description="Create a backup of all keys")
 async def backup_keys(interaction: discord.Interaction):
 	"""Create a backup of all keys"""
@@ -1213,7 +1186,6 @@ async def backup_keys(interaction: discord.Interaction):
 	await interaction.response.send_message(embed=embed)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="restore", description="Restore keys from a backup file")
 async def restore_keys(interaction: discord.Interaction, backup_file: str):
 	"""Restore keys from a backup file"""
@@ -1243,7 +1215,6 @@ async def restore_keys(interaction: discord.Interaction, backup_file: str):
 		await interaction.response.send_message("❌ Failed to restore from backup.", ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="status", description="Show bot status and statistics")
 async def bot_status(interaction: discord.Interaction):
 	"""Show bot status and statistics"""
@@ -1277,7 +1248,6 @@ async def bot_status(interaction: discord.Interaction):
 
 # New bulk key generation command for special admins
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="generatekeys", description="Generate multiple keys of different types (Special Admin Only)")
 async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int, weekly_count: int, monthly_count: int, lifetime_count: int):
     """Generate multiple keys of different types - Special Admin Only"""
@@ -1316,7 +1286,6 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
 
 # New command to view available keys by type
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="viewkeys", description="View all available keys by type (Special Admin Only)")
 async def view_available_keys(interaction: discord.Interaction):
     """View all available keys grouped by type - Special Admin Only"""
@@ -1376,7 +1345,6 @@ async def view_available_keys(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="delete", description="Completely delete a key (Special Admin Only)")
 async def delete_key(interaction: discord.Interaction, key: str):
     """Completely delete a key - Special Admin Only"""
@@ -1400,7 +1368,6 @@ async def delete_key(interaction: discord.Interaction, key: str):
         await interaction.response.send_message("❌ Key not found or already deleted.", ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="deletedkeys", description="View all deleted keys (Special Admin Only)")
 async def view_deleted_keys(interaction: discord.Interaction):
     """View all deleted keys - Special Admin Only"""
@@ -1444,7 +1411,6 @@ async def view_deleted_keys(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="activekeys", description="List all active keys with remaining time and assigned user")
 async def active_keys(interaction: discord.Interaction):
 	# Special admin only
@@ -1491,7 +1457,6 @@ async def active_keys(interaction: discord.Interaction):
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="expiredkeys", description="List expired keys")
 async def expired_keys(interaction: discord.Interaction):
 	# Special admin only
@@ -1527,7 +1492,6 @@ async def expired_keys(interaction: discord.Interaction):
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="swapmachineid", description="Swap a user's active key to a new machine ID (Special Admin Only)")
 async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
 	# Special admin only
@@ -1560,7 +1524,6 @@ async def swap_machine_id(interaction: discord.Interaction, user: discord.Member
 		await interaction.response.send_message(f"❌ Failed: {e}", ephemeral=True)
 
 @admin_role_only()
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
 async def sync_commands(interaction: discord.Interaction):
     if not interaction.guild or interaction.guild.id != GUILD_ID:
@@ -1646,93 +1609,6 @@ async def on_command_error(ctx, error):
         await ctx.send("❌ Command not found. Use `!help` to see available commands.")
     else:
         await ctx.send(f"❌ An error occurred: {str(error)}")
-
-# Emergency text commands for when slash commands don't work
-@bot.command(name='forcesync')
-async def force_sync_commands(ctx):
-    """Emergency command to force sync slash commands"""
-    # Only allow special admins and in the correct guild
-    if ctx.author.id not in SPECIAL_ADMIN_IDS:
-        await ctx.send("❌ Access denied.")
-        return
-
-    if not ctx.guild or ctx.guild.id != GUILD_ID:
-        await ctx.send("❌ Wrong server.")
-        return
-
-    try:
-        await ctx.send("🔄 Attempting to sync commands...")
-
-        # Try guild sync first
-        guild_synced = 0
-        global_synced = 0
-
-        try:
-            guild_obj = discord.Object(id=GUILD_ID)
-            guild_synced = len(await bot.tree.sync(guild=guild_obj))
-            await ctx.send(f"✅ Guild sync: {guild_synced} commands")
-        except Exception as e:
-            await ctx.send(f"❌ Guild sync failed: {e}")
-
-        try:
-            global_synced = len(await bot.tree.sync())
-            await ctx.send(f"✅ Global sync: {global_synced} commands")
-        except Exception as e:
-            await ctx.send(f"❌ Global sync failed: {e}")
-
-        # List available commands
-        try:
-            guild_commands = [c.name for c in bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))]
-            global_commands = [c.name for c in bot.tree.get_commands()]
-            await ctx.send(f"📋 Guild commands: {', '.join(guild_commands) or 'None'}")
-            await ctx.send(f"📋 Global commands: {', '.join(global_commands) or 'None'}")
-        except Exception as e:
-            await ctx.send(f"⚠️ Error listing commands: {e}")
-
-    except Exception as e:
-        await ctx.send(f"❌ Sync failed: {e}")
-
-@bot.command(name='testleaderboard')
-async def test_leaderboard(ctx):
-    """Emergency text command version of leaderboard"""
-    if not ctx.guild or ctx.guild.id != GUILD_ID:
-        return
-
-    try:
-        # Load stats from file if present, otherwise in-memory
-        stats: Dict[str, int] = {}
-        try:
-            if os.path.exists(STATS_FILE):
-                with open(STATS_FILE, 'r') as f:
-                    stats = json.load(f) or {}
-            else:
-                stats = MESSAGE_STATS
-        except Exception:
-            stats = MESSAGE_STATS
-
-        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
-        if not top:
-            await ctx.send("No message stats yet.")
-            return
-
-        em = discord.Embed(title="🏆 Selfbot Leaderboard", color=0x5a3e99)
-        desc_lines = []
-        rank = 1
-        for uid, cnt in top:
-            try:
-                user = await bot.fetch_user(int(uid))
-                name = f"{user.name}#{user.discriminator}" if user else uid
-            except Exception:
-                name = uid
-            # Add trophy emojis for top 3
-            trophy = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "🏅"
-            desc_lines.append(f"{trophy} **{rank}.** {name} — **{cnt:,}** messages")
-            rank += 1
-        em.description = "\n".join(desc_lines)
-        em.set_footer(text=f"Requested by {ctx.author.display_name}")
-        await ctx.send(embed=em)
-    except Exception as e:
-        await ctx.send(f"Error: {e}")
 
 # Coinbase Commerce webhook handler
 from aiohttp import web
@@ -3511,7 +3387,10 @@ async def periodic_backup_task():
 
 ## NOWPayments slash command removed
 
-## NOWPayments slash command removed (fully deleted)
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="sbautobuy", description="Create a crypto invoice (backup command)")
+async def sbautobuy(interaction: discord.Interaction, coin: str, key_type: str):
+    await autobuy.callback(interaction, coin, key_type)
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="listcommands", description="List registered application commands (debug)")
@@ -3527,9 +3406,73 @@ async def listcommands(interaction: discord.Interaction):
         else:
             await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
-## NOWPayments webhook removed
+async def nowpayments_webhook(request: web.Request):
+    try:
+        secret = NWP_IPN_SECRET or ''
+        body_txt = await request.text()
+        sig = request.headers.get('x-nowpayments-sig','')
+        import hmac, hashlib
+        expected = hmac.new(secret.encode(), body_txt.encode() if isinstance(body_txt, str) else body_txt, hashlib.sha512).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return web.Response(status=400, text='bad sig')
+        data = json.loads(body_txt)
+        status = str(data.get('payment_status','')).lower()
+        order_id = str(data.get('order_id',''))
+        # order_id format: user:channel:key:amount
+        parts = order_id.split(':') if order_id else []
+        user_id = parts[0] if len(parts) > 0 else None
+        ticket_channel_id = parts[1] if len(parts) > 1 else None
+        key_type = parts[2] if len(parts) > 2 else ''
+        amount = parts[3] if len(parts) > 3 else ''
+        # Log pending/confirmed
+        try:
+            if PURCHASE_LOG_WEBHOOK:
+                color = 0xF59E0B if ('pending' in status or 'waiting' in status or 'confirming' in status) else 0x22C55E if ('finished' in status or 'confirmed' in status) else 0x64748B
+                embed = {
+                    'title': 'Autobuy (NOWPayments)',
+                    'description': status,
+                    'color': color,
+                    'fields': [
+                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
+                        {'name':'Key','value': key_type or '','inline': True},
+                        {'name':'Amount','value': amount or '','inline': True},
+                    ]
+                }
+                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
+        except Exception:
+            pass
+        # On finished/confirmed
+        if user_id and key_type and (('finished' in status) or ('confirmed' in status)):
+            try:
+                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
+                duration_days = durations.get(key_type, 30)
+                key = key_manager.generate_key(int(user_id), None, duration_days)
+                guild = bot.get_guild(GUILD_ID)
+                if guild and ticket_channel_id:
+                    try:
+                        chan = guild.get_channel(int(ticket_channel_id))
+                        if chan:
+                            member = guild.get_member(int(user_id))
+                            if member:
+                                try:
+                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
+                                except Exception:
+                                    pass
+                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
+                    except Exception:
+                        pass
+                try:
+                    ch = bot.get_channel(1402647285145538630)
+                    if ch:
+                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return web.Response(text='ok')
+    except Exception as e:
+        return web.Response(status=500, text=str(e))
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="setstatuswebhook", description="Set the webhook URL to receive bot online/offline status")
 async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: str):
     try:
@@ -3544,45 +3487,30 @@ async def set_status_webhook_cmd(interaction: discord.Interaction, webhook_url: 
     except Exception as e:
         await interaction.response.send_message(f"❌ Failed to set webhook: {e}", ephemeral=True)
 
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="leaderboard", description="Show top 10 users by selfbot messages sent")
-async def leaderboard_cmd(interaction: discord.Interaction):
+@bot.tree.command(name="backupchannel", description="Set the channel to auto-backup keys and auto-restore on deploy")
+async def set_backup_channel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
     try:
-        await interaction.response.defer(ephemeral=False)  # Changed to False so everyone can see
-        # Load stats from file if present, otherwise in-memory
-        stats: Dict[str, int] = {}
+        global BACKUP_CHANNEL_ID
+        BACKUP_CHANNEL_ID = int(channel.id)
+        CONFIG['BACKUP_CHANNEL_ID'] = BACKUP_CHANNEL_ID
+        save_config()
+        await interaction.response.send_message(f"✅ Backup channel set to {channel.mention}.", ephemeral=True)
+        # Ensure backup loop is running
         try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
-                    raw = await f.read()
-                _json = json
-                stats = _json.loads(raw) or {}
-            else:
-                stats = MESSAGE_STATS
+            if not periodic_backup_task.is_running():
+                periodic_backup_task.start()
         except Exception:
-            stats = MESSAGE_STATS
-        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
-        if not top:
-            await interaction.followup.send("No message stats yet.", ephemeral=False)  # Changed to False
-            return
-        em = discord.Embed(title="🏆 Selfbot Leaderboard", color=0x5a3e99)
-        desc_lines = []
-        rank = 1
-        for uid, cnt in top:
-            try:
-                user = await bot.fetch_user(int(uid))
-                name = f"{user.name}#{user.discriminator}" if user else uid
-            except Exception:
-                name = uid
-            # Add trophy emojis for top 3
-            trophy = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else "🏅"
-            desc_lines.append(f"{trophy} **{rank}.** {name} — **{cnt:,}** messages")
-            rank += 1
-        em.description = "\n".join(desc_lines)
-        em.set_footer(text=f"Requested by {interaction.user.display_name}")
-        await interaction.followup.send(embed=em, ephemeral=False)  # Changed to False
+            pass
+        # Optional immediate backup
+        try:
+            payload = key_manager.build_backup_payload()
+            data = json.dumps(payload, indent=2).encode()
+            file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
+            await channel.send(content="Manual backup after setting channel", file=file)
+        except Exception:
+            pass
     except Exception as e:
-        await interaction.followup.send(f"Error: {e}", ephemeral=True)
+        await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
 
 # ---------------------- TEXT COMMAND FALLBACKS ----------------------
     try:
@@ -3621,7 +3549,61 @@ async def leaderboard_cmd(interaction: discord.Interaction):
     except Exception as e:
         await ctx.reply(f"Error: {e}")
 
-## NOWPayments text command removed
+@bot.command(name="autobuy")
+async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = None):
+    try:
+        if not ctx.guild or ctx.guild.id != GUILD_ID:
+            return
+        if not coin or not key_type:
+            await ctx.reply("Usage: !autobuy <BTC|LTC|ETH|USDC|USDT> <daily|weekly|monthly|lifetime>")
+            return
+        if not NWP_API_KEY or not NWP_IPN_SECRET:
+            await ctx.reply("Payment processor not configured.")
+            return
+        coin = coin.upper()
+        if coin not in ("BTC","LTC","ETH","USDC","USDT"):
+            await ctx.reply("Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.")
+            return
+        key_type = key_type.lower()
+        price_map = {"daily":3, "weekly":10, "monthly":20, "lifetime":50}
+        if key_type not in price_map:
+            await ctx.reply("Invalid key type. Choose daily, weekly, monthly or lifetime.")
+            return
+        amount = price_map[key_type]
+        order_id = f"{ctx.author.id}:{ctx.channel.id}:{key_type}:${amount}"
+        payload = {
+            "price_amount": amount,
+            "price_currency": "USD",
+            "order_id": order_id,
+            "order_description": f"{key_type} key for {ctx.author.id}",
+            "pay_currency": coin,
+            "is_fixed_rate": True,
+        }
+        if PUBLIC_URL:
+            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
+        headers = {"x-api-key": NWP_API_KEY, "Content-Type": "application/json"}
+        import requests as _req, json as _json
+        try:
+            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
+            if r.status_code not in (200,201):
+                await ctx.reply(f"Failed to create invoice (HTTP {r.status_code}).")
+                return
+            inv = r.json()
+        except Exception as e:
+            await ctx.reply(f"Error creating invoice: {e}")
+            return
+        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
+        if not url:
+            await ctx.reply("Invoice created but no URL returned.")
+            return
+        note = "autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
+        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
+        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
+        await ctx.reply(embed=em)
+    except Exception as e:
+        await ctx.reply(f"Error: {e}")
+
+        return
 
 async def upload_backup_snapshot(payload: dict) -> None:
     """Upload a JSON snapshot to the configured Discord backup channel and webhook."""
