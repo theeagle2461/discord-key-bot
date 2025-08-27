@@ -914,7 +914,7 @@ async def check_permissions(interaction) -> bool:
     # Commands that everyone can use
     public_commands = {
         "help", "activate", "keys", "info", "status", "activekeys", "expiredkeys",
-        "sync", "synccommands"
+        "sync", "synccommands", "leaderboard"
     }
     cmd_name = None
     try:
@@ -3511,6 +3511,43 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
             pass
     except Exception as e:
         await interaction.response.send_message(f"❌ Failed to set backup channel: {e}", ephemeral=True)
+
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="leaderboard", description="Show top 10 users by selfbot messages sent")
+async def leaderboard_cmd(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer(ephemeral=True)
+        # Load stats from file if present, otherwise in-memory
+        stats: Dict[str, int] = {}
+        try:
+            if os.path.exists(STATS_FILE):
+                async with aiofiles.open(STATS_FILE, 'r') as f:
+                    raw = await f.read()
+                _json = json
+                stats = _json.loads(raw) or {}
+            else:
+                stats = MESSAGE_STATS
+        except Exception:
+            stats = MESSAGE_STATS
+        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        if not top:
+            await interaction.followup.send("No message stats yet.", ephemeral=True)
+            return
+        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
+        desc_lines = []
+        rank = 1
+        for uid, cnt in top:
+            try:
+                user = await bot.fetch_user(int(uid))
+                name = f"{user.name}#{user.discriminator}" if user else uid
+            except Exception:
+                name = uid
+            desc_lines.append(f"**{rank}.** {name} — {cnt}")
+            rank += 1
+        em.description = "\n".join(desc_lines)
+        await interaction.followup.send(embed=em, ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
 # ---------------------- TEXT COMMAND FALLBACKS ----------------------
     try:
