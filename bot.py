@@ -933,6 +933,7 @@ async def check_permissions(interaction) -> bool:
     
     return True
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="activate", description="Activate a key and get the user role")
 async def activate_key(interaction: discord.Interaction, key: str):
     """Activate a key and assign the user role"""
@@ -959,10 +960,11 @@ async def activate_key(interaction: discord.Interaction, key: str):
             
             # Force immediate backup upload
             try:
+                print(f"🔄 Triggering backup after key activation for user {interaction.user.id}")
                 payload = key_manager.build_backup_payload()
                 await upload_backup_snapshot(payload)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"❌ Backup failed in activate command: {e}")
             
             # Webhook notify
             try:
@@ -997,6 +999,7 @@ async def activate_key(interaction: discord.Interaction, key: str):
         await interaction.response.send_message(f"❌ An error occurred: {str(e)}", ephemeral=True)
 
 # Removed duplicate sync command name to avoid conflicts
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="syncduration", description="Sync your key duration with SelfBot")
 async def sync_key(interaction: discord.Interaction, key: str):
     """Sync key duration with SelfBot"""
@@ -1043,6 +1046,7 @@ async def sync_key(interaction: discord.Interaction, key: str):
         await interaction.response.send_message(f"❌ Error syncing key: {str(e)}", ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="revoke", description="Revoke a specific key")
 async def revoke_key(interaction: discord.Interaction, key: str):
 	"""Revoke a specific key"""
@@ -1071,6 +1075,7 @@ async def revoke_key(interaction: discord.Interaction, key: str):
 		await interaction.response.send_message("❌ Key not found or already revoked.", ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="unrevoke", description="Unrevoke (re-enable) a revoked key")
 async def unrevoke_key(interaction: discord.Interaction, key: str):
 	"""Re-enable a previously revoked key and upload a backup."""
@@ -1101,6 +1106,7 @@ async def unrevoke_key(interaction: discord.Interaction, key: str):
 		await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="keys", description="Show all keys for a user")
 async def show_keys(interaction: discord.Interaction, user: Optional[discord.Member] = None):
 	"""Show all keys for a user (or yourself if no user specified)"""
@@ -1132,6 +1138,7 @@ async def show_keys(interaction: discord.Interaction, user: Optional[discord.Mem
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="info", description="Get detailed information about a key")
 async def key_info(interaction: discord.Interaction, key: str):
     """Get detailed information about a key"""
@@ -1169,6 +1176,7 @@ async def key_info(interaction: discord.Interaction, key: str):
     await interaction.response.send_message(embed=embed)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="backup", description="Create a backup of all keys")
 async def backup_keys(interaction: discord.Interaction):
 	"""Create a backup of all keys"""
@@ -1193,6 +1201,7 @@ async def backup_keys(interaction: discord.Interaction):
 	await interaction.response.send_message(embed=embed)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="restore", description="Restore keys from a backup file")
 async def restore_keys(interaction: discord.Interaction, backup_file: str):
 	"""Restore keys from a backup file"""
@@ -1222,6 +1231,7 @@ async def restore_keys(interaction: discord.Interaction, backup_file: str):
 		await interaction.response.send_message("❌ Failed to restore from backup.", ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="status", description="Show bot status and statistics")
 async def bot_status(interaction: discord.Interaction):
 	"""Show bot status and statistics"""
@@ -1255,6 +1265,7 @@ async def bot_status(interaction: discord.Interaction):
 
 # New bulk key generation command for special admins
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="generatekeys", description="Generate multiple keys of different types (Special Admin Only)")
 async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int, weekly_count: int, monthly_count: int, lifetime_count: int):
     """Generate multiple keys of different types - Special Admin Only"""
@@ -1300,6 +1311,7 @@ async def generate_bulk_keys(interaction: discord.Interaction, daily_count: int,
 
 # New command to view available keys by type
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="viewkeys", description="View all available keys by type (Special Admin Only)")
 async def view_available_keys(interaction: discord.Interaction):
     """View all available keys grouped by type - Special Admin Only"""
@@ -1359,6 +1371,7 @@ async def view_available_keys(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="delete", description="Completely delete a key (Special Admin Only)")
 async def delete_key(interaction: discord.Interaction, key: str):
     """Completely delete a key - Special Admin Only"""
@@ -1389,6 +1402,7 @@ async def delete_key(interaction: discord.Interaction, key: str):
         await interaction.response.send_message("❌ Key not found or already deleted.", ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="deletedkeys", description="View all deleted keys (Special Admin Only)")
 async def view_deleted_keys(interaction: discord.Interaction):
     """View all deleted keys - Special Admin Only"""
@@ -1432,6 +1446,7 @@ async def view_deleted_keys(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="activekeys", description="List all active keys with remaining time and assigned user")
 async def active_keys(interaction: discord.Interaction):
 	# Special admin only
@@ -1478,6 +1493,7 @@ async def active_keys(interaction: discord.Interaction):
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="expiredkeys", description="List expired keys")
 async def expired_keys(interaction: discord.Interaction):
 	# Special admin only
@@ -1513,6 +1529,7 @@ async def expired_keys(interaction: discord.Interaction):
 	await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="swapmachineid", description="Swap a user's active key to a new machine ID (Special Admin Only)")
 async def swap_machine_id(interaction: discord.Interaction, user: discord.Member, new_machine_id: str):
 	# Special admin only
@@ -1545,6 +1562,7 @@ async def swap_machine_id(interaction: discord.Interaction, user: discord.Member
 		await interaction.response.send_message(f"❌ Failed: {e}", ephemeral=True)
 
 @admin_role_only()
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="synccommands", description="Force-sync application commands in this guild")
 async def sync_commands(interaction: discord.Interaction):
     if not interaction.guild or interaction.guild.id != GUILD_ID:
@@ -3323,6 +3341,7 @@ async def purge_global_commands():
     except Exception as e:
         print(f"⚠️ Failed to purge global commands: {e}")
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="keylogs", description="Show recent key logs (last 15)")
 async def keylogs(interaction: discord.Interaction):
     if not await check_permissions(interaction):
@@ -3464,9 +3483,6 @@ async def periodic_backup_task():
         await upload_backup_snapshot(payload)
     except Exception:
         pass
-
-
-
 
 # Key type selection view
 class KeyTypeSelect(discord.ui.Select):
@@ -3623,8 +3639,6 @@ async def autobuy(interaction: discord.Interaction):
     except Exception as e:
         await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
 
-
-
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="listcommands", description="List registered application commands (debug)")
 async def listcommands(interaction: discord.Interaction):
@@ -3708,6 +3722,7 @@ async def nowpayments_webhook(request: web.Request):
 
 
 
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="backupchannel", description="Set the channel to auto-backup keys and auto-restore on deploy")
 async def set_backup_channel_cmd(interaction: discord.Interaction, channel: discord.TextChannel):
     try:
@@ -3800,9 +3815,14 @@ async def upload_backup_snapshot(payload: dict) -> None:
             if channel:
                 data = json.dumps(payload, indent=2).encode()
                 file = discord.File(io.BytesIO(data), filename=f"backup_{int(time.time())}.json")
-                await channel.send(content="Backup snapshot", file=file)
-    except Exception:
-        pass
+                await channel.send(content="🔄 Automatic backup after key operation", file=file)
+                print(f"✅ Backup uploaded to channel {BACKUP_CHANNEL_ID}")
+            else:
+                print(f"⚠️ Backup channel {BACKUP_CHANNEL_ID} not found")
+        else:
+            print("⚠️ No backup channel configured")
+    except Exception as e:
+        print(f"❌ Backup to channel failed: {e}")
     # Send to webhook as JSON payload, if provided
     try:
         url = (BACKUP_WEBHOOK_URL or '').strip()
@@ -3810,8 +3830,9 @@ async def upload_backup_snapshot(payload: dict) -> None:
             data = json.dumps(payload, indent=2).encode()
             files = {"file": (f"backup_{int(time.time())}.json", io.BytesIO(data), "application/json")}
             requests.post(url, files=files, timeout=15)
-    except Exception:
-        pass
+            print("✅ Backup sent to webhook")
+    except Exception as e:
+        print(f"❌ Backup to webhook failed: {e}")
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="swapkey", description="Swap a key from one user to another (Special Admin Only)")
@@ -3880,6 +3901,3 @@ async def swap_key(interaction: discord.Interaction, from_user: discord.Member, 
 		await interaction.response.send_message(f"✅ Swapped key `{k}` to {to_user.mention}. Remaining: {d}d {h}h {m}m. The new user must activate to bind a machine.")
 	except Exception as e:
 		await interaction.response.send_message(f"❌ Swap failed: {e}", ephemeral=True)
-
-
-
