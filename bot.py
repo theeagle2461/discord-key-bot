@@ -864,8 +864,23 @@ async def on_ready():
             except Exception:
                 pass
         else:
+            # Global sync
             synced = await bot.tree.sync()
             print(f"✅ Synced {len(synced)} global commands")
+            # Also copy globals to the configured guild for faster visibility
+            if GUILD_ID:
+                try:
+                    guild_obj = discord.Object(id=GUILD_ID)
+                    await bot.tree.copy_global_to(guild=guild_obj)
+                    guild_synced = await bot.tree.sync(guild=guild_obj)
+                    print(f"📎 Copied globals and synced {len(guild_synced)} commands to guild {GUILD_ID}")
+                    try:
+                        names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
+                        print(f"🔎 Guild commands: {names}")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"⚠️ Failed copying globals to guild: {e}")
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
     # Auto-restore from the most recent JSON attachment in backup channel
