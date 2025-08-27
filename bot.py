@@ -852,16 +852,20 @@ async def on_ready():
         await send_status_webhook('online')
     except Exception:
         pass
-    # Force-sync guild commands
+    # Sync application commands based on scope setting
     try:
-        guild_obj = discord.Object(id=GUILD_ID)
-        synced = await bot.tree.sync(guild=guild_obj)
-        print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
-        try:
-            names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
-            print(f"🔎 Guild commands: {names}")
-        except Exception:
-            pass
+        if USE_GUILD_SCOPED and GUILD_ID:
+            guild_obj = discord.Object(id=GUILD_ID)
+            synced = await bot.tree.sync(guild=guild_obj)
+            print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
+            try:
+                names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
+                print(f"🔎 Guild commands: {names}")
+            except Exception:
+                pass
+        else:
+            synced = await bot.tree.sync()
+            print(f"✅ Synced {len(synced)} global commands")
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
     # Auto-restore from the most recent JSON attachment in backup channel
