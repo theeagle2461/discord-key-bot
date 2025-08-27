@@ -862,25 +862,35 @@ async def on_ready():
         print(f"⚠️ Error checking registered commands: {e}")
 
     try:
-        if USE_GUILD_SCOPED and GUILD_ID:
-            guild_obj = discord.Object(id=GUILD_ID)
-            print(f"🔄 Attempting to sync commands to guild {GUILD_ID}...")
-            synced = await bot.tree.sync(guild=guild_obj)
-            print(f"✅ Synced {len(synced)} commands to guild {GUILD_ID}")
+        # Always try both guild and global sync to ensure commands appear
+        guild_synced = 0
+        global_synced = 0
+
+        if GUILD_ID:
             try:
-                names = [c.name for c in bot.tree.get_commands(guild=guild_obj)]
-                print(f"🔎 Guild commands after sync: {names}")
+                guild_obj = discord.Object(id=GUILD_ID)
+                print(f"🔄 Attempting to sync commands to guild {GUILD_ID}...")
+                guild_synced = len(await bot.tree.sync(guild=guild_obj))
+                print(f"✅ Guild sync: {guild_synced} commands")
             except Exception as e:
-                print(f"⚠️ Error getting command names: {e}")
-        else:
+                print(f"⚠️ Guild sync failed: {e}")
+
+        try:
             print(f"🔄 Attempting to sync global commands...")
-            synced = await bot.tree.sync()
-            print(f"✅ Synced {len(synced)} global commands")
-            try:
-                names = [c.name for c in bot.tree.get_commands()]
-                print(f"🔎 Global commands: {names}")
-            except Exception as e:
-                print(f"⚠️ Error getting global command names: {e}")
+            global_synced = len(await bot.tree.sync())
+            print(f"✅ Global sync: {global_synced} commands")
+        except Exception as e:
+            print(f"⚠️ Global sync failed: {e}")
+
+        # Show final command lists
+        try:
+            if GUILD_ID:
+                guild_names = [c.name for c in bot.tree.get_commands(guild=discord.Object(id=GUILD_ID))]
+                print(f"🔎 Final guild commands: {guild_names}")
+            global_names = [c.name for c in bot.tree.get_commands()]
+            print(f"🔎 Final global commands: {global_names}")
+        except Exception as e:
+            print(f"⚠️ Error listing final commands: {e}")
     except Exception as e:
         print(f"⚠️ Failed to sync commands in on_ready: {e}")
         # Fallback: try both guild and global sync
@@ -3598,43 +3608,6 @@ async def leaderboard_cmd(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
-# ---------------------- TEXT COMMAND FALLBACKS ----------------------
-    try:
-        # Only allow in the configured guild
-        if not ctx.guild or ctx.guild.id != GUILD_ID:
-            return
-        # Load stats
-        stats: dict[str, int] = {}
-        try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
-                    raw = await f.read()
-                import json as _json
-                stats = _json.loads(raw) or {}
-            else:
-                stats = MESSAGE_STATS
-        except Exception:
-            stats = MESSAGE_STATS
-        top = sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:10]
-        if not top:
-            await ctx.reply("No stats yet.")
-            return
-        em = discord.Embed(title="Selfbot Leaderboard", color=0x5a3e99)
-        desc_lines = []
-        rank = 1
-        for uid, cnt in top:
-            try:
-                user = await bot.fetch_user(int(uid))
-                name = f"{user.name}#{user.discriminator}" if user else uid
-            except Exception:
-                name = uid
-            desc_lines.append(f"**{rank}.** {name} — {cnt}")
-            rank += 1
-        em.description = "\n".join(desc_lines)
-        await ctx.reply(embed=em)
-    except Exception as e:
-        await ctx.reply(f"Error: {e}")
-
 ## NOWPayments text command removed
 
 async def upload_backup_snapshot(payload: dict) -> None:
@@ -3726,3 +3699,6 @@ async def swap_key(interaction: discord.Interaction, from_user: discord.Member, 
 		await interaction.response.send_message(f"✅ Swapped key `{k}` to {to_user.mention}. Remaining: {d}d {h}h {m}m. The new user must activate to bind a machine.")
 	except Exception as e:
 		await interaction.response.send_message(f"❌ Swap failed: {e}", ephemeral=True)
+
+
+
