@@ -72,10 +72,10 @@ def admin_role_only():
 # Webhook configuration for key notifications and selfbot launches
 WEBHOOK_URL = "https://discord.com/api/webhooks/1404537582804668619/6jZeEj09uX7KapHannWnvWHh5a3pSQYoBuV38rzbf_rhdndJoNreeyfFfded8irbccYB"
 CHANNEL_ID = 1404537582804668619  # Channel ID from webhook
-PURCHASE_LOG_WEBHOOK = os.getenv('PURCHASE_LOG_WEBHOOK','')
 # Add backup webhook override for automated snapshots
 BACKUP_WEBHOOK_URL = os.getenv('BACKUP_WEBHOOK_URL', 'https://discord.com/api/webhooks/1409710419173572629/9NaANTEYq6ve1ZpF7SU7gWx89jPO9nADfmPR_4WkIfrOGUZuOa4ECF8dZ2LNgrylKpfd')
-# Removed NOWPayments credentials and related features
+# Chat mirror webhook (currently unused)
+CHAT_MIRROR_WEBHOOK = os.getenv('CHAT_MIRROR_WEBHOOK', '')
 # PUBLIC_URL may still be used by health endpoints elsewhere
 PUBLIC_URL = os.getenv('PUBLIC_URL','')
 
@@ -962,13 +962,9 @@ async def activate_key(interaction: discord.Interaction, key: str):
             try:
                 print(f"🔄 Triggering backup after key activation for user {interaction.user.id}")
                 payload = key_manager.build_backup_payload()
-                print(f"📦 Backup payload contains {len(payload.get('keys', {}))} keys")
                 await upload_backup_snapshot(payload)
-                print("✅ Backup upload completed successfully")
             except Exception as e:
                 print(f"❌ Backup failed in activate command: {e}")
-                import traceback
-                traceback.print_exc()
             
             # Webhook notify
             try:
@@ -1653,82 +1649,6 @@ async def on_command_error(ctx, error):
     else:
         await ctx.send(f"❌ An error occurred: {str(error)}")
 
-# Coinbase Commerce webhook handler
-from aiohttp import web
-
-async def coinbase_webhook(request: web.Request):
-    try:
-        secret = os.getenv('COMMERCE_WEBHOOK_SECRET','')
-        sig = request.headers.get('X-CC-Webhook-Signature','')
-        body = await request.read()
-        import hmac, hashlib
-        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            return web.Response(status=400, text='bad sig')
-        data = json.loads(body.decode())
-        event = data.get('event', {})
-        type_ = event.get('type','')
-        charge = event.get('data',{})
-        meta = (charge.get('metadata') or {})
-        user_id = meta.get('user_id')
-        key_type = meta.get('key_type','')
-        amount = meta.get('amount','')
-        # Log to webhook if configured
-        try:
-            if PURCHASE_LOG_WEBHOOK:
-                color = 0xF59E0B if 'pending' in type_ else 0x22C55E if 'confirmed' in type_ else 0x64748B
-                embed = {
-                    'title': 'Autobuy',
-                    'description': f"{type_}",
-                    'color': color,
-                    'fields': [
-                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
-                        {'name':'Key','value': key_type or '','inline': True},
-                        {'name':'Amount','value': amount or '','inline': True},
-                    ]
-                }
-                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
-        except Exception:
-            pass
-        # On confirmed, generate and post the key to the ticket channel only visible to the buyer
-        if type_ == 'charge:confirmed' and user_id and key_type:
-            try:
-                # Pick duration by key_type
-                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
-                duration_days = durations.get(key_type, 30)
-                # Issue a key
-                gen_by = int(user_id)
-                key = key_manager.generate_key(gen_by, None, duration_days)
-                # Post in ticket channel (from metadata) and restrict visibility
-                ticket_channel_id = meta.get('ticket_channel_id')
-                guild = bot.get_guild(GUILD_ID)
-                if guild and ticket_channel_id:
-                    try:
-                        chan = guild.get_channel(int(ticket_channel_id))
-                        if chan:
-                            # Create a post only visible to the buyer (ephemeral-like via permission overwrite)
-                            member = guild.get_member(int(user_id))
-                            if member:
-                                try:
-                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
-                                except Exception:
-                                    pass
-                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
-                            # Optionally tighten after sending
-                    except Exception:
-                        pass
-                # Log in channel 1402647285145538630
-                try:
-                    ch = bot.get_channel(1402647285145538630)
-                    if ch:
-                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        return web.Response(text='ok')
-    except Exception as e:
-        return web.Response(status=500, text=str(e))
 
 # Add a simple health check for Render
 import http.server
@@ -3277,7 +3197,6 @@ def start_health_check():
         # Start aiohttp app for webhooks
         async def _run_aiohttp():
             app = web.Application()
-            app.router.add_post('/webhook/coinbase-commerce', coinbase_webhook)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port+1)
@@ -3309,10 +3228,27 @@ if __name__ == "__main__":
     health_thread.start()
     print("✅ Health check server started")
 
-    # Let discord.py handle reconnects internally
+    async def start_with_backoff():
+        delay_seconds = 60
+        max_delay = 900
+        while True:
+            try:
+                print("🔗 Connecting to Discord...")
+                await bot.start(BOT_TOKEN)
+            except Exception as e:
+                # If Discord is rate-limiting or network issue, back off and retry
+                msg = str(e)
+                if "429" in msg or "Too Many Requests" in msg:
+                    print(f"⚠️ 429/Rate limited. Retrying in {delay_seconds}s...")
+                else:
+                    print(f"⚠️ Startup error: {e}. Retrying in {delay_seconds}s...")
+                await asyncio.sleep(delay_seconds)
+                delay_seconds = min(delay_seconds * 2, max_delay)
+            else:
+                break
+
     try:
-        print("🔗 Connecting to Discord...")
-        bot.run(BOT_TOKEN)
+        asyncio.run(start_with_backoff())
     except KeyboardInterrupt:
         print("\n👋 Bot stopped by user")
     except Exception as e:
@@ -3328,69 +3264,25 @@ async def purge_global_commands():
     except Exception as e:
         print(f"⚠️ Failed to purge global commands: {e}")
 
-# TEMPORARILY REMOVED - keylogs command
-
 @app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="leaderboard", description="Show top 5 users with most selfbot messages sent")
-async def leaderboard(interaction: discord.Interaction):
-    """Show the top 5 users with most selfbot messages sent"""
-    try:
-        await interaction.response.defer()
+@bot.tree.command(name="keylogs", description="Show recent key logs (last 15)")
+async def keylogs(interaction: discord.Interaction):
+    if not await check_permissions(interaction):
+        return
+    logs = list(reversed(key_manager.key_logs[-15:]))
+    if not logs:
+        await interaction.response.send_message("📭 No logs yet.", ephemeral=True)
+        return
+    lines = []
+    for e in logs:
+        when = f"<t:{e.get('ts',0)}:R>"
+        event = e.get('event','?')
+        key = e.get('key','')
+        uid = e.get('user_id')
+        lines.append(f"{when} — {event.upper()} — `{key}` — {('<@'+str(uid)+'>') if uid else ''}")
+    embed = discord.Embed(title="📝 Recent Key Logs", description="\n".join(lines), color=0x8b5cf6)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        # Load message stats from file and memory
-        stats: dict[str, int] = {}
-        try:
-            if os.path.exists(STATS_FILE):
-                async with aiofiles.open(STATS_FILE, 'r') as f:
-                    raw = await f.read()
-                import json as _json
-                stats = _json.loads(raw) or {}
-            else:
-                stats = MESSAGE_STATS.copy()
-        except Exception:
-            stats = MESSAGE_STATS.copy()
-
-        # Merge with in-memory stats to get most current data
-        for uid, count in MESSAGE_STATS.items():
-            stats[uid] = max(stats.get(uid, 0), count)
-
-        # Get top 5 users
-        top_users = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:5]
-
-        if not top_users:
-            await interaction.followup.send("📊 No message statistics available yet.")
-            return
-
-        # Create leaderboard embed
-        embed = discord.Embed(
-            title="🏆 Selfbot Message Leaderboard",
-            description="Top 5 users with most messages sent through selfbot",
-            color=0x5a3e99
-        )
-
-        rank_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-
-        for i, (user_id, message_count) in enumerate(top_users):
-            try:
-                user = await bot.fetch_user(int(user_id))
-                username = user.display_name if user else f"User {user_id}"
-            except Exception:
-                username = f"User {user_id}"
-
-            embed.add_field(
-                name=f"{rank_emojis[i]} #{i+1}",
-                value=f"**{username}**\n📨 {message_count:,} messages",
-                inline=True
-            )
-
-        embed.set_footer(text="Statistics persist even after key expiration")
-        await interaction.followup.send(embed=embed)
-
-    except Exception as e:
-        try:
-            await interaction.followup.send(f"❌ Error loading leaderboard: {str(e)}")
-        except:
-            await interaction.response.send_message(f"❌ Error loading leaderboard: {str(e)}", ephemeral=True)
 
 @tasks.loop(seconds=60)
 async def reconcile_roles_task():
@@ -3456,40 +3348,6 @@ async def periodic_backup_task():
 
 
 
-# TEMPORARILY REMOVED - autobuy command
-
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-@bot.tree.command(name="testbackup", description="Test the backup system manually")
-async def test_backup(interaction: discord.Interaction):
-    """Test backup system manually"""
-    if interaction.user.id not in SPECIAL_ADMIN_IDS:
-        await interaction.response.send_message("❌ **Access Denied:** Only special admins can use this command.", ephemeral=True)
-        return
-
-    try:
-        await interaction.response.defer(ephemeral=True)
-
-        # Create backup
-        payload = key_manager.build_backup_payload()
-        key_count = len(payload.get('keys', {}))
-
-        # Upload backup
-        await upload_backup_snapshot(payload)
-
-        embed = discord.Embed(
-            title="🔄 Backup Test Complete",
-            description=f"Successfully backed up {key_count} keys to channel <#{BACKUP_CHANNEL_ID}>",
-            color=0x00ff00
-        )
-        embed.add_field(name="Backup Channel", value=f"<#{BACKUP_CHANNEL_ID}>", inline=True)
-        embed.add_field(name="Keys Backed Up", value=str(key_count), inline=True)
-        embed.add_field(name="Timestamp", value=f"<t:{int(time.time())}:F>", inline=True)
-
-        await interaction.followup.send(embed=embed)
-
-    except Exception as e:
-        await interaction.followup.send(f"❌ Backup test failed: {e}")
-
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @bot.tree.command(name="listcommands", description="List registered application commands (debug)")
 async def listcommands(interaction: discord.Interaction):
@@ -3504,72 +3362,6 @@ async def listcommands(interaction: discord.Interaction):
         else:
             await interaction.response.send_message(f"Error: {e}", ephemeral=True)
 
-async def nowpayments_webhook(request: web.Request):
-    try:
-        secret = NWP_IPN_SECRET or ''
-        body_txt = await request.text()
-        sig = request.headers.get('x-nowpayments-sig','')
-        import hmac, hashlib
-        expected = hmac.new(secret.encode(), body_txt.encode() if isinstance(body_txt, str) else body_txt, hashlib.sha512).hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            return web.Response(status=400, text='bad sig')
-        data = json.loads(body_txt)
-        status = str(data.get('payment_status','')).lower()
-        order_id = str(data.get('order_id',''))
-        # order_id format: user:channel:key:amount
-        parts = order_id.split(':') if order_id else []
-        user_id = parts[0] if len(parts) > 0 else None
-        ticket_channel_id = parts[1] if len(parts) > 1 else None
-        key_type = parts[2] if len(parts) > 2 else ''
-        amount = parts[3] if len(parts) > 3 else ''
-        # Log pending/confirmed
-        try:
-            if PURCHASE_LOG_WEBHOOK:
-                color = 0xF59E0B if ('pending' in status or 'waiting' in status or 'confirming' in status) else 0x22C55E if ('finished' in status or 'confirmed' in status) else 0x64748B
-                embed = {
-                    'title': 'Autobuy (NOWPayments)',
-                    'description': status,
-                    'color': color,
-                    'fields': [
-                        {'name':'User ID','value': str(user_id) if user_id else 'unknown','inline': True},
-                        {'name':'Key','value': key_type or '','inline': True},
-                        {'name':'Amount','value': amount or '','inline': True},
-                    ]
-                }
-                requests.post(PURCHASE_LOG_WEBHOOK, json={'embeds':[embed]}, timeout=6)
-        except Exception:
-            pass
-        # On finished/confirmed
-        if user_id and key_type and (('finished' in status) or ('confirmed' in status)):
-            try:
-                durations = {'daily':1, 'weekly':7, 'monthly':30, 'lifetime':365}
-                duration_days = durations.get(key_type, 30)
-                key = key_manager.generate_key(int(user_id), None, duration_days)
-                guild = bot.get_guild(GUILD_ID)
-                if guild and ticket_channel_id:
-                    try:
-                        chan = guild.get_channel(int(ticket_channel_id))
-                        if chan:
-                            member = guild.get_member(int(user_id))
-                            if member:
-                                try:
-                                    await chan.set_permissions(member, read_messages=True, send_messages=True)
-                                except Exception:
-                                    pass
-                            await chan.send(f"<@{user_id}> Your {key_type} key: `{key}`")
-                    except Exception:
-                        pass
-                try:
-                    ch = bot.get_channel(1402647285145538630)
-                    if ch:
-                        await ch.send(f"<@{user_id}> ({user_id}) Has bought {key_type} key for {amount}")
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        return web.Response(text='ok')
-    except Exception as e:
-        return web.Response(status=500, text=str(e))
 
 
 
@@ -3601,61 +3393,6 @@ async def set_backup_channel_cmd(interaction: discord.Interaction, channel: disc
 
 # ---------------------- TEXT COMMAND FALLBACKS ----------------------
 
-@bot.command(name="autobuy")
-async def autobuy_text(ctx: commands.Context, coin: str = None, key_type: str = None):
-    try:
-        if not ctx.guild or ctx.guild.id != GUILD_ID:
-            return
-        if not coin or not key_type:
-            await ctx.reply("Usage: !autobuy <BTC|LTC|ETH|USDC|USDT> <daily|weekly|monthly|lifetime>")
-            return
-        if not NWP_API_KEY or not NWP_IPN_SECRET:
-            await ctx.reply("Payment processor not configured.")
-            return
-        coin = coin.upper()
-        if coin not in ("BTC","LTC","ETH","USDC","USDT"):
-            await ctx.reply("Unsupported coin. Choose BTC, LTC, ETH, USDC or USDT.")
-            return
-        key_type = key_type.lower()
-        price_map = {"daily":3, "weekly":10, "monthly":20, "lifetime":50}
-        if key_type not in price_map:
-            await ctx.reply("Invalid key type. Choose daily, weekly, monthly or lifetime.")
-            return
-        amount = price_map[key_type]
-        order_id = f"{ctx.author.id}:{ctx.channel.id}:{key_type}:${amount}"
-        payload = {
-            "price_amount": amount,
-            "price_currency": "USD",
-            "order_id": order_id,
-            "order_description": f"{key_type} key for {ctx.author.id}",
-            "pay_currency": coin,
-            "is_fixed_rate": True,
-        }
-        if PUBLIC_URL:
-            payload["ipn_callback_url"] = f"{PUBLIC_URL.rstrip('/')}/webhook/nowpayments"
-        headers = {"x-api-key": NWP_API_KEY, "Content-Type": "application/json"}
-        import requests as _req, json as _json
-        try:
-            r = _req.post("https://api.nowpayments.io/v1/invoice", headers=headers, data=_json.dumps(payload), timeout=15)
-            if r.status_code not in (200,201):
-                await ctx.reply(f"Failed to create invoice (HTTP {r.status_code}).")
-                return
-            inv = r.json()
-        except Exception as e:
-            await ctx.reply(f"Error creating invoice: {e}")
-            return
-        url = inv.get("invoice_url") or inv.get("pay_url") or inv.get("invoice_url")
-        if not url:
-            await ctx.reply("Invoice created but no URL returned.")
-            return
-        note = "autobuy confirmation times vary, defaulting from 3-6 minutes up to 20 minutes"
-        em = discord.Embed(title="Autobuy", description=f"Pay with {coin} for a {key_type} key ($ {amount}).\n\n{note}", color=0x7d5fff)
-        em.add_field(name="Checkout", value=f"[Open Invoice]({url})", inline=False)
-        await ctx.reply(embed=em)
-    except Exception as e:
-        await ctx.reply(f"Error: {e}")
-
-        return
 
 async def upload_backup_snapshot(payload: dict) -> None:
     """Upload a JSON snapshot to the configured Discord backup channel and webhook."""
@@ -3752,3 +3489,68 @@ async def swap_key(interaction: discord.Interaction, from_user: discord.Member, 
 		await interaction.response.send_message(f"✅ Swapped key `{k}` to {to_user.mention}. Remaining: {d}d {h}h {m}m. The new user must activate to bind a machine.")
 	except Exception as e:
 		await interaction.response.send_message(f"❌ Swap failed: {e}", ephemeral=True)
+
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@bot.tree.command(name="leaderboard", description="Show top 5 users with most selfbot messages sent")
+async def leaderboard(interaction: discord.Interaction):
+	"""Show leaderboard of top 5 users by selfbot message count"""
+	if not await check_permissions(interaction):
+		return
+	
+	try:
+		# Get top 5 users from MESSAGE_STATS
+		if not MESSAGE_STATS:
+			await interaction.response.send_message("📊 No message statistics available yet.", ephemeral=True)
+			return
+		
+		# Sort users by message count (descending) and take top 5
+		sorted_users = sorted(MESSAGE_STATS.items(), key=lambda x: int(x[1]), reverse=True)[:5]
+		
+		if not sorted_users:
+			await interaction.response.send_message("📊 No message statistics available yet.", ephemeral=True)
+			return
+		
+		embed = discord.Embed(
+			title="🏆 Selfbot Message Leaderboard",
+			description="Top 5 users with most messages sent using the selfbot",
+			color=0x2d6cdf
+		)
+		
+		# Medal emojis for top 3
+		medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+		
+		for i, (user_id, count) in enumerate(sorted_users):
+			try:
+				# Try to get the user from the guild
+				user = interaction.guild.get_member(int(user_id))
+				if user:
+					user_display = user.display_name
+					user_mention = user.mention
+				else:
+					# Fallback: try to fetch user from Discord API
+					try:
+						user = await bot.fetch_user(int(user_id))
+						user_display = f"{user.name}#{user.discriminator}"
+						user_mention = f"<@{user_id}>"
+					except:
+						user_display = f"User {user_id}"
+						user_mention = f"<@{user_id}>"
+				
+				medal = medals[i] if i < len(medals) else f"{i+1}️⃣"
+				embed.add_field(
+					name=f"{medal} #{i+1}",
+					value=f"{user_mention}\n**{count:,}** messages",
+					inline=True
+				)
+			except Exception as e:
+				# If there's an error with a specific user, skip them
+				continue
+		
+		# Add footer with total stats
+		total_messages = sum(int(count) for count in MESSAGE_STATS.values())
+		embed.set_footer(text=f"Total messages sent by all users: {total_messages:,}")
+		
+		await interaction.response.send_message(embed=embed)
+		
+	except Exception as e:
+		await interaction.response.send_message(f"❌ Error generating leaderboard: {str(e)}", ephemeral=True)
